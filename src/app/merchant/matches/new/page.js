@@ -1,4 +1,8 @@
 'use client';
+
+// Safe date for hydration
+const __safeDate = (d) => (typeof window !== 'undefined' ? __safeDate(d) : __safeDate(0));
+
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -26,7 +30,7 @@ export default function NewMatch() {
     const { error: err } = await supabase.from('sports_matches').insert({
       club_name: entity.display_name,
       opponent: f.opponent.trim(),
-      match_date: f.match_date ? new Date(f.match_date).toISOString() : null,
+      match_date: f.match_date ? __safeDate(f.match_date).toISOString() : null,
       location: f.location.trim() || null,
       competition: f.competition.trim() || null,
       status: f.status,

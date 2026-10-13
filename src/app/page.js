@@ -1,5 +1,8 @@
 'use client';
 
+// Safe date for hydration
+const __safeDate = (d) => (typeof window !== 'undefined' ? __safeDate(d) : __safeDate(0));
+
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useT } from '@/lib/useT';
@@ -178,10 +181,12 @@ export default function Home() {
           <div className="hero-top">
             <CommunityPicker />
             <div className="hero-top-actions">
+              <LanguageSwitcher variant="inline" />
               <button className="icon-btn" type="button" aria-label="الإشعارات">
                 🔔
                 {topAnnouncement && <span className="dot-badge" />}
               </button>
+            </div>
             </div>
           </div>
 
@@ -205,7 +210,6 @@ export default function Home() {
               🚨 طوارئ
             </button>
           </div>
-        </div>
       </header>
 
       <div className="ticker-bar">
@@ -282,15 +286,15 @@ export default function Home() {
         <div className="stats">
           <div className="stat">
             <div className="stat-val">{services.length}</div>
-            <div className="stat-lab">خدمة متاحة</div>
+            <div className="stat-lab">{t("app.stats.services")}</div>
           </div>
           <div className="stat">
             <div className="stat-val">{categories.length - 1}</div>
-            <div className="stat-lab">قسم</div>
+            <div className="stat-lab">{t("app.stats.sections")}</div>
           </div>
           <div className="stat">
             <div className="stat-val">{announcements.length}</div>
-            <div className="stat-lab">إعلان</div>
+            <div className="stat-lab">{t("app.stats.announcements")}</div>
           </div>
         </div>
       </section>
@@ -302,7 +306,7 @@ export default function Home() {
               <div className="section-head-col">
                 <span className="section-eyebrow">عروض مميزة</span>
                 <h2 className="section-title">
-                  <span className="bar" /> عروض اليوم
+                  <span className="bar" /> {t("app.deals")}
                 </h2>
               </div>
               <button className="section-action" type="button" onClick={() => goTo('services')}>
@@ -327,7 +331,7 @@ export default function Home() {
           <div className="section-head-col">
             <span className="section-eyebrow">{search ? 'نتائج البحث' : 'قريب منك'}</span>
             <h2 className="section-title">
-              <span className="bar" /> {search ? 'النتائج' : 'الجهات والمتاجر'}
+              <span className="bar" /> {search ? 'النتائج' : '{t("app.services")}'}
             </h2>
           </div>
           <span className="section-action" style={{ pointerEvents: 'none' }}>
@@ -399,12 +403,12 @@ export default function Home() {
             <div className="section-head-col">
               <span className="section-eyebrow">آخر الأخبار</span>
               <h2 className="section-title">
-                <span className="bar" /> أخبار المنطقة
+                <span className="bar" /> {t("app.news")}
               </h2>
             </div>
           </div>
           <article className="news-box">
-            <span className="news-eyebrow">📰 إعلان رسمي</span>
+            <span className="news-eyebrow">📰 {t("app.stats.announcements")} رسمي</span>
             <h3 className="news-title">{topAnnouncement.title}</h3>
             <p className="news-body">
               {topAnnouncement.body
@@ -434,7 +438,7 @@ export default function Home() {
         </section>
       )}
 
-      <LanguageSwitcher />
+      
       <footer className="footer">
         <div className="footer-brand">
           <span className="footer-mark">س</span>
@@ -442,7 +446,20 @@ export default function Home() {
         </div>
         <p>نقرّب المسافات، ونصل الناس بالخدمات</p>
         <div className="copy">© 2026 سند — جميع الحقوق محفوظة</div>
-      </footer>
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'center', marginTop: 16, flexWrap: 'wrap' }}>
+          <a href="/login" style={{ fontSize: 11.5, color: 'var(--f-700)', fontWeight: 800, padding: '8px 16px', background: 'rgba(14,138,102,.08)', border: '1px solid rgba(14,138,102,.15)', borderRadius: 999, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+            👤 {t("auth.login")}
+          </a>
+          <a href="/admin/login" style={{ fontSize: 11.5, color: 'var(--n-600)', fontWeight: 800, padding: '8px 16px', background: 'rgba(115,139,128,.08)', border: '1px solid rgba(115,139,128,.15)', borderRadius: 999, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+            ⚙️ {t("admin.title")}
+          </a>
+          <a href="/legal/terms" style={{ fontSize: 11.5, color: 'var(--n-500)', fontWeight: 700, padding: '8px 16px', borderRadius: 999, textDecoration: 'none' }}>
+            الشروط
+          </a>
+          <a href="/legal/privacy" style={{ fontSize: 11.5, color: 'var(--n-500)', fontWeight: 700, padding: '8px 16px', borderRadius: 999, textDecoration: 'none' }}>
+            الخصوصية
+          </a>
+        </div></footer>
 
       <button
         className="sos"
@@ -488,7 +505,12 @@ export default function Home() {
         </button>
         <button
           className={`nav-btn ${activeTab === 'account' ? 'active' : ''}`}
-          onClick={() => setActiveTab('account')}
+          onClick={() => {
+            let stored = null;
+            try { stored = JSON.parse(localStorage.getItem('sanad_entity') || 'null'); } catch {}
+            if (stored) router.push('/merchant');
+            else router.push('/login');
+          }}
           type="button"
         >
           <span className="ico">⚙️</span>

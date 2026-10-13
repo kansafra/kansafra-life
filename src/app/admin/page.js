@@ -1,11 +1,17 @@
 'use client';
+
+// Safe date for hydration
+const __safeDate = (d) => (typeof window !== 'undefined' ? __safeDate(d) : __safeDate(0));
+
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
+import { useT } from '@/lib/useT';
 
 export default function AdminDashboard() {
   const router = useRouter();
+  const { t } = useT();
   const [admin, setAdmin] = useState(null);
   const [stats, setStats] = useState({ entities: 0, services: 0, products: 0, orders: 0, sos: 0, categories: 0, reviews: 0 });
   const [loading, setLoading] = useState(true);
@@ -56,15 +62,15 @@ export default function AdminDashboard() {
     { icon: '🏘️', title: 'إدارة البلدات', desc: 'منصات متعددة المجتمعات', href: '/admin/communities' },
     { icon: '🌳', title: 'الشجرة الجغرافية', desc: 'دولة → محافظة → بلدة → حي', href: '/admin/geography' },
     { icon: '🏢', title: 'إدارة الكيانات', desc: 'متاجر، عيادات، مدارس', href: '/admin/entities' },
-    { icon: '👥', title: 'المستخدمون والصلاحيات', desc: 'المدير، المشرفون', href: '/admin/users' },
+    { icon: '👥', title: 'المستخدمون والصلاحيات', desc: 'المدير، المشرفون', href: '/admin/manage/entities' },
     { icon: '📊', title: 'التقارير', desc: 'مالية وتشغيلية', href: '/admin/reports' },
     { icon: '📝', title: 'سجل التدقيق', desc: 'كل العمليات', href: '/admin/audit' },
     { icon: '🆘', title: 'إدارة SOS', desc: 'البلاغات النشطة', href: '/admin/sos' },
-    { icon: '📢', title: 'الإعلانات', desc: 'موافقة ونشر', href: '/admin/announcements' },
-    { icon: '⭐', title: 'التقييمات', desc: 'مراجعة وردود', href: '/admin/reviews' },
-    { icon: '💰', title: 'الاشتراكات', desc: 'إدارة الخطط', href: '/admin/subscriptions' },
+    { icon: '📢', title: 'الإعلانات', desc: 'موافقة ونشر', href: '/admin/manage/announcements' },
+    { icon: '⭐', title: 'التقييمات', desc: 'مراجعة وردود', href: '/admin/manage/reviews' },
+    { icon: '💰', title: 'الاشتراكات', desc: 'إدارة الخطط', href: '/admin/manage/entities' },
     { icon: '⚙️', title: 'الإعدادات', desc: 'المنصة والألوان', href: '/admin/settings' },
-    { icon: '🔧', title: 'الصيانة', desc: 'النسخ والأمان', href: '/admin/maintenance' },
+    { icon: '🔧', title: 'الصيانة', desc: 'النسخ والأمان', href: '/admin/backup' },
   ];
 
   return (
@@ -74,7 +80,7 @@ export default function AdminDashboard() {
           <div className="admin-brand">
             <div className="admin-brand-name">
               <span className="admin-brand-mark">س</span>
-              <span>لوحة الإدارة</span>
+              <span>{t("admin.title")}</span>
             </div>
             <button onClick={logout} style={{ color: '#fca5a5', fontSize: 13, fontWeight: 800, padding: 8, background: 'rgba(220,38,38,.1)', borderRadius: 10, border: '1px solid rgba(220,38,38,.2)', cursor: 'pointer' }}>
               خروج
@@ -86,12 +92,12 @@ export default function AdminDashboard() {
       </header>
 
       <div className="admin-stats">
-        <div className="admin-stat"><div className="admin-stat-val">{stats.entities}</div><div className="admin-stat-lbl">كيانات</div></div>
-        <div className="admin-stat"><div className="admin-stat-val">{stats.services + stats.products}</div><div className="admin-stat-lbl">خدمات ومنتجات</div></div>
-        <div className="admin-stat"><div className="admin-stat-val">{stats.orders}</div><div className="admin-stat-lbl">طلبات</div></div>
-        <div className="admin-stat"><div className="admin-stat-val">{stats.sos}</div><div className="admin-stat-lbl">بلاغات SOS</div></div>
-        <div className="admin-stat"><div className="admin-stat-val">{stats.categories}</div><div className="admin-stat-lbl">أقسام</div></div>
-        <div className="admin-stat"><div className="admin-stat-val">{stats.reviews}</div><div className="admin-stat-lbl">تقييمات</div></div>
+        <div className="admin-stat"><div className="admin-stat-val">{stats.entities}</div><div className="admin-stat-lbl">{t("admin.entities") || "كيانات"}</div></div>
+        <div className="admin-stat"><div className="admin-stat-val">{stats.services + stats.products}</div><div className="admin-stat-lbl">{t("admin.services") || "خدمات ومنتجات"}</div></div>
+        <div className="admin-stat"><div className="admin-stat-val">{stats.orders}</div><div className="admin-stat-lbl">{t("orders.title")}</div></div>
+        <div className="admin-stat"><div className="admin-stat-val">{stats.sos}</div><div className="admin-stat-lbl">{t("admin.sos") || "بلاغات SOS"}</div></div>
+        <div className="admin-stat"><div className="admin-stat-val">{stats.categories}</div><div className="admin-stat-lbl">{t("app.categories")}</div></div>
+        <div className="admin-stat"><div className="admin-stat-val">{stats.reviews}</div><div className="admin-stat-lbl">{t("common.reviews")}</div></div>
       </div>
 
       <div className="admin-menu">

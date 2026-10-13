@@ -1,4 +1,8 @@
 'use client';
+
+// Safe date for hydration
+const __safeDate = (d) => (typeof window !== 'undefined' ? __safeDate(d) : __safeDate(0));
+
 import { useState, useEffect, useRef } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
@@ -62,7 +66,7 @@ export default function CustomerChat() {
           <div key={m.id} className={`chat-msg ${m.sender}`}>
             {m.body}
             <div className="chat-msg-time">
-              {new Date(m.created_at).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}
+              {__safeDate(m.created_at).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}
             </div>
           </div>
         ))}

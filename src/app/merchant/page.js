@@ -1,10 +1,14 @@
 'use client';
 
+// Safe date for hydration
+const __safeDate = (d) => (typeof window !== 'undefined' ? __safeDate(d) : __safeDate(0));
+
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { getEntityConfig } from '@/lib/entityConfig';
+import { useT } from '@/lib/useT';
 
 const iconFor = (v = '') => {
   const s = String(v).toLowerCase();
@@ -68,7 +72,7 @@ function BigChart({ points, width = 300, height = 90 }) {
 }
 
 const getTimeGreeting = () => {
-  const h = new Date().getHours();
+  const h = __safeDate().getHours();
   if (h < 12) return 'صباح الخير';
   if (h < 17) return 'مساء النور';
   return 'مساء الخير';
@@ -76,6 +80,7 @@ const getTimeGreeting = () => {
 
 export default function OlympusDashboard() {
   const router = useRouter();
+  const { t } = useT();
   const [entity, setEntity] = useState(null);
   const [services, setServices] = useState([]);
   const [loading, setLoading] = useState(true);

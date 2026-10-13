@@ -1,5 +1,8 @@
 'use client';
 
+// Safe date for hydration
+const __safeDate = (d) => (typeof window !== 'undefined' ? __safeDate(d) : __safeDate(0));
+
 import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
@@ -46,7 +49,7 @@ export default function InvoicePage() {
   }
 
   const items = Array.isArray(order.items) ? order.items : [];
-  const date = new Date(order.created_at).toLocaleString('ar-EG', {
+  const date = __safeDate(order.created_at).toLocaleString('ar-EG', {
     year: 'numeric', month: 'long', day: 'numeric',
     hour: '2-digit', minute: '2-digit',
   });

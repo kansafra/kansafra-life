@@ -1,8 +1,12 @@
 'use client';
 
+// Safe date for hydration
+const __safeDate = (d) => (typeof window !== 'undefined' ? __safeDate(d) : __safeDate(0));
+
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
+import { useT } from '@/lib/useT';
 
 const CATEGORIES = [
   { key: 'medical',  label: 'طبي',    icon: '🚑', desc: 'إسعاف / حالة صحية' },
@@ -13,7 +17,7 @@ const CATEGORIES = [
 ];
 
 const genRefCode = () => {
-  const d = new Date();
+  const d = __safeDate();
   const yy = String(d.getFullYear()).slice(-2);
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   const dd = String(d.getDate()).padStart(2, '0');
@@ -23,6 +27,7 @@ const genRefCode = () => {
 
 export default function SosPage() {
   const router = useRouter();
+  const { t } = useT();
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
   const [category, setCategory] = useState('');
@@ -111,7 +116,7 @@ export default function SosPage() {
         </div>
         <div className="sos-success">
           <div className="sos-success-icon"><span className="chk">✓</span></div>
-          <h1 className="sos-success-title">تم إرسال البلاغ</h1>
+          <h1 className="sos-success-title">{t("sos.success")}</h1>
           <p className="sos-success-sub">
             تم استلام بلاغك بنجاح، سيتم التعامل معه في أقرب وقت.
             <br />احتفظ برقم البلاغ لمتابعة الحالة.
@@ -149,7 +154,7 @@ export default function SosPage() {
         <div className="sos-pulse-ring">
           <div className="sos-pulse-icon">🚨</div>
         </div>
-        <h1 className="sos-title">نظام الطوارئ</h1>
+        <h1 className="sos-title">{t("sos.title")}</h1>
         <p className="sos-subtitle">
           سيتم إرسال بلاغك للجهات المختصة فوراً
         </p>

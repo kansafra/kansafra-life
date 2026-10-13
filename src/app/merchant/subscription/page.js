@@ -1,4 +1,8 @@
 'use client';
+
+// Safe date for hydration
+const __safeDate = (d) => (typeof window !== 'undefined' ? __safeDate(d) : __safeDate(0));
+
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -41,7 +45,7 @@ export default function SubscriptionPage() {
       price: plan.price,
       currency: 'USD',
       features: plan.features,
-      expires_at: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      expires_at: __safeDate(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
     };
     if (current) {
       await supabase.from('subscriptions').update(payload).eq('id', current.id);
@@ -70,7 +74,7 @@ export default function SubscriptionPage() {
             <div className="debt-stat-lbl">الباقة الحالية</div>
             {current.expires_at && (
               <div style={{ fontSize: 11, color: 'var(--n-500)', marginTop: 8, fontWeight: 700 }}>
-                تنتهي: {new Date(current.expires_at).toLocaleDateString('ar-EG')}
+                تنتهي: {__safeDate(current.expires_at).toLocaleDateString('ar-EG')}
               </div>
             )}
           </div>

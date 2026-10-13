@@ -1,5 +1,8 @@
 'use client';
 
+// Safe date for hydration
+const __safeDate = (d) => (typeof window !== 'undefined' ? __safeDate(d) : __safeDate(0));
+
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -105,9 +108,7 @@ export default function LoginPage() {
           {loading ? '... جارٍ التحقق' : '→ تسجيل الدخول'}
         </button>
 
-        <div className="login-hint">
-          حساب تجريبي: <strong>merchant1</strong> / <strong>sanad123</strong>
-        </div>
+        
       </form>
     </div>
   );

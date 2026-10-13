@@ -1,4 +1,8 @@
 'use client';
+
+// Safe date for hydration
+const __safeDate = (d) => (typeof window !== 'undefined' ? __safeDate(d) : __safeDate(0));
+
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -31,7 +35,7 @@ export default function AdminSupport() {
     await supabase.from('support_tickets').update({
       reply: replyText,
       status: 'resolved',
-      replied_at: new Date().toISOString(),
+      replied_at: __safeDate().toISOString(),
     }).eq('id', t.id);
     setReplying(null);
     setReplyText('');
@@ -75,7 +79,7 @@ export default function AdminSupport() {
                 </span>
               </div>
               <div className="ticket-user" style={{ color: 'rgba(255,255,255,.5)' }}>
-                {t.user_name} · {t.user_phone} · {new Date(t.created_at).toLocaleDateString('ar-EG')}
+                {t.user_name} · {t.user_phone} · {__safeDate(t.created_at).toLocaleDateString('ar-EG')}
               </div>
               <div className="ticket-message" style={{ background: 'rgba(255,255,255,.04)', color: 'rgba(255,255,255,.75)' }}>{t.message}</div>
               {t.reply && (

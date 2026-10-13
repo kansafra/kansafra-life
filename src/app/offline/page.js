@@ -1,4 +1,8 @@
 'use client';
+
+// Safe date for hydration
+const __safeDate = (d) => (typeof window !== 'undefined' ? __safeDate(d) : __safeDate(0));
+
 export default function OfflinePage() {
   return (
     <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', background: 'linear-gradient(160deg, #05402d, #0a6b50)', color: '#fff', textAlign: 'center', padding: 24 }}>

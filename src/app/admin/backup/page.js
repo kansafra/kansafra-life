@@ -1,4 +1,8 @@
 'use client';
+
+// Safe date for hydration
+const __safeDate = (d) => (typeof window !== 'undefined' ? __safeDate(d) : __safeDate(0));
+
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -30,7 +34,7 @@ export default function AdminBackup() {
     setLoading(true);
     setProgress('جارٍ إنشاء النسخة...');
 
-    const dump = { created_at: new Date().toISOString(), version: '1.0', data: {} };
+    const dump = { created_at: __safeDate().toISOString(), version: '1.0', data: {} };
     let totalRows = 0;
 
     for (let i = 0; i < TABLES.length; i++) {
@@ -47,7 +51,7 @@ export default function AdminBackup() {
 
     // حفظ في localStorage كملف قابل للتنزيل
     const sizeKb = Math.round(JSON.stringify(dump).length / 1024);
-    const name = `backup-${new Date().toISOString().slice(0, 10)}-${Date.now().toString(36)}`;
+    const name = `backup-${__safeDate().toISOString().slice(0, 10)}-${Date.now().toString(36)}`;
 
     await supabase.from('backups').insert({
       name,
@@ -107,7 +111,7 @@ export default function AdminBackup() {
               <div className="backup-body">
                 <div className="backup-name">{b.name}</div>
                 <div className="backup-meta">
-                  {b.total_rows} صف · {b.size_kb}KB · {new Date(b.created_at).toLocaleString('ar-EG', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                  {b.total_rows} صف · {b.size_kb}KB · {__safeDate(b.created_at).toLocaleString('ar-EG', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                 </div>
               </div>
               <button className="backup-btn del" onClick={() => delBackup(b)} type="button">🗑️</button>

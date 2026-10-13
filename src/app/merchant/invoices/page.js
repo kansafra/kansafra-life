@@ -1,4 +1,8 @@
 'use client';
+
+// Safe date for hydration
+const __safeDate = (d) => (typeof window !== 'undefined' ? __safeDate(d) : __safeDate(0));
+
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -74,7 +78,7 @@ export default function MerchantInvoices() {
                 <div className="inv-code">{o.order_code}</div>
                 <div className="inv-customer">{o.customer_name} · {o.customer_phone}</div>
                 <div style={{ fontSize: 10.5, color: 'var(--n-400)', fontWeight: 600, marginTop: 3 }}>
-                  {new Date(o.created_at).toLocaleString('ar-EG', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                  {__safeDate(o.created_at).toLocaleString('ar-EG', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                 </div>
               </div>
               <div className="inv-amount">{Number(o.total || 0).toLocaleString()}</div>

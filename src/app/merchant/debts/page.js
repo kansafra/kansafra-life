@@ -1,4 +1,8 @@
 'use client';
+
+// Safe date for hydration
+const __safeDate = (d) => (typeof window !== 'undefined' ? __safeDate(d) : __safeDate(0));
+
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -31,14 +35,14 @@ export default function MerchantDebts() {
     setLoading(false);
   }
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = __safeDate().toISOString().slice(0, 10);
 
   const debtStatus = (d) => {
     const amount = Number(d.amount) || 0;
     const paid = Number(d.paid) || 0;
     if (paid >= amount) return 'paid';
     if (d.due_date && d.due_date < today) return 'overdue';
-    if (d.due_date && (new Date(d.due_date) - new Date()) / (1000 * 60 * 60 * 24) < 7) return 'warning';
+    if (d.due_date && (__safeDate(d.due_date) - __safeDate()) / (1000 * 60 * 60 * 24) < 7) return 'warning';
     return 'active';
   };
 
@@ -208,7 +212,7 @@ export default function MerchantDebts() {
 
                 {d.due_date && (
                   <div style={{ fontSize: 11.5, color: 'var(--n-500)', fontWeight: 700, marginBottom: 8 }}>
-                    📅 الاستحقاق: {new Date(d.due_date).toLocaleDateString('ar-EG')}
+                    📅 الاستحقاق: {__safeDate(d.due_date).toLocaleDateString('ar-EG')}
                   </div>
                 )}
 

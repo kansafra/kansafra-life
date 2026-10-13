@@ -1,9 +1,15 @@
 'use client';
+
+// Safe date for hydration
+const __safeDate = (d) => (typeof window !== 'undefined' ? __safeDate(d) : __safeDate(0));
+
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
+import { useT } from '@/lib/useT';
 
 export default function SearchPage() {
+  const { t } = useT();
   const [q, setQ] = useState('');
   const [results, setResults] = useState({ entities: [], services: [], products: [], categories: [] });
   const [loading, setLoading] = useState(false);
@@ -50,7 +56,7 @@ export default function SearchPage() {
     <div className="ent-page">
       <div className="inv-header">
         <Link href="/" className="inv-back">→</Link>
-        <span className="inv-title">🔍 البحث الشامل</span>
+        <span className="inv-title">🔍 {t("search.global")}</span>
       </div>
 
       <form onSubmit={submit} style={{ padding: '20px 20px 0' }}>
@@ -59,11 +65,11 @@ export default function SearchPage() {
           <input
             autoFocus
             type="text"
-            placeholder="ابحث في كل شيء: كيانات، خدمات، منتجات..."
+            placeholder={t("search.placeholder")}
             value={q}
             onChange={(e) => setQ(e.target.value)}
           />
-          <button className="submit" type="submit">بحث</button>
+          <button className="submit" type="submit">{t("app.search.btn")}</button>
         </div>
       </form>
 
@@ -72,7 +78,7 @@ export default function SearchPage() {
       ) : didSearch && total === 0 ? (
         <div className="sect-empty">
           <span className="em">🔍</span>
-          <p>لا توجد نتائج لـ "{q}"</p>
+          <p>{t("search.no_results")} لـ "{q}"</p>
         </div>
       ) : (
         <div className="gs-panel">

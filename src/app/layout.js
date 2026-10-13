@@ -1,6 +1,8 @@
+export const dynamic = 'force-dynamic';
 import './globals.css';
 import ServiceWorkerRegistrar from '@/components/ServiceWorkerRegistrar';
 import InstallPrompt from '@/components/InstallPrompt';
+import NotificationSetup from '@/components/NotificationSetup';
 
 export const metadata = {
   manifest: '/manifest.json',
@@ -34,7 +36,7 @@ export default function RootLayout({ children }) {
           rel="stylesheet"
         />
       </head>
-      <body>{children}<ServiceWorkerRegistrar /><InstallPrompt /></body>
+      <body>{children}<ServiceWorkerRegistrar /><InstallPrompt /><NotificationSetup /></body>
     </html>
   );
 }

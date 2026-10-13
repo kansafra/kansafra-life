@@ -1,4 +1,8 @@
 'use client';
+
+// Safe date for hydration
+const __safeDate = (d) => (typeof window !== 'undefined' ? __safeDate(d) : __safeDate(0));
+
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -9,6 +13,7 @@ export default function AdminAnalytics() {
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({ views: 0, actions: 0, today: 0, week: 0 });
+  const [days, setDays] = useState([]);
 
   useEffect(() => {
     let stored = null;
@@ -23,28 +28,30 @@ export default function AdminAnalytics() {
     const list = Array.isArray(data) ? data : [];
     setLogs(list);
 
-    const today = new Date().toISOString().slice(0, 10);
-    const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString();
+    const now = __safeDate();
+    const today = now.toISOString().slice(0, 10);
+    const weekAgo = __safeDate(now.getTime() - 7 * 86400000).toISOString();
     setStats({
       views: list.filter((x) => x.action === 'page_view').length,
       actions: list.filter((x) => x.action !== 'page_view').length,
       today: list.filter((x) => x.created_at?.slice(0, 10) === today).length,
       week: list.filter((x) => x.created_at >= weekAgo).length,
     });
+
+    const daysData = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = __safeDate(now);
+      d.setDate(d.getDate() - i);
+      const key = d.toISOString().slice(0, 10);
+      daysData.push({
+        day: d.toLocaleDateString('ar-EG', { weekday: 'short' }),
+        count: list.filter((x) => x.created_at?.slice(0, 10) === key).length,
+      });
+    }
+    setDays(daysData);
     setLoading(false);
   }
 
-  // Sparkline بيانات آخر 7 أيام
-  const days = [];
-  for (let i = 6; i >= 0; i--) {
-    const d = new Date();
-    d.setDate(d.getDate() - i);
-    const key = d.toISOString().slice(0, 10);
-    days.push({
-      day: d.toLocaleDateString('ar-EG', { weekday: 'short' }),
-      count: logs.filter((x) => x.created_at?.slice(0, 10) === key).length,
-    });
-  }
   const maxCount = Math.max(...days.map((d) => d.count), 1);
 
   return (
@@ -98,7 +105,7 @@ export default function AdminAnalytics() {
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
               <span style={{ fontSize: 12, fontWeight: 800, color: '#fff' }}>{l.action}</span>
               <span style={{ fontSize: 10, color: 'rgba(255,255,255,.3)', fontFamily: 'monospace' }}>
-                {new Date(l.created_at).toLocaleString('ar-EG', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                {__safeDate(l.created_at).toLocaleString('ar-EG', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
               </span>
             </div>
             {l.target_id && <div style={{ fontSize: 10.5, color: 'rgba(255,255,255,.4)', fontFamily: 'monospace', direction: 'ltr', textAlign: 'right' }}>{l.target_id}</div>}
