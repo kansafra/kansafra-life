@@ -1,0 +1,92 @@
+@import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800;900&display=swap');
+
+:root {
+  --green: #087f5b;
+  --green-dark: #075c45;
+  --green-bright: #16a875;
+  --green-pale: #eaf8f1;
+  --ink: #142a24;
+  --muted: #73827b;
+  --line: #e8eee9;
+  --surface: #ffffff;
+  --page: #f8faf8;
+  --font: 'Cairo', Tahoma, Arial, sans-serif;
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; scroll-padding-top: 90px; }
+body {
+  margin: 0;
+  background: var(--page);
+  color: var(--ink);
+  font-family: var(--font);
+  -webkit-font-smoothing: antialiased;
+}
+button, input { font: inherit; }
+button, a { -webkit-tap-highlight-color: transparent; }
+a { color: inherit; text-decoration: none; }
+button { cursor: pointer; }
+::selection { background: #c7f0dc; color: #064b37; }
+
+.topbar {
+  height: 82px;
+  padding: 0 max(5.5%, calc((100% - 1240px) / 2));
+  background: rgba(255,255,255,.96);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 28px;
+  border-bottom: 1px solid #edf1ed;
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  backdrop-filter: blur(16px);
+}
+.brand { display: inline-flex; align-items: center; gap: 11px; flex-shrink: 0; }
+.brand-mark {
+  width: 44px; height: 44px; border-radius: 15px;
+  background: linear-gradient(145deg, #12a978, #05684d);
+  color: white; display: grid; place-items: center;
+  box-shadow: 0 6px 15px #087f5b2a;
+  transform: rotate(-3deg);
+}
+.brand-mark span { font-size: 27px; font-weight: 900; transform: rotate(3deg); }
+.brand-copy { display: flex; flex-direction: column; line-height: 1.15; }
+.brand-copy strong { font-size: 22px; font-weight: 900; letter-spacing: -.7px; }
+.brand-copy small { color: var(--green); font: 700 10px Arial,sans-serif; letter-spacing: 2.5px; margin-top: 4px; }
+.nav-links { display: flex; align-items: center; gap: 34px; }
+.nav-links a { color: #66756d; fon
+
+cd ~/sanad || exit 1
+
+echo "===== فحص ملفات سند ====="
+
+node --input-type=module <<'EOF'
+import fs from "node:fs";
+
+for (const file of [
+  "src/app/page.js",
+  "src/app/globals.css",
+  "src/app/layout.js",
+  "src/lib/supabase.js",
+  ".env.local"
+]) {
+  if (!fs.existsSync(file)) {
+    console.log("❌ الملف مفقود:", file);
+    continue;
+  }
+
+  const content = fs.readFileSync(file, "utf8");
+  console.log(
+    (content.trim() ? "✅" : "⚠️"),
+    file,
+    "-",
+    content.length,
+    "حرف"
+  );
+}
+
+const css = fs.readFileSync("src/app/globals.css", "utf8");
+console.log(
+  "\nنهاية ملف التصميم:\n" + css.slice(-500)
+);

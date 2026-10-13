@@ -1,0 +1,3 @@
+'use client';
+import SectionPage from '@/components/SectionPage';
+export default function Page() { return <SectionPage sectionKey="jobs" />; }

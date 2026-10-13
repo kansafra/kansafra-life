@@ -1,0 +1,34 @@
+{
+  "project": "SANAD",
+  "checkedAt": "2026-10-13T00:42:50.849Z",
+  "tables": [
+    {
+      "name": "service_categories",
+      "readable": true,
+      "columns": [
+        "id",
+        "name",
+        "slug",
+        "description",
+        "icon",
+        "sort_order",
+        "is_active",
+        "created_at",
+        "updated_at"
+      ],
+      "errorCode": null
+    },
+    {
+      "name": "services",
+      "readable": true,
+      "columns": [],
+      "errorCode": null
+    },
+    {
+      "name": "announcements",
+      "readable": true,
+      "columns": [],
+      "errorCode": null
+    }
+  ]
+}

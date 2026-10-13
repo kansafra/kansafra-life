@@ -1,0 +1,210 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+import { supabase } from '@/lib/supabase';
+import { getEntityConfig } from '@/lib/entityConfig';
+
+const iconFor = (v = '') => {
+  const s = String(v).toLowerCase();
+  if (/food|مطعم|طعام/.test(s)) return '🍽️';
+  if (/shop|store|متجر|بقالة/.test(s)) return '🏪';
+  if (/health|clinic|صحة|عياد|أسنان|pharm|دواء/.test(s)) return '💊';
+  if (/edu|school|تعليم|مدرس/.test(s)) return '🎓';
+  if (/transport|نقل/.test(s)) return '🚚';
+  if (/mosque|جامع|مسجد/.test(s)) return '🕌';
+  if (/charity|خير|تبرع/.test(s)) return '🎁';
+  if (/council|مجلس|بلد/.test(s)) return '🏛️';
+  return '✦';
+};
+
+export default function MerchantDashboard() {
+  const router = useRouter();
+  const [entity, setEntity] = useState(null);
+  const [services, setServices] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let stored = null;
+    try {
+      const raw = localStorage.getItem('sanad_entity');
+      if (raw) stored = JSON.parse(raw);
+    } catch {}
+    if (!stored) { router.replace('/login'); return; }
+    setEntity(stored);
+    loadServices(stored);
+  }, [router]);
+
+  async function loadServices(ent) {
+    if (!supabase) { setLoading(false); return; }
+    try {
+      const { data } = await supabase
+        .from('services')
+        .select('*')
+        .eq('provider_name', ent.display_name)
+        .order('created_at', { ascending: false });
+      if (Array.isArray(data)) setServices(data);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function handleLogout() {
+    try { localStorage.removeItem('sanad_entity'); } catch {}
+    router.push('/');
+  }
+
+  if (!entity) {
+    return (
+      <div className="merchant-page">
+        <div className="merchant-empty" style={{ margin: 60 }}>
+          <span className="em">⏳</span>
+          <h3>جارٍ التحميل...</h3>
+        </div>
+      </div>
+    );
+  }
+
+  const cfg = getEntityConfig(entity.entity_type);
+
+  const statsData = {
+    services: services.length,
+    orders: 0,
+    views: 0,
+    today: 0,
+    patients: 0,
+    pending: 0,
+    medicines: 0,
+    onCall: 0,
+    students: 0,
+    classes: 0,
+    teachers: 0,
+    lessons: 0,
+    circles: 0,
+    donations: 0,
+    announcements: 0,
+    complaints: 0,
+    cases: 0,
+    beneficiaries: 0,
+    requests: 0,
+  };
+
+  return (
+    <div className="merchant-page">
+
+      <header className="merchant-header">
+        <div className="merchant-header-inner">
+          <div className="merchant-toprow">
+            <span className="merchant-greeting">لوحة {cfg.label}</span>
+            <button className="merchant-logout" onClick={handleLogout} aria-label="خروج">✕</button>
+          </div>
+
+          <div className="merchant-identity">
+            <div className="merchant-logo">{cfg.icon}</div>
+            <div>
+              <h1 className="merchant-name">{entity.display_name}</h1>
+              <span className="merchant-type">{cfg.label}</span>
+            </div>
+          </div>
+
+          <p style={{
+            marginTop: 16,
+            fontSize: 12.5,
+            fontWeight: 500,
+            color: 'rgba(255,255,255,.6)',
+            lineHeight: 1.6,
+          }}>
+            {cfg.tagline}
+          </p>
+        </div>
+      </header>
+
+      <div className="merchant-body">
+
+        <div className="merchant-stats">
+          {cfg.stats.map((s) => (
+            <div key={s.key} className="merchant-stat">
+              <div className="merchant-stat-val">{statsData[s.key] ?? 0}</div>
+              <div className="merchant-stat-lab">{s.label}</div>
+            </div>
+          ))}
+        </div>
+
+        <div className="merchant-actions">
+          {cfg.actions.map((a) => {
+            const isPrimary = a.primary;
+            const card = (
+              <div className={`merchant-action ${isPrimary ? 'primary' : ''}`}>
+                <div className="merchant-action-icon">{a.icon}</div>
+                <div>
+                  <div className="merchant-action-title">{a.title}</div>
+                  <div className="merchant-action-desc">{a.desc}</div>
+                </div>
+              </div>
+            );
+            return a.href ? (
+              <Link key={a.id} href={a.href} style={{ textDecoration: 'none', gridColumn: isPrimary ? 'span 2' : undefined }}>
+                {card}
+              </Link>
+            ) : (
+              <button key={a.id} type="button" style={{ gridColumn: isPrimary ? 'span 2' : undefined, textAlign: 'inherit' }}>
+                {card}
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="merchant-services">
+          <div className="merchant-services-head">
+            <h2 className="merchant-services-title">خدماتي المنشورة</h2>
+            <span className="merchant-services-count">{services.length} خدمة</span>
+          </div>
+
+          {loading ? (
+            <div className="merchant-empty">
+              <span className="em">⏳</span>
+              <h3>جارٍ التحميل...</h3>
+            </div>
+          ) : services.length === 0 ? (
+            <div className="merchant-empty">
+              <span className="em">📦</span>
+              <h3>لا توجد خدمات بعد</h3>
+              <p>أضف أول خدمة ليبدأ الزوار برؤيتها</p>
+              <Link href="/merchant/services/new" className="merchant-empty-btn">
+                + إضافة خدمة
+              </Link>
+            </div>
+          ) : (
+            services.map((s) => (
+              <div key={s.id} className="merchant-service-item">
+                <div className="merchant-service-icon">{iconFor(s.title)}</div>
+                <div className="merchant-service-info">
+                  <div className="merchant-service-name">{s.title}</div>
+                  <div className="merchant-service-meta">
+                    {s.is_featured && <span className="badge-feat">⭐ مميز</span>}
+                    <span className="badge-cat">{s.status || 'نشط'}</span>
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        <Link href="/" style={{
+          display: 'block',
+          textAlign: 'center',
+          padding: '14px',
+          color: 'var(--f-700)',
+          fontWeight: 800,
+          fontSize: 13.5,
+          marginTop: 20,
+        }}>
+          → العودة للموقع الرئيسي
+        </Link>
+      </div>
+    </div>
+  );
+}
