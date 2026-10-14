@@ -6,7 +6,6 @@ const __safeDate = (d) => (typeof window !== 'undefined' ? __safeDate(d) : __saf
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useT } from '@/lib/useT';
-import LanguageSwitcher from '@/components/LanguageSwitcher';
 import CommunityPicker from '@/components/CommunityPicker';
 import HeroCarousel from '@/components/HeroCarousel';
 import PrayerBar from '@/components/PrayerBar';
@@ -53,7 +52,21 @@ const LUCIDE_TO_EMOJI = {
   "users":"👥","user":"👤","phone":"📞",
   "map-pin":"📍","star":"⭐","tag":"🏷️",
   "gift":"🎁","award":"🏆","briefcase":"💼",
-  "shopping-cart":"🛒","receipt":"🧾"
+  "shopping-cart":"🛒","receipt":"🧾",
+  "banknote":"💱","coins":"💰","dollar-sign":"💵","wallet":"👛",
+  "piggy-bank":"🐷","credit-card":"💳","calculator":"🧮",
+  "moon":"🌙","sunrise":"🌅","sunset":"🌇","clock":"🕐",
+  "calendar":"📅","alarm-clock":"⏰","timer":"⏱️",
+  "shield":"🛡️","lock":"🔒","key":"🔑","fingerprint":"🔒",
+  "wifi":"📶","smartphone":"📱","laptop":"💻",
+  "shirt":"👕","glasses":"👓","watch":"⌚",
+  "church":"⛪","warehouse":"🏭","factory":"🏭",
+  "wheat":"🌾","grape":"🍇","apple":"🍎","fish":"🐟",
+  "hand-heart":"🤝","heart-handshake":"🤝",
+  "party-popper":"🎉","cake":"🎂","pizza":"🍕","coffee":"☕",
+  "alert-circle":"⚠️","alert-triangle":"⚠️","info":"ℹ️",
+  "check-circle":"✅","x-circle":"❌",
+  "arrow-right":"→","arrow-left":"←","chevron-right":"›",
 };
 
 const resolveIcon = (iconOrName, name) => {
@@ -104,7 +117,7 @@ export default function Home() {
       try {
         const [c, s, f, a] = await Promise.all([
           supabase.from('service_categories').select('*')
-            .eq('is_active', true).order('sort_order', { ascending: true }),
+            .eq('is_active', true).eq('is_visible', true).order('sort_order', { ascending: true }),
           supabase.from('services').select('*')
             .order('created_at', { ascending: false }).limit(60),
           supabase.from('services').select('*')
@@ -184,7 +197,7 @@ export default function Home() {
           <div className="hero-top">
             <CommunityPicker />
             <div className="hero-top-actions">
-              <LanguageSwitcher variant="inline" />
+              
               <button className="icon-btn" type="button" aria-label="الإشعارات">
                 🔔
                 {topAnnouncement && <span className="dot-badge" />}
@@ -239,7 +252,7 @@ export default function Home() {
       </div>
 
       <div className="cats-grid stagger" id="cats">
-        {categories.filter((c) => c.id !== 'all').slice(0, 19).map((c) => (
+        {categories.filter((c) => c.id !== 'all' && c.is_visible !== false).slice(0, 24).map((c) => (
           <button
             key={c.id}
             className="cat-tile"
@@ -277,7 +290,7 @@ export default function Home() {
         >
           الكل
         </button>
-        {categories.filter((c) => c.id !== 'all').map((c) => (
+        {categories.filter((c) => c.id !== 'all' && c.is_visible !== false).map((c) => (
           <button
             key={c.id}
             className={`chip ${activeCategory === c.id ? 'active' : ''}`}
@@ -338,7 +351,7 @@ export default function Home() {
           <div className="section-head-col">
             <span className="section-eyebrow">{search ? 'نتائج البحث' : 'قريب منك'}</span>
             <h2 className="section-title">
-              <span className="bar" /> {search ? 'النتائج' : '{t("app.services")}'}
+              <span className="bar" /> {search ? 'النتائج' : t("app.services")}
             </h2>
           </div>
           <span className="section-action" style={{ pointerEvents: 'none' }}>
@@ -468,17 +481,8 @@ export default function Home() {
           </a>
         </div></footer>
 
-      <button
-        className="sos"
-        type="button"
-        onClick={() => router.push('/sos')}
-        aria-label="طوارئ"
-      >
-        SOS
-      </button>
 
       <button
-        className="sos-float" style={{ width: 54, height: 54, fontSize: 11.5, bottom: 100 }}
       >
         SOS
       </button>
@@ -490,11 +494,11 @@ export default function Home() {
         <button className={`nav-btn ${activeTab === 'cats' ? 'active' : ''}`} onClick={() => goTo('cats')} type="button">
           <span className="nav-icon">▦</span><span>الأقسام</span>
         </button>
-        <button className={`nav-btn ${activeTab === 'fav' ? 'active' : ''}`} onClick={() => router.push('/favorites')} type="button">
-          <span className="nav-icon">❤️</span><span>مفضلتي</span>
+        <button className={`nav-btn ${activeTab === 'cart' ? 'active' : ''}`} onClick={() => router.push('/cart')} type="button">
+          <span className="nav-icon">🛒</span><span>السلة</span>
         </button>
-        <button className={`nav-btn ${activeTab === 'notif' ? 'active' : ''}`} onClick={() => router.push('/notifications')} type="button">
-          <span className="nav-icon">🔔</span><span>الإشعارات</span>
+        <button className={`nav-btn ${activeTab === 'calc' ? 'active' : ''}`} onClick={() => router.push('/exchange')} type="button">
+          <span className="nav-icon">💱</span><span>الحاسبة</span>
         </button>
         <button className={`nav-btn ${activeTab === 'account' ? 'active' : ''}`} onClick={() => {
           let stored = null;
@@ -510,14 +514,6 @@ export default function Home() {
         <div className="sheet-bg" onClick={() => setSelected(null)}>
           <div className="sheet" onClick={(e) => e.stopPropagation()}>
             <div className="sheet-handle" />
-            <button
-              className="sheet-close"
-              type="button"
-              onClick={() => setSelected(null)}
-              aria-label="إغلاق"
-            >
-              ×
-            </button>
 
             <div className="sheet-symbol">
               {iconFor(selected.title || selected.category || '')}

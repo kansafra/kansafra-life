@@ -3,6 +3,7 @@ import './globals.css';
 import ServiceWorkerRegistrar from '@/components/ServiceWorkerRegistrar';
 import InstallPrompt from '@/components/InstallPrompt';
 import NotificationSetup from '@/components/NotificationSetup';
+import AzkarBar from '@/components/AzkarBar';
 
 export const metadata = {
   manifest: '/manifest.json',
@@ -36,7 +37,7 @@ export default function RootLayout({ children }) {
           rel="stylesheet"
         />
       </head>
-      <body>{children}<ServiceWorkerRegistrar /><InstallPrompt /><NotificationSetup /></body>
+      <body>{children}<AzkarBar /><ServiceWorkerRegistrar /><InstallPrompt /><NotificationSetup /></body>
     </html>
   );
 }
