@@ -1,7 +1,5 @@
 'use client';
 
-// Safe date for hydration
-const __safeDate = (d) => (typeof window !== 'undefined' ? __safeDate(d) : __safeDate(0));
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
@@ -58,7 +56,7 @@ export default function AdminAudit() {
                   {it.ip && <span style={{ fontFamily: 'monospace', direction: 'ltr' }}>{it.ip}</span>}
                 </div>
                 <div style={{ fontSize: 10, color: 'rgba(255,255,255,.3)', marginTop: 4 }}>
-                  {__safeDate(it.created_at).toLocaleString('ar-EG')}
+                  {new Date(it.created_at).toLocaleString('ar-EG')}
                 </div>
               </div>
             </div>

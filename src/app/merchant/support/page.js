@@ -1,7 +1,5 @@
 'use client';
 
-// Safe date for hydration
-const __safeDate = (d) => (typeof window !== 'undefined' ? __safeDate(d) : __safeDate(0));
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
@@ -74,7 +72,7 @@ export default function SupportPage() {
                 </span>
               </div>
               <div className="ticket-user">
-                {__safeDate(t.created_at).toLocaleString('ar-EG', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                {new Date(t.created_at).toLocaleString('ar-EG', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
               </div>
               <div className="ticket-message">{t.message}</div>
               {t.reply && (

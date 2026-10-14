@@ -1,7 +1,5 @@
 'use client';
 
-// Safe date for hydration
-const __safeDate = (d) => (typeof window !== 'undefined' ? __safeDate(d) : __safeDate(0));
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
@@ -61,6 +59,7 @@ export default function AdminDashboard() {
     
     { icon: '🏘️', title: 'إدارة البلدات', desc: 'منصات متعددة المجتمعات', href: '/admin/communities' },
     { icon: '🌳', title: 'الشجرة الجغرافية', desc: 'دولة → محافظة → بلدة → حي', href: '/admin/geography' },
+    { icon: '💱', title: 'أسعار العملات', desc: 'تحديث أسعار الصرف اليومية', href: '/admin/currency' },
     { icon: '🏢', title: 'إدارة الكيانات', desc: 'متاجر، عيادات، مدارس', href: '/admin/entities' },
     { icon: '👥', title: 'المستخدمون والصلاحيات', desc: 'المدير، المشرفون', href: '/admin/manage/entities' },
     { icon: '📊', title: 'التقارير', desc: 'مالية وتشغيلية', href: '/admin/reports' },

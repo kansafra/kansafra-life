@@ -1,7 +1,5 @@
 'use client';
 
-// Safe date for hydration
-const __safeDate = (d) => (typeof window !== 'undefined' ? __safeDate(d) : __safeDate(0));
 
 import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
@@ -84,7 +82,7 @@ export default function MosquePage() {
               <div className="lesson-title">{l.title}</div>
               <div className="lesson-meta">
                 {l.teacher_name && <span>👤 {l.teacher_name}</span>}
-                {l.scheduled_at && <span>📅 {__safeDate(l.scheduled_at).toLocaleDateString('ar-EG')}</span>}
+                {l.scheduled_at && <span>📅 {new Date(l.scheduled_at).toLocaleDateString('ar-EG')}</span>}
               </div>
               {l.content && <p style={{ fontSize: 13, color: 'var(--n-600)', lineHeight: 1.7, margin: 0 }}>{l.content}</p>}
             </div>

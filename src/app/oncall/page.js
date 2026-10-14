@@ -1,7 +1,5 @@
 'use client';
 
-// Safe date for hydration
-const __safeDate = (d) => (typeof window !== 'undefined' ? __safeDate(d) : __safeDate(0));
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
@@ -14,7 +12,7 @@ export default function OnCallPage() {
   useEffect(() => {
     async function load() {
       if (!supabase) { setLoading(false); return; }
-      const today = __safeDate().toISOString().slice(0, 10);
+      const today = new Date().toISOString().slice(0, 10);
       const { data } = await supabase
         .from('oncall_shifts')
         .select('*')
@@ -57,7 +55,7 @@ export default function OnCallPage() {
               <div className="pharm-oncall-info">
                 <div className="pharm-oncall-name">{s.pharmacy_name}</div>
                 <div style={{ fontSize: 12, color: 'var(--n-500)', fontWeight: 700 }}>
-                  {__safeDate(s.shift_date).toLocaleDateString('ar-EG', { weekday: 'long', day: 'numeric', month: 'long' })}
+                  {new Date(s.shift_date).toLocaleDateString('ar-EG', { weekday: 'long', day: 'numeric', month: 'long' })}
                 </div>
                 <div className="pharm-oncall-time">{s.start_time} — {s.end_time}</div>
               </div>

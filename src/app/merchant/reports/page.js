@@ -1,7 +1,5 @@
 'use client';
 
-// Safe date for hydration
-const __safeDate = (d) => (typeof window !== 'undefined' ? __safeDate(d) : __safeDate(0));
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
@@ -39,7 +37,7 @@ export default function ReportsPage() {
     // تجميع الطلبات حسب آخر 7 أيام
     const days = [];
     for (let i = 6; i >= 0; i--) {
-      const d = __safeDate();
+      const d = new Date();
       d.setDate(d.getDate() - i);
       const key = d.toISOString().slice(0, 10);
       const count = orders.filter((o) => o.created_at?.slice(0, 10) === key).length;

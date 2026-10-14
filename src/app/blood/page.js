@@ -1,7 +1,5 @@
 'use client';
 
-// Safe date for hydration
-const __safeDate = (d) => (typeof window !== 'undefined' ? __safeDate(d) : __safeDate(0));
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
@@ -88,7 +86,7 @@ export default function BloodPage() {
                 {r.hospital && <div style={{ fontSize: 12.5, color: 'var(--n-500)', fontWeight: 600, marginBottom: 4 }}>🏥 {r.hospital}</div>}
                 {r.notes && <div style={{ fontSize: 12.5, color: 'var(--n-500)', marginBottom: 8 }}>{r.notes}</div>}
                 <div style={{ fontSize: 12, color: 'var(--n-400)', marginBottom: 12 }}>
-                  {r.units_needed} وحدة · {__safeDate(r.created_at).toLocaleDateString('ar-EG')}
+                  {r.units_needed} وحدة · {new Date(r.created_at).toLocaleDateString('ar-EG')}
                 </div>
                 <a href={`tel:${r.requester_phone}`} className="trans-btn call" style={{ display: 'flex' }}>
                   📞 اتصل الآن
@@ -109,7 +107,7 @@ export default function BloodPage() {
                   <div className="trans-info">
                     <div className="trans-name">{d.full_name}</div>
                     {d.city && <div className="trans-info-row"><strong>المدينة:</strong> {d.city}</div>}
-                    {d.last_donation && <div className="trans-info-row"><strong>آخر تبرع:</strong> {__safeDate(d.last_donation).toLocaleDateString('ar-EG')}</div>}
+                    {d.last_donation && <div className="trans-info-row"><strong>آخر تبرع:</strong> {new Date(d.last_donation).toLocaleDateString('ar-EG')}</div>}
                   </div>
                 </div>
                 <a href={`tel:${d.phone}`} className="trans-btn call" style={{ display: 'flex', marginTop: 8 }}>

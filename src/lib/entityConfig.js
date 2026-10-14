@@ -25,6 +25,11 @@ C.merchant = {
     { icon: '📦', title: 'المنتجات', href: '/merchant/manage/products' },
     { icon: '🛍️', title: 'الطلبات', href: '/merchant/manage/orders' },
     { icon: '🧾', title: 'الفواتير', href: '/merchant/invoices' },
+    { icon: '👥', title: 'العملاء', href: '/merchant/customers' },
+    { icon: '📊', title: 'المخزون', href: '/merchant/inventory' },
+    { icon: '🚚', title: 'التوصيل', href: '/merchant/delivery' },
+    { icon: '👥', title: 'الموظفون', href: '/merchant/employees' },
+    { icon: '⭐', title: 'التقييمات', href: '/merchant/reviews' },
     { icon: '💳', title: 'الدفع', href: '/merchant/payments' },
   ],
 };
@@ -41,7 +46,10 @@ C.restaurant = {
     { icon: '📋', title: 'القائمة', href: '/merchant/manage/products' },
     { icon: '🛍️', title: 'الطلبات', href: '/merchant/manage/orders' },
     { icon: '🎟️', title: 'الكوبونات', href: '/merchant/manage/coupons' },
+    { icon: '👥', title: 'العملاء', href: '/merchant/customers' },
+    { icon: '📊', title: 'المخزون', href: '/merchant/inventory' },
     { icon: '💳', title: 'الدفع', href: '/merchant/payments' },
+    { icon: '👥', title: 'الموظفون', href: '/merchant/employees' },
   ],
 };
 
@@ -57,6 +65,7 @@ C.doctor = {
     { icon: '🕐', title: 'الجدول', href: '/merchant/manage/doctor_schedules' },
     { icon: '📅', title: 'المواعيد', href: '/merchant/manage/appointments' },
     { icon: '📋', title: 'السجلات', href: '/merchant/manage/medical_records' },
+    { icon: '💊', title: 'الوصفات', href: '/merchant/prescriptions' },
     { icon: '💬', title: 'الدردشة', href: '/merchant/chat' },
   ],
 };
@@ -89,6 +98,8 @@ C.school = {
     { icon: '📚', title: 'الصفوف', href: '/merchant/manage/classes' },
     { icon: '👥', title: 'الطلاب', href: '/merchant/manage/students' },
     { icon: '📊', title: 'العلامات', href: '/merchant/manage/grades' },
+    { icon: '📋', title: 'الحضور', href: '/merchant/attendance' },
+    { icon: '💰', title: 'الرسوم', href: '/merchant/fees' },
     { icon: '📄', title: 'ملفات الصفوف', href: '/merchant/manage/class_files' },
   ],
 };
@@ -103,9 +114,9 @@ C.mosque = {
   ],
   quickActions: [
     { icon: '📖', title: 'الدروس', href: '/merchant/manage/lessons' },
+    { icon: '🗣️', title: 'خطب الجمعة', href: '/merchant/sermons' },
     { icon: '🎯', title: 'الحلقات', href: '/merchant/manage/circles' },
     { icon: '🎁', title: 'التبرعات', href: '/merchant/manage/donations' },
-    { icon: '📢', title: 'الإعلانات', href: '/merchant/manage/announcements' },
   ],
 };
 
@@ -121,7 +132,8 @@ C.council = {
     { icon: '📢', title: 'التعاميم', href: '/merchant/manage/announcements' },
     { icon: '📋', title: 'الطلبات', href: '/merchant/manage/office_requests' },
     { icon: '📩', title: 'الشكاوى', href: '/merchant/manage/office_requests' },
-    { icon: '🏗️', title: 'المشاريع', href: '/merchant/manage/office_requests' },
+    { icon: '🏗️', title: 'المشاريع', href: '/merchant/budget' },
+    { icon: '📜', title: 'الشهادات', href: '/merchant/documents' },
   ],
 };
 
@@ -173,6 +185,22 @@ C.sports = {
   ],
 };
 
+C.hotel = {
+  label: 'فندق', icon: '🏨', greeting: 'أهلًا بك', theme: T.orange,
+  tagline: 'إدارة حجوزاتك وضيوفك',
+  stats: [
+    { key: 'bookings', label: 'حجز' },
+    { key: 'guests', label: 'ضيف' },
+    { key: 'revenue', label: 'إيراد' },
+  ],
+  quickActions: [
+    { icon: '🏨', title: 'الحجوزات', href: '/merchant/bookings' },
+    { icon: '👥', title: 'الموظفون', href: '/merchant/employees' },
+    { icon: '⭐', title: 'التقييمات', href: '/merchant/reviews' },
+    { icon: '💬', title: 'الدردشة', href: '/merchant/chat' },
+  ],
+};
+
 C.memory = {
   label: 'ذاكرة رقمية', icon: '📸', greeting: 'حافظ الذاكرة', theme: T.indigo,
   tagline: 'أرشيف صور وحكايات وأماكن',
@@ -218,6 +246,23 @@ C.transport = {
     { icon: '🛣️', title: 'الخطوط', href: '/merchant/manage/vehicles' },
     { icon: '🛍️', title: 'الطلبات', href: '/merchant/manage/orders' },
     { icon: '💳', title: 'الدفع', href: '/merchant/payments' },
+  ],
+};
+
+
+C.exchange = {
+  label: 'مكتب صرافة', icon: '💱', greeting: 'أهلًا بك', theme: T.sky,
+  tagline: 'إدارة أسعار الصرف والحوالات',
+  stats: [
+    { key: 'currencies', label: 'عملة' },
+    { key: 'updates', label: 'تحديث اليوم' },
+    { key: 'transfers', label: 'حوالة' },
+  ],
+  quickActions: [
+    { icon: '💱', title: 'تحديث الأسعار', href: '/merchant/exchange-rates' },
+    { icon: '📊', title: 'التقارير', href: '/merchant/reports' },
+    { icon: '👥', title: 'العملاء', href: '/merchant/customers' },
+    { icon: '💬', title: 'الدردشة', href: '/merchant/chat' },
   ],
 };
 

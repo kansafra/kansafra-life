@@ -1,7 +1,5 @@
 'use client';
 
-// Safe date for hydration
-const __safeDate = (d) => (typeof window !== 'undefined' ? __safeDate(d) : __safeDate(0));
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
@@ -9,7 +7,7 @@ import { supabase } from '@/lib/supabase';
 
 function countdown(ends) {
   if (!ends) return '—';
-  const d = __safeDate(ends).getTime() - Date.now();
+  const d = new Date(ends).getTime() - Date.now();
   if (d <= 0) return 'منتهي';
   const days = Math.floor(d / 86400000);
   const h = Math.floor((d % 86400000) / 3600000);

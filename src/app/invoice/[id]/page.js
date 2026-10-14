@@ -1,7 +1,5 @@
 'use client';
 
-// Safe date for hydration
-const __safeDate = (d) => (typeof window !== 'undefined' ? __safeDate(d) : __safeDate(0));
 
 import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
@@ -9,6 +7,9 @@ import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { generateInvoiceQR } from '@/lib/qr';
 import ShareButtons from '@/components/ShareButtons';
+import Barcode from '@/components/Barcode';
+import { printThermal, printA4 } from '@/lib/print';
+import { toHijri } from '@/lib/hijri';
 
 export default function InvoicePage() {
   const params = useParams();
@@ -49,7 +50,7 @@ export default function InvoicePage() {
   }
 
   const items = Array.isArray(order.items) ? order.items : [];
-  const date = __safeDate(order.created_at).toLocaleString('ar-EG', {
+  const date = new Date(order.created_at).toLocaleString('ar-EG', {
     year: 'numeric', month: 'long', day: 'numeric',
     hour: '2-digit', minute: '2-digit',
   });
@@ -68,6 +69,7 @@ export default function InvoicePage() {
           <div className="invoice-meta">
             <div><strong>INV</strong> #{order.order_code}</div>
             <div>{date}</div>
+            <div style={{ color: '#0e8a66', fontWeight: 700, fontSize: 11 }}>🌙 {toHijri(new Date(order.created_at))}</div>
             <div style={{ color: '#16a34a', fontWeight: 800 }}>مدفوعة</div>
           </div>
         </div>
@@ -126,6 +128,14 @@ export default function InvoicePage() {
           <div className="qr-caption">امسح للتحقق من الفاتورة</div>
         </div>
 
+        <div style={{ textAlign: 'center', margin: '20px 0 8px' }}>
+          <Barcode value={order.order_code} width={220} height={50} />
+        </div>
+
+        <div style={{ textAlign: 'center', fontSize: 11.5, color: '#666', marginBottom: 16, fontWeight: 700 }}>
+          🌙 {toHijri(new Date(order.created_at))}
+        </div>
+
         <div className="invoice-thanks">
           شكراً لتعاملكم معنا — سند | خدماتك أقرب
         </div>
@@ -136,9 +146,8 @@ export default function InvoicePage() {
       </div>
 
       <div className="invoice-actions no-print">
-        <button className="invoice-action primary" onClick={printInvoice} type="button">
-          🖨️ طباعة / PDF
-        </button>
+        <button className="invoice-action primary" onClick={() => printA4('invoice-print-area', 'فاتورة')} type="button">🖨️ A4 / PDF</button>
+        <button className="invoice-action primary" onClick={() => printThermal('invoice-print-area', { width: '80mm', title: 'فاتورة' })} type="button" style={{ background: 'linear-gradient(135deg, #f59e0b, #d97706)' }}>🧾 80mm</button>
         <Link href="/" className="invoice-action ghost">
           الرئيسية
         </Link>

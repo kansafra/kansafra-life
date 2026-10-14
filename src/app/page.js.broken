@@ -1,0 +1,530 @@
+'use client';
+
+
+import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { useT } from '@/lib/useT';
+import LanguageSwitcher from '@/components/LanguageSwitcher';
+import CommunityPicker from '@/components/CommunityPicker';
+import HeroCarousel from '@/components/HeroCarousel';
+import PrayerBar from '@/components/PrayerBar';
+import NewsTicker from '@/components/NewsTicker';
+import FlashDeals from '@/components/FlashDeals';
+import { cacheSet, cacheGet, fetchWithCache } from '@/lib/offline';
+import { supabase } from '@/lib/supabase';
+
+const FALLBACK_CATEGORIES = [
+  { id: 'all',    name: 'الكل',            slug: 'all',        icon: '✦'  },
+  { id: 'shops',  name: 'المتاجر',          slug: 'shops',      icon: '🏪' },
+  { id: 'health', name: 'الصحة',            slug: 'health',     icon: '❤️' },
+  { id: 'mosque', name: 'المساجد',          slug: 'mosque',     icon: '🕌' },
+  { id: 'edu',    name: 'التعليم',          slug: 'education',  icon: '🎓' },
+  { id: 'trans',  name: 'النقل',            slug: 'transport',  icon: '🚚' },
+  { id: 'charity',name: 'الجمعيات الخيرية', slug: 'charity',    icon: '🎁' },
+  { id: 'public', name: 'خدمات عامة',        slug: 'public',     icon: '🏢' },
+  { id: 'food',   name: 'المطاعم',          slug: 'food',       icon: '🍽️' },
+];
+
+const iconFor = (v = '') => {
+  const s = String(v).toLowerCase();
+  if (/food|restaurant|مطعم|طعام|مأكول/.test(s))         return '🍽️';
+  if (/shop|store|market|متجر|سوق|تسوق/.test(s))          return '🏪';
+  if (/health|clinic|medical|صحة|طبي|عياد|صيدل|أسنان/.test(s)) return '❤️';
+  if (/edu|school|تعليم|مدرس|مدرسة|جامع(?!ة)|معهد/.test(s))  return '🎓';
+  if (/transport|car|نقل|سيار|توصيل/.test(s))             return '🚚';
+  if (/home|house|منزل|كهرب|سباك|صيانة/.test(s))           return '🏠';
+  if (/craft|service|حرف|مهن|نجار|باطون|لياسة|سنكري/.test(s)) return '🛠️';
+  if (/mosque|جامع|مسجد|صلاة/.test(s))                    return '🕌';
+  if (/charity|خير|تبرع|جمعية/.test(s))                   return '🎁';
+  if (/gov|بلدية|مجلس|شهادات|تصاريح/.test(s))              return '🏢';
+  return '✦';
+};
+
+const LUCIDE_TO_EMOJI = {
+  "landmark":"🕌","graduation-cap":"🎓","heart-pulse":"❤️",
+  "shopping-bag":"🛍️","store":"🏪","shield-alert":"🚨",
+  "siren":"🚨","newspaper":"📰","hand-heart":"🎁",
+  "building-2":"🏢","building":"🏢","utensils":"🍽️",
+  "utensils-crossed":"🍽️","car":"🚚","truck":"🚚",
+  "home":"🏠","wrench":"🛠️","hammer":"🛠️",
+  "heart":"❤️","stethoscope":"🩺","pill":"💊",
+  "school":"🎓","book-open":"📚","book":"📚",
+  "users":"👥","user":"👤","phone":"📞",
+  "map-pin":"📍","star":"⭐","tag":"🏷️",
+  "gift":"🎁","award":"🏆","briefcase":"💼",
+  "shopping-cart":"🛒","receipt":"🧾"
+};
+
+const resolveIcon = (iconOrName, name) => {
+  const k = String(iconOrName || '').toLowerCase().trim();
+  if (LUCIDE_TO_EMOJI[k]) return LUCIDE_TO_EMOJI[k];
+  if (typeof iconOrName === 'string' && iconOrName.length > 0 && iconOrName.length <= 4) {
+    return iconOrName;
+  }
+  return iconFor(name);
+};
+
+export default function Home() {
+  const router = useRouter();
+  const { t } = useT();
+  const [categories, setCategories]         = useState(FALLBACK_CATEGORIES);
+  const [services, setServices]             = useState([]);
+  const [featured, setFeatured]             = useState([]);
+  const [announcements, setAnnouncements]   = useState([]);
+  const [search, setSearch]                 = useState('');
+  const [activeCategory, setActiveCategory] = useState('all');
+  const [activeTab, setActiveTab]           = useState('home');
+  const [selected, setSelected]             = useState(null);
+  const [loading, setLoading]               = useState(true);
+  const [dbNotice, setDbNotice]             = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+
+    async function load() {
+      if (!supabase) {
+        if (alive) { setLoading(false); setDbNotice(true); }
+        return;
+      }
+
+      // أولاً: حمّل من الكاش
+      const cached = {
+        cats: cacheGet('cats'),
+        services: cacheGet('services'),
+        featured: cacheGet('featured'),
+        announcements: cacheGet('announcements'),
+      };
+      if (cached.cats) setCategories([FALLBACK_CATEGORIES[0], ...cached.cats]);
+      if (cached.services) setServices(cached.services);
+      if (cached.featured) setFeatured(cached.featured);
+      if (cached.announcements) setAnnouncements(cached.announcements);
+      if (cached.cats) setLoading(false);
+
+      try {
+        const [c, s, f, a] = await Promise.all([
+          supabase.from('service_categories').select('*')
+            .eq('is_active', true).order('sort_order', { ascending: true }),
+          supabase.from('services').select('*')
+            .order('created_at', { ascending: false }).limit(60),
+          supabase.from('services').select('*')
+            .eq('is_featured', true).limit(8),
+          supabase.from('announcements').select('*')
+            .order('created_at', { ascending: false }).limit(5),
+        ]);
+        if (!alive) return;
+        if (c.data?.length) {
+          setCategories([
+            FALLBACK_CATEGORIES[0],
+            ...c.data.map((x) => ({ ...x, icon: resolveIcon(x.icon, x.name) })),
+          ]);
+        }
+        if (Array.isArray(s.data)) setServices(s.data);
+        if (Array.isArray(f.data)) setFeatured(f.data);
+        if (Array.isArray(a.data)) setAnnouncements(a.data);
+        setDbNotice(Boolean(c.error || s.error || f.error || a.error));
+      } catch (e) {
+        console.error('Sanad load:', e);
+        if (alive) setDbNotice(true);
+      } finally {
+        if (alive) setLoading(false);
+      }
+    }
+
+    load();
+    return () => { alive = false; };
+  }, []);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return services.filter((x) => {
+      const cat = categories.find((c) => c.id === x.category_id || c.slug === x.category_id);
+      const inCat = activeCategory === 'all'
+        || x.category_id === activeCategory
+        || cat?.slug === activeCategory;
+      if (!inCat) return false;
+      if (!q) return true;
+      const hay = [x.title, x.description, x.provider_name, x.address, cat?.name]
+        .filter(Boolean).join(' ').toLowerCase();
+      return hay.includes(q);
+    });
+  }, [services, categories, search, activeCategory]);
+
+  const deals = featured.length ? featured : services.slice(0, 6);
+  const topAnnouncement = announcements[0];
+  const catName = (id) =>
+    categories.find((c) => c.id === id || c.slug === id)?.name || 'خدمة محلية';
+
+  const goTo = (id) => {
+    setActiveTab(id);
+    const target = document.getElementById(id === 'home' ? 'top' : id);
+    target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  return (
+    <div className="app" id="top">
+
+      {topAnnouncement && (
+        <div className="alert-bar">
+          📢 {topAnnouncement.title || 'قيد التطوير — نراكم قريباً'}
+        </div>
+      )}
+
+      <header className="hero">
+        <div className="hero-inner">
+
+          <div className="geo-path">
+            <span>سوريا</span>
+            <span className="sep">›</span>
+            <span>إدلب</span>
+            <span className="sep">›</span>
+            <span className="current">كنصفرة</span>
+          </div>
+
+          <div className="hero-top">
+            <CommunityPicker />
+            <div className="hero-top-actions">
+              <LanguageSwitcher variant="inline" />
+              <button className="icon-btn" type="button" aria-label="الإشعارات">
+                🔔
+                {topAnnouncement && <span className="dot-badge" />}
+              </button>
+            </div>
+            </div>
+          </div>
+
+          <div className="hero-brand">
+            <span className="brand-eyebrow">S A N A D</span>
+            <h1 className="brand-title">سند</h1>
+            <p className="brand-tagline">
+              كل خدمات مجتمعك <strong>بين يديك</strong>
+            </p>
+          </div>
+
+          <div className="hero-actions">
+            <button className="btn btn-primary" type="button" onClick={() => goTo('cats')}>
+              🧭 تصفّح الأقسام
+            </button>
+            <button
+              className="btn btn-sos"
+              type="button"
+              onClick={() => router.push('/sos')}
+            >
+              🚨 طوارئ
+            </button>
+          </div>
+      </header>
+
+      <NewsTicker latest={topAnnouncement?.title} />
+
+      <div className="ticker-bar">
+        
+
+      <div className="cats-grid stagger" id="cats">
+        {categories.filter((c) => c.id !== 'all').slice(0, 25).map((c) => (
+          <button
+            key={c.id}
+            className="cat-tile"
+            type="button"
+            onClick={() => {
+              setActiveCategory(c.id);
+              setActiveTab('services');
+              document.getElementById('services')?.scrollIntoView({ behavior: 'smooth' });
+            }}
+          >
+            <span className="cat-tile-icon">{c.icon || '📦'}</span>
+            <span className="cat-tile-label">{c.name}</span>
+          </button>
+        ))}
+      </div>
+
+      <div className="search-panel">
+        <div className="search-box">
+          <span className="ico">⌕</span>
+          <input
+            type="text"
+            placeholder="ابحث عن خدمة..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+          <button className="submit" type="button" onClick={() => { if (search.trim()) router.push('/search?q=' + encodeURIComponent(search.trim())); }}>{t("app.search.btn")}</button>
+        </div>
+      </div>
+
+      <div className="chips-scroll">
+        <button
+          className={`chip ${activeCategory === 'all' ? 'active' : ''}`}
+          onClick={() => setActiveCategory('all')}
+          type="button"
+        >
+          الكل
+        </button>
+        {categories.filter((c) => c.id !== 'all').map((c) => (
+          <button
+            key={c.id}
+            className={`chip ${activeCategory === c.id ? 'active' : ''}`}
+            onClick={() => setActiveCategory(c.id)}
+            type="button"
+          >
+            {c.icon} {c.name}
+          </button>
+        ))}
+      </div>
+
+      <section className="section">
+        <div className="stats">
+          <div className="stat">
+            <div className="stat-val">{services.length}</div>
+            <div className="stat-lab">{t("app.stats.services")}</div>
+          </div>
+          <div className="stat">
+            <div className="stat-val">{categories.length - 1}</div>
+            <div className="stat-lab">{t("app.stats.sections")}</div>
+          </div>
+          <div className="stat">
+            <div className="stat-val">{announcements.length}</div>
+            <div className="stat-lab">{t("app.stats.announcements")}</div>
+          </div>
+        </div>
+      </section>
+
+      <FlashDeals deals={deals.slice(0, 5)} />
+
+      <section className="section" id="services">
+        <div className="section-head">
+          <div className="section-head-col">
+            <span className="section-eyebrow">{search ? 'نتائج البحث' : 'قريب منك'}</span>
+            <h2 className="section-title">
+              <span className="bar" /> {search ? 'النتائج' : '{t("app.services")}'}
+            </h2>
+          </div>
+          <span className="section-action" style={{ pointerEvents: 'none' }}>
+            {filtered.length} نتيجة
+          </span>
+        </div>
+
+        {loading ? (
+          <>
+            {[1, 2, 3].map((n) => (
+              <div className="sk-card" key={n}>
+                <div className="sk-logo sk" />
+                <div className="sk-body">
+                  <div className="sk-line short sk" />
+                  <div className="sk-line sk" />
+                </div>
+              </div>
+            ))}
+          </>
+        ) : filtered.length > 0 ? (
+          <div className="entity-list stagger">
+            {filtered.map((x) => (
+              <button key={x.id} className="entity" type="button" onClick={() => router.push('/service/' + x.id)}>
+                <div className="entity-logo">
+                  {x.image_url ? (
+                    <img src={x.image_url} alt={x.title || ''} loading="lazy" />
+                  ) : (
+                    <span>{iconFor(x.title || x.category || '')}</span>
+                  )}
+                </div>
+                <div className="entity-info">
+                  <div className="entity-name">
+                    <span className="txt">{x.title}</span>
+                    <span className="verified-badge">✓</span>
+                  </div>
+                  <div className="entity-desc">
+                    {x.description || x.address || catName(x.category_id)}
+                  </div>
+                  <div className="entity-meta">
+                    {x.is_featured && <span className="badge-feat">⭐ مميز</span>}
+                    {x.category_id && <span className="badge-cat">{catName(x.category_id)}</span>}
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
+        ) : (
+          <div className="empty">
+            <span className="em">{search ? '⌕' : '✦'}</span>
+            {search ? 'لا توجد نتائج مطابقة' : 'الخدمات قيد الإضافة — تابعنا قريباً'}
+            {search && (
+              <div style={{ marginTop: 18 }}>
+                <button
+                  className="chip active"
+                  type="button"
+                  onClick={() => { setSearch(''); setActiveCategory('all'); }}
+                >
+                  إعادة تعيين البحث
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </section>
+
+      {topAnnouncement && (
+        <section className="section" id="news">
+          <div className="section-head">
+            <div className="section-head-col">
+              <span className="section-eyebrow">آخر الأخبار</span>
+              <h2 className="section-title">
+                <span className="bar" /> {t("app.news")}
+              </h2>
+            </div>
+          </div>
+          <article className="news-box">
+            <span className="news-eyebrow">📰 {t("app.stats.announcements")} رسمي</span>
+            <h3 className="news-title">{topAnnouncement.title}</h3>
+            <p className="news-body">
+              {topAnnouncement.body
+                || topAnnouncement.content
+                || topAnnouncement.description
+                || 'لا يوجد تفاصيل إضافية.'}
+            </p>
+          </article>
+        </section>
+      )}
+
+      <section className="section">
+        <div className="cta">
+          <div className="cta-icon">✦</div>
+          <div className="cta-body">
+            <h4>سند — عون لكل بيت</h4>
+            <p>ذاكرة لكل بلدة، ومستقبل لكل جيل</p>
+          </div>
+        </div>
+      </section>
+
+      {dbNotice && (
+        <section className="section">
+          <div className="empty" style={{ padding: '10px 0' }}>
+            ⚠️ بعض البيانات قد تكون غير متاحة مؤقتاً
+          </div>
+        </section>
+      )}
+
+      
+      <footer className="footer">
+        <div className="footer-brand">
+          <span className="footer-mark">س</span>
+          <strong>سند</strong>
+        </div>
+        <p>نقرّب المسافات، ونصل الناس بالخدمات</p>
+        <div className="copy">© 2026 سند — جميع الحقوق محفوظة</div>
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'center', marginTop: 16, flexWrap: 'wrap' }}>
+          <a href="/login" style={{ fontSize: 11.5, color: 'var(--f-700)', fontWeight: 800, padding: '8px 16px', background: 'rgba(14,138,102,.08)', border: '1px solid rgba(14,138,102,.15)', borderRadius: 999, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+            👤 {t("auth.login")}
+          </a>
+          <a href="/admin/login" style={{ fontSize: 11.5, color: 'var(--n-600)', fontWeight: 800, padding: '8px 16px', background: 'rgba(115,139,128,.08)', border: '1px solid rgba(115,139,128,.15)', borderRadius: 999, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+            ⚙️ {t("admin.title")}
+          </a>
+          <a href="/legal/terms" style={{ fontSize: 11.5, color: 'var(--n-500)', fontWeight: 700, padding: '8px 16px', borderRadius: 999, textDecoration: 'none' }}>
+            الشروط
+          </a>
+          <a href="/legal/privacy" style={{ fontSize: 11.5, color: 'var(--n-500)', fontWeight: 700, padding: '8px 16px', borderRadius: 999, textDecoration: 'none' }}>
+            الخصوصية
+          </a>
+        </div></footer>
+
+      <button
+        className="sos"
+        type="button"
+        onClick={() => router.push('/sos')}
+        aria-label="طوارئ"
+      >
+        SOS
+      </button>
+
+      <nav className="nav">
+        <button
+          className={`nav-btn ${activeTab === 'home' ? 'active' : ''}`}
+          onClick={() => goTo('home')}
+          type="button"
+        >
+          <span className="ico">🏠</span>
+          <span className="txt">الرئيسية</span>
+        </button>
+        <button
+          className={`nav-btn ${activeTab === 'cats' ? 'active' : ''}`}
+          onClick={() => goTo('cats')}
+          type="button"
+        >
+          <span className="ico">▦</span>
+          <span className="txt">الأقسام</span>
+        </button>
+        <button
+          className={`nav-btn ${activeTab === 'cart' ? 'active' : ''}`}
+          onClick={() => router.push('/ai')}
+          type="button"
+        >
+          <span className="ico">🛒</span>
+          <span className="txt">السلة</span>
+        </button>
+        <button
+          className={`nav-btn ${activeTab === 'orders' ? 'active' : ''}`}
+          onClick={() => router.push('/notifications')}
+          type="button"
+        >
+          <span className="ico">📋</span>
+          <span className="txt">طلباتي</span>
+        </button>
+        <button
+          className={`nav-btn ${activeTab === 'account' ? 'active' : ''}`}
+          onClick={() => {
+            let stored = null;
+            try { stored = JSON.parse(localStorage.getItem('sanad_entity') || 'null'); } catch {}
+            if (stored) router.push('/merchant');
+            else router.push('/login');
+          }}
+          type="button"
+        >
+          <span className="ico">⚙️</span>
+          <span className="txt">لوحتي</span>
+        </button>
+      </nav>
+
+      {selected && (
+        <div className="sheet-bg" onClick={() => setSelected(null)}>
+          <div className="sheet" onClick={(e) => e.stopPropagation()}>
+            <div className="sheet-handle" />
+            <button
+              className="sheet-close"
+              type="button"
+              onClick={() => setSelected(null)}
+              aria-label="إغلاق"
+            >
+              ×
+            </button>
+
+            <div className="sheet-symbol">
+              {iconFor(selected.title || selected.category || '')}
+            </div>
+            <div className="sheet-eyebrow">تفاصيل الخدمة</div>
+            <h2 className="sheet-title">{selected.title}</h2>
+            {selected.provider_name && (
+              <div className="sheet-provider">
+                <span>✓</span> {selected.provider_name}
+              </div>
+            )}
+            <p className="sheet-desc">
+              {selected.description || 'لا يوجد وصف إضافي لهذه الخدمة حالياً.'}
+            </p>
+            {selected.address && (
+              <div className="sheet-meta">
+                <span className="i">📍</span> {selected.address}
+              </div>
+            )}
+            {selected.category_id && (
+              <div className="sheet-meta">
+                <span className="i">🏷️</span> {catName(selected.category_id)}
+              </div>
+            )}
+            {selected.phone && (
+              <a className="sheet-cta" href={`tel:${selected.phone}`}>
+                📞 اتصل بمقدم الخدمة
+              </a>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

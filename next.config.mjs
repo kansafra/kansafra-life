@@ -1,13 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: false,
+  staticPageGenerationTimeout: 3,
   eslint: { ignoreDuringBuilds: true },
   typescript: { ignoreBuildErrors: true },
-  staticPageGenerationTimeout: 3,
-  experimental: {
-    workerThreads: false,
-    cpus: 1,
-  },
 };
 
 export default nextConfig;

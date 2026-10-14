@@ -1,25 +1,16 @@
 'use client';
-
-// Safe date for hydration
-const __safeDate = (d) => (typeof window !== 'undefined' ? __safeDate(d) : __safeDate(0));
-
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 
-const PLANS = [
-  { key: 'free', name: 'مجانية', price: 0, period: 'للأبد', features: ['متجر أساسي', '10 منتجات', 'دعم بالبريد', 'ظهور في البحث'] },
-  { key: 'silver', name: 'فضية', price: 5, period: 'شهرياً', features: ['100 منتج', 'تقارير متقدمة', 'دعم بالأولوية', 'دعوات وفاء', 'تحليلات أساسية'], featured: false },
-  { key: 'gold', name: 'ذهبية', price: 15, period: 'شهرياً', features: ['منتجات غير محدودة', 'شارة التوثيق', 'إعلانات مجانية', 'تحليلات متقدمة', 'دعم 24/7'], featured: true },
-  { key: 'platinum', name: 'بلاتينية', price: 40, period: 'شهرياً', features: ['كل ميزات الذهبية', 'مدير حساب مخصص', 'API خاص', 'White-Label', 'SLA مضمون'] },
-];
-
 export default function SubscriptionPage() {
   const router = useRouter();
   const [entity, setEntity] = useState(null);
+  const [plans, setPlans] = useState([]);
   const [current, setCurrent] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [processing, setProcessing] = useState(null);
 
   useEffect(() => {
     let stored = null;
@@ -31,37 +22,49 @@ export default function SubscriptionPage() {
 
   async function load(ent) {
     if (!supabase) { setLoading(false); return; }
-    const { data } = await supabase.from('subscriptions').select('*').eq('entity_name', ent.display_name).maybeSingle();
-    setCurrent(data);
+    const [p, s] = await Promise.all([
+      supabase.from('subscription_plans').select('*').eq('is_active', true).order('sort_order'),
+      supabase.from('subscriptions').select('*').eq('entity_name', ent.display_name).maybeSingle(),
+    ]);
+    setPlans(Array.isArray(p.data) ? p.data : []);
+    setCurrent(s.data || null);
     setLoading(false);
   }
 
   async function subscribe(plan) {
-    if (!confirm(`الاشتراك في الباقة ${plan.name} بمبلغ ${plan.price}$؟`)) return;
+    if (!confirm(`الاشتراك في الباقة "${plan.name}" بمبلغ $${plan.price}؟`)) return;
+    setProcessing(plan.id);
+    const now = new Date();
+    const expires = new Date();
+    expires.setMonth(expires.getMonth() + 1);
+
     const payload = {
       entity_name: entity.display_name,
-      plan: plan.key,
+      plan: plan.name,
       status: 'active',
       price: plan.price,
-      currency: 'USD',
+      currency: plan.currency,
+      started_at: now.toISOString(),
+      expires_at: expires.toISOString(),
       features: plan.features,
-      expires_at: __safeDate(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
     };
+
+    let err;
     if (current) {
-      await supabase.from('subscriptions').update(payload).eq('id', current.id);
+      ({ error: err } = await supabase.from('subscriptions').update(payload).eq('id', current.id));
     } else {
-      await supabase.from('subscriptions').insert(payload);
+      ({ error: err } = await supabase.from('subscriptions').insert(payload));
     }
-    alert('✅ تم تفعيل الاشتراك');
+    setProcessing(null);
+    if (err) { alert('تعذّر التفعيل: ' + err.message); return; }
+    alert('✅ تم تفعيل الباقة');
     load(entity);
   }
 
   if (!entity) return <div className="sect-empty" style={{ padding: 80 }}><span className="em">⏳</span></div>;
 
-  const currentPlan = current?.plan || 'free';
-
   return (
-    <div className="ent-page">
+    <div className="sect-page" style={{ paddingBottom: 40 }}>
       <div className="inv-header">
         <Link href="/merchant" className="inv-back">→</Link>
         <span className="inv-title">💳 الاشتراك</span>
@@ -70,37 +73,55 @@ export default function SubscriptionPage() {
       {current && (
         <div style={{ padding: '20px 20px 0' }}>
           <div className="debt-stat">
-            <div className="debt-stat-val">{current.plan.toUpperCase()}</div>
+            <div className="debt-stat-val" style={{ fontSize: 20 }}>{current.plan}</div>
             <div className="debt-stat-lbl">الباقة الحالية</div>
             {current.expires_at && (
               <div style={{ fontSize: 11, color: 'var(--n-500)', marginTop: 8, fontWeight: 700 }}>
-                تنتهي: {__safeDate(current.expires_at).toLocaleDateString('ar-EG')}
+                تنتهي: {new Date(current.expires_at).toLocaleDateString('ar-EG')}
               </div>
             )}
           </div>
         </div>
       )}
 
+      <div style={{ padding: '20px 20px 0', fontSize: 13, color: 'var(--n-600)', fontWeight: 700 }}>
+        اختر الباقة المناسبة لاحتياجك:
+      </div>
+
       <div className="plan-grid">
-        {PLANS.map((p) => (
-          <div key={p.key} className={`plan-card-lg ${p.featured ? 'featured' : ''}`}>
-            <div className="plan-name-lg">{p.name}</div>
-            <div className="plan-price-lg">{p.price === 0 ? 'مجاناً' : `$${p.price}`}</div>
-            <div className="plan-period">{p.period}</div>
-            <ul className="plan-features">
-              {p.features.map((f) => <li key={f}>{f}</li>)}
-            </ul>
-            <button
-              className="plan-btn"
-              onClick={() => subscribe(p)}
-              disabled={currentPlan === p.key}
-              type="button"
-              style={currentPlan === p.key ? { opacity: .5, cursor: 'not-allowed' } : {}}
-            >
-              {currentPlan === p.key ? '✓ الباقة الحالية' : `اشترك بـ ${p.name}`}
-            </button>
-          </div>
-        ))}
+        {loading ? (
+          <div className="sect-empty"><span className="em">⏳</span></div>
+        ) : plans.length === 0 ? (
+          <div className="sect-empty"><span className="em">💳</span><p>لا توجد باقات متاحة</p></div>
+        ) : (
+          plans.map((p) => {
+            const isCurrent = current?.plan === p.name;
+            return (
+              <div key={p.id} className={`plan-card-lg ${p.is_featured ? 'featured' : ''}`}>
+                <div className="plan-name-lg">{p.name}</div>
+                {p.name_en && <div style={{ fontSize: 11, color: 'var(--n-400)', fontWeight: 600 }}>{p.name_en}</div>}
+                <div className="plan-price-lg">
+                  {p.price === 0 ? 'مجاناً' : `$${p.price}`}
+                </div>
+                <div className="plan-period">{p.period === 'monthly' ? 'شهرياً' : p.period}</div>
+                {Array.isArray(p.features) && (
+                  <ul className="plan-features">
+                    {p.features.map((f, i) => <li key={i}>{f}</li>)}
+                  </ul>
+                )}
+                <button
+                  className="plan-btn"
+                  onClick={() => subscribe(p)}
+                  disabled={isCurrent || processing === p.id}
+                  type="button"
+                  style={isCurrent ? { opacity: .5, cursor: 'not-allowed' } : {}}
+                >
+                  {processing === p.id ? '... جارٍ' : isCurrent ? '✓ الباقة الحالية' : `اشترك بـ ${p.name}`}
+                </button>
+              </div>
+            );
+          })
+        )}
       </div>
     </div>
   );

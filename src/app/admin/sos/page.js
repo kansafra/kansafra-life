@@ -1,7 +1,5 @@
 'use client';
 
-// Safe date for hydration
-const __safeDate = (d) => (typeof window !== 'undefined' ? __safeDate(d) : __safeDate(0));
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
@@ -75,7 +73,7 @@ export default function AdminSOS() {
                   <span className={`admin-badge ${STATUS_BADGE[a.status] || 'info'}`}>{STATUS[a.status] || a.status}</span>
                 </div>
                 <div style={{ fontSize: 10, color: 'rgba(255,255,255,.3)', marginTop: 4, fontFamily: 'monospace', direction: 'ltr' }}>
-                  {a.ref_code} · {__safeDate(a.created_at).toLocaleString('ar-EG', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                  {a.ref_code} · {new Date(a.created_at).toLocaleString('ar-EG', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                 </div>
               </div>
               <div className="admin-item-actions" style={{ flexDirection: 'column', gap: 4 }}>

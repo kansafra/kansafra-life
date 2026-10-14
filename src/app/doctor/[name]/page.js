@@ -1,7 +1,5 @@
 'use client';
 
-// Safe date for hydration
-const __safeDate = (d) => (typeof window !== 'undefined' ? __safeDate(d) : __safeDate(0));
 
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
@@ -47,9 +45,9 @@ export default function DoctorPage() {
   }, [doctorName]);
 
   const days = [];
-  const today = __safeDate();
+  const today = new Date();
   for (let i = 0; i < 14; i++) {
-    const d = __safeDate(today);
+    const d = new Date(today);
     d.setDate(today.getDate() + i);
     days.push(d);
   }

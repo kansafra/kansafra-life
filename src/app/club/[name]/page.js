@@ -1,7 +1,5 @@
 'use client';
 
-// Safe date for hydration
-const __safeDate = (d) => (typeof window !== 'undefined' ? __safeDate(d) : __safeDate(0));
 
 import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
@@ -111,7 +109,7 @@ export default function ClubPage() {
                     <div className="match-team">{m.opponent}</div>
                   </div>
                   <div className="match-meta">
-                    {m.match_date && <span>📅 {__safeDate(m.match_date).toLocaleDateString('ar-EG')}</span>}
+                    {m.match_date && <span>📅 {new Date(m.match_date).toLocaleDateString('ar-EG')}</span>}
                     {m.location && <span>📍 {m.location}</span>}
                   </div>
                 </div>

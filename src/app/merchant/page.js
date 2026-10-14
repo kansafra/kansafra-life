@@ -1,7 +1,5 @@
 'use client';
 
-// Safe date for hydration
-const __safeDate = (d) => (typeof window !== 'undefined' ? __safeDate(d) : __safeDate(0));
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
@@ -72,7 +70,7 @@ function BigChart({ points, width = 300, height = 90 }) {
 }
 
 const getTimeGreeting = () => {
-  const h = __safeDate().getHours();
+  const h = new Date().getHours();
   if (h < 12) return 'صباح الخير';
   if (h < 17) return 'مساء النور';
   return 'مساء الخير';

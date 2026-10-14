@@ -8,6 +8,9 @@ import { useRouter } from 'next/navigation';
 import { useT } from '@/lib/useT';
 import LanguageSwitcher from '@/components/LanguageSwitcher';
 import CommunityPicker from '@/components/CommunityPicker';
+import HeroCarousel from '@/components/HeroCarousel';
+import PrayerBar from '@/components/PrayerBar';
+import NewsTicker from '@/components/NewsTicker';
 import { cacheSet, cacheGet, fetchWithCache } from '@/lib/offline';
 import { supabase } from '@/lib/supabase';
 
@@ -212,6 +215,10 @@ export default function Home() {
           </div>
       </header>
 
+      <NewsTicker />
+      <HeroCarousel />
+      <PrayerBar />
+
       <div className="ticker-bar">
         <div className="ticker-row">
           <span className="ticker-item ticker-urgent">
@@ -254,7 +261,7 @@ export default function Home() {
           <span className="ico">⌕</span>
           <input
             type="text"
-            placeholder={t("app.search")}
+            placeholder="ابحث..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -470,51 +477,32 @@ export default function Home() {
         SOS
       </button>
 
-      <nav className="nav">
-        <button
-          className={`nav-btn ${activeTab === 'home' ? 'active' : ''}`}
-          onClick={() => goTo('home')}
-          type="button"
-        >
-          <span className="ico">🏠</span>
-          <span className="txt">الرئيسية</span>
+      <button
+        className="sos-float" style={{ width: 54, height: 54, fontSize: 11.5, bottom: 100 }}
+      >
+        SOS
+      </button>
+
+      <nav className="nav bottom-nav">
+        <button className={`nav-btn ${activeTab === 'home' ? 'active' : ''}`} onClick={() => goTo('home')} type="button">
+          <span className="nav-icon">🏠</span><span>الرئيسية</span>
         </button>
-        <button
-          className={`nav-btn ${activeTab === 'cats' ? 'active' : ''}`}
-          onClick={() => goTo('cats')}
-          type="button"
-        >
-          <span className="ico">▦</span>
-          <span className="txt">الأقسام</span>
+        <button className={`nav-btn ${activeTab === 'cats' ? 'active' : ''}`} onClick={() => goTo('cats')} type="button">
+          <span className="nav-icon">▦</span><span>الأقسام</span>
         </button>
-        <button
-          className={`nav-btn ${activeTab === 'cart' ? 'active' : ''}`}
-          onClick={() => router.push('/ai')}
-          type="button"
-        >
-          <span className="ico">🛒</span>
-          <span className="txt">السلة</span>
+        <button className={`nav-btn ${activeTab === 'fav' ? 'active' : ''}`} onClick={() => router.push('/favorites')} type="button">
+          <span className="nav-icon">❤️</span><span>مفضلتي</span>
         </button>
-        <button
-          className={`nav-btn ${activeTab === 'orders' ? 'active' : ''}`}
-          onClick={() => router.push('/notifications')}
-          type="button"
-        >
-          <span className="ico">📋</span>
-          <span className="txt">طلباتي</span>
+        <button className={`nav-btn ${activeTab === 'notif' ? 'active' : ''}`} onClick={() => router.push('/notifications')} type="button">
+          <span className="nav-icon">🔔</span><span>الإشعارات</span>
         </button>
-        <button
-          className={`nav-btn ${activeTab === 'account' ? 'active' : ''}`}
-          onClick={() => {
-            let stored = null;
-            try { stored = JSON.parse(localStorage.getItem('sanad_entity') || 'null'); } catch {}
-            if (stored) router.push('/merchant');
-            else router.push('/login');
-          }}
-          type="button"
-        >
-          <span className="ico">⚙️</span>
-          <span className="txt">لوحتي</span>
+        <button className={`nav-btn ${activeTab === 'account' ? 'active' : ''}`} onClick={() => {
+          let stored = null;
+          try { stored = JSON.parse(localStorage.getItem('sanad_entity') || 'null'); } catch {}
+          if (stored) router.push('/merchant');
+          else router.push('/login');
+        }} type="button">
+          <span className="nav-icon">👤</span><span>حسابي</span>
         </button>
       </nav>
 

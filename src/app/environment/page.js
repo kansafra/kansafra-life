@@ -1,7 +1,5 @@
 'use client';
 
-// Safe date for hydration
-const __safeDate = (d) => (typeof window !== 'undefined' ? __safeDate(d) : __safeDate(0));
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
@@ -73,7 +71,7 @@ export default function EnvironmentPage() {
                 {r.location_text && <div className="dlv-info">📍 {r.location_text}</div>}
                 {r.description && <div className="dlv-info">{r.description}</div>}
                 <div style={{ fontSize: 10.5, color: 'var(--n-400)', marginTop: 6 }}>
-                  {__safeDate(r.created_at).toLocaleDateString('ar-EG')}
+                  {new Date(r.created_at).toLocaleDateString('ar-EG')}
                 </div>
               </div>
             ))}

@@ -1,7 +1,5 @@
 'use client';
 
-// Safe date for hydration
-const __safeDate = (d) => (typeof window !== 'undefined' ? __safeDate(d) : __safeDate(0));
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
@@ -28,9 +26,9 @@ export default function AdminAnalytics() {
     const list = Array.isArray(data) ? data : [];
     setLogs(list);
 
-    const now = __safeDate();
+    const now = new Date();
     const today = now.toISOString().slice(0, 10);
-    const weekAgo = __safeDate(now.getTime() - 7 * 86400000).toISOString();
+    const weekAgo = new Date(now.getTime() - 7 * 86400000).toISOString();
     setStats({
       views: list.filter((x) => x.action === 'page_view').length,
       actions: list.filter((x) => x.action !== 'page_view').length,
@@ -40,7 +38,7 @@ export default function AdminAnalytics() {
 
     const daysData = [];
     for (let i = 6; i >= 0; i--) {
-      const d = __safeDate(now);
+      const d = new Date(now);
       d.setDate(d.getDate() - i);
       const key = d.toISOString().slice(0, 10);
       daysData.push({
@@ -105,7 +103,7 @@ export default function AdminAnalytics() {
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
               <span style={{ fontSize: 12, fontWeight: 800, color: '#fff' }}>{l.action}</span>
               <span style={{ fontSize: 10, color: 'rgba(255,255,255,.3)', fontFamily: 'monospace' }}>
-                {__safeDate(l.created_at).toLocaleString('ar-EG', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                {new Date(l.created_at).toLocaleString('ar-EG', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
               </span>
             </div>
             {l.target_id && <div style={{ fontSize: 10.5, color: 'rgba(255,255,255,.4)', fontFamily: 'monospace', direction: 'ltr', textAlign: 'right' }}>{l.target_id}</div>}
