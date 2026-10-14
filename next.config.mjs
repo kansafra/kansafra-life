@@ -2,7 +2,6 @@
 const nextConfig = {
   reactStrictMode: false,
   staticPageGenerationTimeout: 3,
-  eslint: { ignoreDuringBuilds: true },
   typescript: { ignoreBuildErrors: true },
 };
 

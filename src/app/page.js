@@ -278,7 +278,7 @@ export default function Home() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
-          <button className="submit" type="button" onClick={() => { if (search.trim()) router.push('/search?q=' + encodeURIComponent(search.trim())); }}>{t("app.search.btn")}</button>
+          <button className="submit" type="button" onClick={() => { if (search.trim()) router.push('/search?q=' + encodeURIComponent(search.trim())); }}>بحث</button>
         </div>
       </div>
 

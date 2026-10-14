@@ -6661,3 +6661,13 @@ a.detail-info-item:active { transform: scale(.98); }
 .carousel-nav:active { background: #fff; transform: translateY(-50%) scale(0.95); }
 .carousel-nav.prev { right: 10px; }
 .carousel-nav.next { left: 10px; }
+
+/* ═══════════ إضافات ═══════════ */
+.inv-count {
+  font-size: 12px;
+  font-weight: 900;
+  color: #0f4d3a;
+  background: rgba(15,77,58,.12);
+  padding: 4px 12px;
+  border-radius: 999px;
+}
