@@ -31,6 +31,8 @@ C.merchant = {
     { icon: '👥', title: 'الموظفون', href: '/merchant/employees' },
     { icon: '⭐', title: 'التقييمات', href: '/merchant/reviews' },
     { icon: '💳', title: 'الدفع', href: '/merchant/payments' },
+    { icon: '💎', title: 'اشتراكي', href: '/merchant/subscription' },
+    { icon: '⏳', title: 'قيد المراجعة', href: '/merchant/moderation' },
   ],
 };
 
@@ -50,6 +52,8 @@ C.restaurant = {
     { icon: '📊', title: 'المخزون', href: '/merchant/inventory' },
     { icon: '💳', title: 'الدفع', href: '/merchant/payments' },
     { icon: '👥', title: 'الموظفون', href: '/merchant/employees' },
+    { icon: '💎', title: 'اشتراكي', href: '/merchant/subscription' },
+    { icon: '⏳', title: 'قيد المراجعة', href: '/merchant/moderation' },
   ],
 };
 
@@ -67,6 +71,8 @@ C.doctor = {
     { icon: '📋', title: 'السجلات', href: '/merchant/manage/medical_records' },
     { icon: '💊', title: 'الوصفات', href: '/merchant/prescriptions' },
     { icon: '💬', title: 'الدردشة', href: '/merchant/chat' },
+    { icon: '💎', title: 'اشتراكي', href: '/merchant/subscription' },
+    { icon: '⏳', title: 'قيد المراجعة', href: '/merchant/moderation' },
   ],
 };
 
@@ -83,6 +89,8 @@ C.pharmacy = {
     { icon: '🌙', title: 'المناوبات', href: '/merchant/manage/oncall_shifts' },
     { icon: '🛍️', title: 'الطلبات', href: '/merchant/manage/orders' },
     { icon: '🧾', title: 'الفواتير', href: '/merchant/invoices' },
+    { icon: '💎', title: 'اشتراكي', href: '/merchant/subscription' },
+    { icon: '⏳', title: 'قيد المراجعة', href: '/merchant/moderation' },
   ],
 };
 
@@ -101,6 +109,8 @@ C.school = {
     { icon: '📋', title: 'الحضور', href: '/merchant/attendance' },
     { icon: '💰', title: 'الرسوم', href: '/merchant/fees' },
     { icon: '📄', title: 'ملفات الصفوف', href: '/merchant/manage/class_files' },
+    { icon: '💎', title: 'اشتراكي', href: '/merchant/subscription' },
+    { icon: '⏳', title: 'قيد المراجعة', href: '/merchant/moderation' },
   ],
 };
 
@@ -117,6 +127,8 @@ C.mosque = {
     { icon: '🗣️', title: 'خطب الجمعة', href: '/merchant/sermons' },
     { icon: '🎯', title: 'الحلقات', href: '/merchant/manage/circles' },
     { icon: '🎁', title: 'التبرعات', href: '/merchant/manage/donations' },
+    { icon: '💎', title: 'اشتراكي', href: '/merchant/subscription' },
+    { icon: '⏳', title: 'قيد المراجعة', href: '/merchant/moderation' },
   ],
 };
 
@@ -134,6 +146,8 @@ C.council = {
     { icon: '📩', title: 'الشكاوى', href: '/merchant/manage/office_requests' },
     { icon: '🏗️', title: 'المشاريع', href: '/merchant/budget' },
     { icon: '📜', title: 'الشهادات', href: '/merchant/documents' },
+    { icon: '💎', title: 'اشتراكي', href: '/merchant/subscription' },
+    { icon: '⏳', title: 'قيد المراجعة', href: '/merchant/moderation' },
   ],
 };
 
@@ -150,6 +164,8 @@ C.municipality = {
     { icon: '📩', title: 'الطلبات والشكاوى', href: '/merchant/manage/office_requests' },
     { icon: '📜', title: 'الشهادات', href: '/merchant/manage/office_requests' },
     { icon: '🏗️', title: 'المشاريع', href: '/merchant/manage/office_requests' },
+    { icon: '💎', title: 'اشتراكي', href: '/merchant/subscription' },
+    { icon: '⏳', title: 'قيد المراجعة', href: '/merchant/moderation' },
   ],
 };
 
@@ -166,6 +182,8 @@ C.charity = {
     { icon: '👥', title: 'طلبات المساعدة', href: '/merchant/manage/elderly_requests' },
     { icon: '🤝', title: 'المتطوعون', href: '/merchant/manage/volunteers' },
     { icon: '📢', title: 'الإعلانات', href: '/merchant/manage/announcements' },
+    { icon: '💎', title: 'اشتراكي', href: '/merchant/subscription' },
+    { icon: '⏳', title: 'قيد المراجعة', href: '/merchant/moderation' },
   ],
 };
 
@@ -182,6 +200,8 @@ C.sports = {
     { icon: '⚽', title: 'المباريات', href: '/merchant/manage/sports_matches' },
     { icon: '🏆', title: 'الترتيب', href: '/merchant/manage/sports_standings' },
     { icon: '📢', title: 'الإعلانات', href: '/merchant/manage/announcements' },
+    { icon: '💎', title: 'اشتراكي', href: '/merchant/subscription' },
+    { icon: '⏳', title: 'قيد المراجعة', href: '/merchant/moderation' },
   ],
 };
 
@@ -198,6 +218,8 @@ C.hotel = {
     { icon: '👥', title: 'الموظفون', href: '/merchant/employees' },
     { icon: '⭐', title: 'التقييمات', href: '/merchant/reviews' },
     { icon: '💬', title: 'الدردشة', href: '/merchant/chat' },
+    { icon: '💎', title: 'اشتراكي', href: '/merchant/subscription' },
+    { icon: '⏳', title: 'قيد المراجعة', href: '/merchant/moderation' },
   ],
 };
 
@@ -214,6 +236,8 @@ C.memory = {
     { icon: '📖', title: 'الحكايات', href: '/merchant/manage/memory_stories' },
     { icon: '📍', title: 'الأماكن', href: '/merchant/manage/memory_places' },
     { icon: '📢', title: 'الإعلانات', href: '/merchant/manage/announcements' },
+    { icon: '💎', title: 'اشتراكي', href: '/merchant/subscription' },
+    { icon: '⏳', title: 'قيد المراجعة', href: '/merchant/moderation' },
   ],
 };
 
@@ -230,6 +254,8 @@ C.office = {
     { icon: '💼', title: 'الوظائف', href: '/merchant/manage/job_postings' },
     { icon: '👤', title: 'الباحثون', href: '/merchant/manage/job_seekers' },
     { icon: '💬', title: 'الدردشة', href: '/merchant/chat' },
+    { icon: '💎', title: 'اشتراكي', href: '/merchant/subscription' },
+    { icon: '⏳', title: 'قيد المراجعة', href: '/merchant/moderation' },
   ],
 };
 
@@ -246,6 +272,8 @@ C.transport = {
     { icon: '🛣️', title: 'الخطوط', href: '/merchant/manage/vehicles' },
     { icon: '🛍️', title: 'الطلبات', href: '/merchant/manage/orders' },
     { icon: '💳', title: 'الدفع', href: '/merchant/payments' },
+    { icon: '💎', title: 'اشتراكي', href: '/merchant/subscription' },
+    { icon: '⏳', title: 'قيد المراجعة', href: '/merchant/moderation' },
   ],
 };
 
@@ -263,6 +291,8 @@ C.exchange = {
     { icon: '📊', title: 'التقارير', href: '/merchant/reports' },
     { icon: '👥', title: 'العملاء', href: '/merchant/customers' },
     { icon: '💬', title: 'الدردشة', href: '/merchant/chat' },
+    { icon: '💎', title: 'اشتراكي', href: '/merchant/subscription' },
+    { icon: '⏳', title: 'قيد المراجعة', href: '/merchant/moderation' },
   ],
 };
 

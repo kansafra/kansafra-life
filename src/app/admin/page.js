@@ -71,6 +71,7 @@ export default function AdminDashboard() {
     { icon: '📢', title: 'الإعلانات', desc: 'موافقة ونشر', href: '/admin/manage/announcements' },
     { icon: '⭐', title: 'التقييمات', desc: 'مراجعة وردود', href: '/admin/manage/reviews' },
     { icon: '💰', title: 'الاشتراكات', desc: 'إدارة الخطط', href: '/admin/manage/entities' },
+    { icon: '💎', title: 'الباقات', desc: 'إدارة اشتراكات التجار', href: '/admin/plans' },
     { icon: '⚙️', title: 'الإعدادات', desc: 'المنصة والألوان', href: '/admin/settings' },
     { icon: '🔧', title: 'الصيانة', desc: 'النسخ والأمان', href: '/admin/backup' },
   ];

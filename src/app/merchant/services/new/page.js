@@ -6,6 +6,46 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 
+async function getModerationStatus(supabase, entity) {
+  try {
+    // 1) نجيب إعدادات المنصة
+    const { data: settings } = await supabase
+      .from('app_settings')
+      .select('key, value')
+      .in('key', ['moderation_enabled', 'auto_publish_all', 'auto_publish_services']);
+    
+    const s = {};
+    (settings || []).forEach((x) => { s[x.key] = x.value; });
+    
+    // 2) إذا المراجعة معطلة → نشر مباشر
+    if (s.moderation_enabled === 'false' || s.moderation_enabled === undefined) {
+      return { status: 'published', moderation: 'approved' };
+    }
+    
+    // 3) إذا نشر كل شي تلقائياً
+    if (s.auto_publish_all === 'true' || s.auto_publish_services === 'true') {
+      return { status: 'published', moderation: 'approved' };
+    }
+    
+    // 4) إذا التاجر موثوق
+    const { data: ent } = await supabase
+      .from('entities')
+      .select('is_trusted')
+      .eq('id', entity.id)
+      .maybeSingle();
+    
+    if (ent?.is_trusted) {
+      return { status: 'published', moderation: 'auto' };
+    }
+    
+    // 5) افتراضي: قيد المراجعة
+    return { status: 'draft', moderation: 'pending' };
+  } catch (e) {
+    return { status: 'published', moderation: 'approved' };
+  }
+}
+
+
 
 const catIcon = (icon, name) => {
   const k = String(icon || '').toLowerCase().trim();
@@ -85,6 +125,9 @@ export default function NewServicePage() {
     }
 
     setLoading(true);
+    // تحديد حالة النشر حسب نظام المراجعة
+    const moderationInfo = await getModerationStatus(supabase, entity);
+    
     const payload = {
       title: form.title.trim(),
       description: form.description.trim() || null,
@@ -94,9 +137,11 @@ export default function NewServicePage() {
       image_url: form.image_url.trim() || null,
       provider_name: entity.display_name,
       is_featured: form.is_featured,
+      status: moderationInfo.status,
+      moderation_status: moderationInfo.moderation,
     };
 
-    const { error: insErr } = await supabase.from('services').insert(payload);
+    const { error: insErr } = await supabase.from('services').insert({ ...payload, moderation_status: moderation.status });
     setLoading(false);
 
     if (insErr) {

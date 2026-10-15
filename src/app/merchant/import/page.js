@@ -4,6 +4,23 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 
+async function getModerationStatus(supabase, entity) {
+  try {
+    const { data: settings } = await supabase
+      .from('app_settings')
+      .select('key, value')
+      .in('key', ['moderation_enabled', 'auto_publish_all', 'auto_publish_products']);
+    const s = {};
+    (settings || []).forEach((x) => { s[x.key] = x.value; });
+    if (s.moderation_enabled === 'false' || s.moderation_enabled === undefined) return { status: 'approved' };
+    if (s.auto_publish_all === 'true' || s.auto_publish_products === 'true') return { status: 'approved' };
+    const { data: ent } = await supabase.from('entities').select('is_trusted').eq('id', entity.id).maybeSingle();
+    if (ent?.is_trusted) return { status: 'auto' };
+    return { status: 'pending' };
+  } catch (e) { return { status: 'approved' }; }
+}
+
+
 export default function ImportPage() {
   const router = useRouter();
   const [entity, setEntity] = useState(null);
@@ -78,7 +95,8 @@ export default function ImportPage() {
         category: row.category || row.الفئة || null,
         is_active: true,
       };
-      const { error } = await supabase.from('products').insert(payload);
+      const moderation = await getModerationStatus(supabase, entity);
+      const { error } = await supabase.from('products').insert({ ...{ ...payload, moderation_status: moderation.status }, moderation_status: moderation.status });
       if (error) failed++; else success++;
     }
 

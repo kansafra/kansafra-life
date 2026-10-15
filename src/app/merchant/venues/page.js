@@ -4,6 +4,20 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 
+async function getModerationStatus(supabase, entity) {
+  try {
+    const { data: settings } = await supabase.from('app_settings').select('key, value').in('key', ['moderation_enabled', 'auto_publish_all']);
+    const s = {};
+    (settings || []).forEach((x) => { s[x.key] = x.value; });
+    if (s.moderation_enabled === 'false' || s.moderation_enabled === undefined) return { status: 'approved' };
+    if (s.auto_publish_all === 'true') return { status: 'approved' };
+    const { data: ent } = await supabase.from('entities').select('is_trusted').eq('id', entity.id).maybeSingle();
+    if (ent?.is_trusted) return { status: 'auto' };
+    return { status: 'pending' };
+  } catch (e) { return { status: 'approved' }; }
+}
+
+
 export default function P() {
   const router = useRouter();
   const [e, setE] = useState(null);
@@ -49,7 +63,7 @@ export default function P() {
       is_available: true,
     };
     let err;
-    if (m === 'add') ({ error: err } = await supabase.from('sports_venues').insert(p));
+    if (m === 'add') { const moderation = await getModerationStatus(supabase, e); const { error: err } = await supabase.from('sports_venues').insert({ ...{ ...p, moderation_status: moderation.status }, moderation_status: moderation.status }); }
     else ({ error: err } = await supabase.from('sports_venues').update(p).eq('id', ed.id));
     if (err) { alert('تعذّر'); return; }
     setM(null); setEd(null); load(e);
