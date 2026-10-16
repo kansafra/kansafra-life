@@ -522,9 +522,11 @@ export default function Home() {
           <span className="nav-icon">💱</span><span>الحاسبة</span>
         </button>
         <button className={`nav-btn ${activeTab === 'account' ? 'active' : ''}`} onClick={() => {
-          let stored = null;
-          try { stored = JSON.parse(localStorage.getItem('sanad_entity') || 'null'); } catch {}
-          if (stored) router.push('/merchant');
+          let entity = null, customer = null;
+          try { entity = JSON.parse(localStorage.getItem('sanad_entity') || 'null'); } catch (e) {}
+          try { customer = JSON.parse(localStorage.getItem('sanad_customer') || 'null'); } catch (e) {}
+          if (entity) router.push('/merchant');
+          else if (customer) router.push('/customer');
           else router.push('/login');
         }} type="button">
           <span className="nav-icon">👤</span><span>حسابي</span>

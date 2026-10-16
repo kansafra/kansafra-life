@@ -4,6 +4,32 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { getSectionConfig } from '@/lib/sectionConfigs';
+import { getSession } from '@/lib/auth';
+import ImageUploader from '@/components/ImageUploader';
+import FileUploader from '@/components/FileUploader';
+
+// الأقسام اللي تدعم رفع الصور
+const UPLOAD_FOLDERS = {
+  jobs: 'jobs',
+  realestate: 'realestate',
+  lostfound: 'lostfound',
+  auctions: 'auctions',
+  tourism: 'tourism',
+  library: 'library',
+  memory: 'memory',
+  sports: 'sports',
+  venues: 'venues',
+  events: 'events',
+  services: 'services',
+};
+
+// الأقسام اللي تدعم رفع ملفات PDF
+const FILE_FOLDERS = {
+  jobs: 'jobs-files',
+  realestate: 'realestate-files',
+  library: 'books-files',
+  memory: 'memory-files',
+};
 
 export default function SectionForm({ sectionKey }) {
   const router = useRouter();
@@ -13,10 +39,18 @@ export default function SectionForm({ sectionKey }) {
   const [done, setDone] = useState(false);
   const [error, setError] = useState('');
   const [form, setForm] = useState({});
+  const [imageUrl, setImageUrl] = useState('');
+  const [fileUrl, setFileUrl] = useState('');
+
+  const supportsImage = !!UPLOAD_FOLDERS[sectionKey];
+  const supportsFile = !!FILE_FOLDERS[sectionKey];
 
   useEffect(() => {
     let stored = null;
-    try { stored = JSON.parse(localStorage.getItem('sanad_entity') || 'null'); } catch {}
+    try {
+      const s = getSession();
+      stored = s || JSON.parse(localStorage.getItem('sanad_entity') || 'null');
+    } catch {}
     if (!stored) { router.replace('/login'); return; }
     setEntity(stored);
     const init = {};
@@ -50,7 +84,14 @@ export default function SectionForm({ sectionKey }) {
     });
     if (cfg.providerField && entity) payload[cfg.providerField] = entity.display_name;
 
+    // إضافة الصورة
+    if (supportsImage && imageUrl) payload.image_url = imageUrl;
+    if (sectionKey === 'library' && imageUrl) payload.cover_url = imageUrl;
+    // إضافة الملف
+    if (supportsFile && fileUrl) payload.file_url = fileUrl;
+
     const { error: err } = await supabase.from(cfg.table).insert(payload);
+
     setLoading(false);
     if (err) { setError('تعذّر الحفظ: ' + err.message); return; }
     setDone(true);
@@ -103,6 +144,30 @@ export default function SectionForm({ sectionKey }) {
             )}
           </div>
         ))}
+
+        {/* 📸 رفع الصورة */}
+        {supportsImage && (
+          <ImageUploader
+            label={`📸 صورة (${cfg.title})`}
+            folder={UPLOAD_FOLDERS[sectionKey]}
+            value={imageUrl}
+            onUpload={(url) => setImageUrl(url)}
+            aspect={sectionKey === 'library' ? '3/4' : '16/9'}
+          />
+        )}
+
+        {/* 📎 رفع ملف PDF */}
+        {supportsFile && (
+          <FileUploader
+            label="📎 ملف PDF / مستند"
+            folder={FILE_FOLDERS[sectionKey]}
+            value={fileUrl}
+            onUpload={(url) => setFileUrl(url)}
+            accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip"
+            maxSize={20}
+          />
+        )}
+
         {error && <div style={{ color: '#dc2626', padding: 12, background: 'rgba(220,38,38,.1)', borderRadius: 12, fontSize: 13, fontWeight: 700 }}>{error}</div>}
         <button className="new-service-submit" type="submit" disabled={loading}>
           {loading ? '... جارٍ الحفظ' : '✓ إضافة'}

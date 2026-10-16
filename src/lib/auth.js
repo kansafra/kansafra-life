@@ -17,7 +17,7 @@ export async function hashPassword(password) {
 }
 
 // ═══ تسجيل حساب جديد ═══
-export async function registerEntity({ phone, password, display_name, entity_type }) {
+export async function registerEntity({ phone, password, display_name, entity_type, pendingApproval = false }) {
   if (!supabase) throw new Error('قاعدة البيانات غير متصلة');
 
   const cleanPhone = phone.replace(/[^0-9]/g, '');
@@ -46,16 +46,18 @@ export async function registerEntity({ phone, password, display_name, entity_typ
       entity_type: entity_type || 'merchant',
       phone: cleanPhone,
       password_hash,
-      is_active: true,
+      is_active: !pendingApproval,
       is_verified: false,
       is_trusted: false,
+      approval_status: pendingApproval ? 'pending' : 'approved',
     })
     .select('*')
     .single();
 
   if (error) throw error;
 
-  saveSession(newEntity);
+  // نحفظ الجلسة فقط إذا ما في انتظار موافقة
+  if (!pendingApproval) saveSession(newEntity);
   return newEntity;
 }
 
@@ -74,7 +76,12 @@ export async function loginEntity({ phone, password }) {
     .maybeSingle();
 
   if (error || !entity) throw new Error('رقم الهاتف أو كلمة المرور غير صحيحة');
-  if (!entity.is_active) throw new Error('الحساب موقوف — تواصل مع الإدارة');
+  if (!entity.is_active) {
+    if (entity.approval_status === 'pending') {
+      throw new Error('⏳ حسابك قيد المراجعة — يرجى الانتظار حتى توافق الإدارة');
+    }
+    throw new Error('الحساب موقوف — تواصل مع الإدارة');
+  }
 
   const password_hash = await hashPassword(password);
   if (entity.password_hash !== password_hash) {
@@ -101,11 +108,11 @@ function saveSession(entity) {
     cover_url: entity.cover_url,
     bio: entity.bio,
     logged_at: new Date().toISOString(),
+    // ═══ جلسة دائمة — لا تنتهي ═══
+    persistent: true,
   };
   
   const json = JSON.stringify(session);
-  
-  // نكتب في الاثنين — الجديد + القديم
   localStorage.setItem(STORAGE_KEY, json);
   localStorage.setItem(LEGACY_KEY, json);
   

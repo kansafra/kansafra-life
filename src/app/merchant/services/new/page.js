@@ -5,6 +5,8 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
+import ImageUploader from '@/components/ImageUploader';
+import FileUploader from '@/components/FileUploader';
 
 async function getModerationStatus(supabase, entity) {
   try {
@@ -68,6 +70,8 @@ export default function NewServicePage() {
   const [done, setDone] = useState(false);
   const [error, setError] = useState('');
 
+  const [imageUrl, setImageUrl] = useState('');
+  const [fileUrl, setFileUrl] = useState('');
   const [form, setForm] = useState({
     title: '',
     description: '',
@@ -136,6 +140,8 @@ export default function NewServicePage() {
       address: form.address.trim() || null,
       image_url: form.image_url.trim() || null,
       provider_name: entity.display_name,
+      image_url: imageUrl || null,
+      file_url: fileUrl || null,
       is_featured: form.is_featured,
       status: moderationInfo.status,
       moderation_status: moderationInfo.moderation,
@@ -282,6 +288,26 @@ export default function NewServicePage() {
             {error}
           </div>
         )}
+
+                <div className="new-service-field">
+          <ImageUploader
+            label="📸 صورة الخدمة"
+            folder="services"
+            value={imageUrl}
+            onUpload={(url) => setImageUrl(url)}
+            aspect="16/9"
+          />
+        </div>
+
+        <div className="new-service-field">
+          <FileUploader
+            label="📎 ملف تعريفي / PDF"
+            folder="services-files"
+            value={fileUrl}
+            onUpload={(url) => setFileUrl(url)}
+            maxSize={15}
+          />
+        </div>
 
         <button className="new-service-submit" type="submit" disabled={loading}>
           {loading ? '... جارٍ الحفظ' : '+ إضافة الخدمة'}

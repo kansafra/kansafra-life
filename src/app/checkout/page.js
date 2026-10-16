@@ -6,6 +6,8 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { notifyNewOrder } from '@/lib/notify';
+import CustomerAuthModal from '@/components/CustomerAuthModal';
+import { getCustomer, saveGuestSession } from '@/lib/customerAuth';
 import { getCart, clearCart, cartTotals, getCartByProvider } from '@/lib/cart';
 
 const genCode = () => {
@@ -30,11 +32,23 @@ export default function Checkout() {
   const [doneCode, setDoneCode] = useState('');
   const [doneOrderId, setDoneOrderId] = useState('');
   const [paymentMethods, setPaymentMethods] = useState([]);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [customer, setCustomer] = useState(null);
   const [selectedPayment, setSelectedPayment] = useState('cash');
 
   useEffect(() => {
     setCart(getCart());
     setTotals(cartTotals());
+  }, []);
+
+  useEffect(() => {
+    const c = getCustomer();
+    if (c) {
+      setCustomer(c);
+      setName(c.full_name || '');
+      setPhone(c.phone || '');
+      setAddress(c.address || '');
+    }
   }, []);
 
   useEffect(() => {
@@ -54,6 +68,14 @@ export default function Checkout() {
     e.preventDefault();
     setError('');
     if (!name.trim() || name.trim().length < 3) { setError('الاسم مطلوب'); return; }
+    if (!phone.trim() || phone.trim().length < 9) { setError('رقم الهاتف مطلوب'); return; }
+    
+    // إذا ما في حساب — نطلب واحد
+    if (!customer) {
+      saveGuestSession({ full_name: name.trim(), phone: phone.trim(), address: address.trim() });
+      setShowAuthModal(true);
+      return;
+    }
     if (!phone.trim() || phone.trim().length < 6) { setError('رقم الهاتف مطلوب'); return; }
     if (cart.length === 0) { setError('السلة فارغة'); return; }
     if (!supabase) { setError('قاعدة البيانات غير متصلة'); return; }
@@ -279,6 +301,24 @@ export default function Checkout() {
           {loading ? '... جارٍ الإرسال' : '✓ تأكيد الطلب'}
         </button>
       </form>
+
+      <CustomerAuthModal
+        isOpen={showAuthModal}
+        onClose={() => setShowAuthModal(false)}
+        onSuccess={(c) => {
+          setCustomer(c);
+          setName(c.full_name || '');
+          setPhone(c.phone || '');
+          setAddress(c.address || '');
+          setShowAuthModal(false);
+          // نكمل العملية بعد ثانية
+          setTimeout(() => {
+            document.querySelector('form')?.requestSubmit?.();
+          }, 300);
+        }}
+        defaultPhone={phone}
+        defaultName={name}
+      />
     </div>
   );
 }

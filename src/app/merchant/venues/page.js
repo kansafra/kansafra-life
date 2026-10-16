@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import ImageUploader from '@/components/ImageUploader';
+import FileUploader from '@/components/FileUploader';
 
 async function getModerationStatus(supabase, entity) {
   try {
@@ -62,6 +63,7 @@ export default function P() {
       price_per_hour: Number(f.price_per_hour) || 0,
       phone: f.phone?.trim() || null,
       image_url: f.image_url || null,
+      file_url: fileUrl || null,
       is_available: true,
     };
     let err;
@@ -158,6 +160,13 @@ export default function P() {
                 onUpload={(url) => setF({ ...f, image_url: url })}
                 aspect="16/9"
               />
+            <FileUploader
+              label="📎 ملف / قائمة الأسعار"
+              folder="venues-files"
+              value={fileUrl}
+              onUpload={(url) => setFileUrl(url)}
+              maxSize={15}
+            />
             </div>
 
             <div className="new-service-field">

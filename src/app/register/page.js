@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { registerEntity } from '@/lib/auth';
+import { supabase } from '@/lib/supabase';
 
 const ENTITY_TYPES = [
   { key: 'merchant',    label: 'متجر / محل',     icon: '🏪' },
@@ -34,6 +35,7 @@ export default function RegisterPage() {
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [pendingApproval, setPendingApproval] = useState(null);
 
   function update(field, value) {
     setForm((f) => ({ ...f, [field]: value }));
@@ -64,17 +66,97 @@ export default function RegisterPage() {
 
     setLoading(true);
     try {
-      await registerEntity({
+      const newEntity = await registerEntity({
         phone: cleanPhone,
         password: form.password,
         display_name: form.display_name,
         entity_type: form.entity_type,
+        pendingApproval: true,
       });
-      router.push('/merchant');
+      
+      // نجهز رسالة واتساب للأدمن
+      try {
+        const { data: settings } = await supabase
+          .from('app_settings')
+          .select('value')
+          .eq('key', 'admin_whatsapp')
+          .maybeSingle();
+        
+        const adminPhone = settings?.value || '963930694339';
+        const msg = `🆕 *طلب حساب جديد على سند*\n\n` +
+          `👤 *الاسم:* ${form.display_name}\n` +
+          `📞 *الهاتف:* ${cleanPhone}\n` +
+          `🏪 *النوع:* ${form.entity_type}\n` +
+          `🔐 *رقم الحساب:* ${newEntity.username}\n` +
+          `⏰ *الوقت:* ${new Date().toLocaleString('ar-EG')}\n\n` +
+          `✅ للموافقة: افتح لوحة الأدمن → إدارة الكيانات\n` +
+          `🔗 ${window.location.origin}/admin/entities`;
+        
+        const waUrl = `https://wa.me/${adminPhone}?text=${encodeURIComponent(msg)}`;
+        
+        // نفتح واتساب في نفس التبويب
+        setPendingApproval({ entity: newEntity, waUrl });
+        
+        // نحاول نفتح واتساب تلقائياً بعد ثانية
+        setTimeout(() => {
+          window.location.href = waUrl;
+        }, 1200);
+      } catch (e) {
+        setPendingApproval({ entity: newEntity, waUrl: null });
+      }
     } catch (err) {
       setError(err.message || 'تعذّر إنشاء الحساب');
       setLoading(false);
     }
+  }
+
+  if (pendingApproval) {
+    return (
+      <div className="sect-page" style={{ minHeight: '100vh', background: 'linear-gradient(180deg, #0a1f16 0%, #061410 100%)', paddingBottom: 40 }}>
+        <div className="inv-header" style={{ background: 'transparent', border: 'none' }}>
+          <span className="inv-title" style={{ color: '#fff' }}>طلبك قيد المراجعة</span>
+        </div>
+        <div style={{ padding: '40px 24px', textAlign: 'center' }}>
+          <div style={{ fontSize: 72, marginBottom: 20 }}>⏳</div>
+          <h1 style={{ fontSize: 24, fontWeight: 900, color: '#fff', marginBottom: 12 }}>
+            تم إرسال طلبك بنجاح
+          </h1>
+          <p style={{ fontSize: 14, color: 'rgba(255,255,255,.7)', lineHeight: 1.8, maxWidth: 340, margin: '0 auto 24px' }}>
+            طلبك قيد المراجعة من الإدارة. سيتم تفعيل الحساب بعد الموافقة.
+            <br />يرجى الانتظار حتى تصلك رسالة التأكيد.
+          </p>
+
+          <div style={{ padding: 16, background: 'rgba(255,255,255,.05)', borderRadius: 14, marginBottom: 24, maxWidth: 340, margin: '0 auto 24px' }}>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,.5)', marginBottom: 6 }}>رقم حسابك</div>
+            <div style={{ fontSize: 15, fontWeight: 900, color: '#22c55e', fontFamily: 'monospace', direction: 'ltr' }}>
+              {pendingApproval.entity?.username}
+            </div>
+          </div>
+
+          {pendingApproval.waUrl && (
+            <div style={{ maxWidth: 340, margin: '0 auto' }}>
+              <a
+                href={pendingApproval.waUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  display: 'block', padding: 16,
+                  background: 'linear-gradient(135deg, #25D366, #128C7E)',
+                  color: '#fff', borderRadius: 14,
+                  fontSize: 15, fontWeight: 900,
+                  textDecoration: 'none', marginBottom: 12,
+                }}
+              >
+                💬 إرسال الطلب للإدارة عبر واتساب
+              </a>
+              <div style={{ fontSize: 11, color: 'rgba(255,255,255,.5)' }}>
+                اضغط الزر إذا لم يفتح تلقائياً
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
   }
 
   return (

@@ -5,6 +5,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
+import { sendNotification } from '@/lib/notify';
 
 const TYPE_LABELS = {
   merchant:'🏪 متجر', doctor:'👨‍⚕️ طبيب', pharmacy:'💊 صيدلية',
@@ -18,7 +19,7 @@ export default function AdminEntities() {
   const router = useRouter();
   const [entities, setEntities] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState('all');
+  const [filter, setFilter] = useState('pending');
   const [search, setSearch] = useState('');
 
   useEffect(() => {
@@ -35,6 +36,98 @@ export default function AdminEntities() {
     setLoading(false);
   }
 
+  async function approveEntity(ent) {
+    // نطلب اختيار الباقة
+    const planChoice = prompt(
+      `اختر الباقة لـ "${ent.display_name}":\n\n` +
+      `1 = free (مجاني)\n` +
+      `2 = silver (\$5/شهر)\n` +
+      `3 = gold (\$15/شهر)\n` +
+      `4 = platinum (\$40/شهر)\n\n` +
+      `اكتب الرقم:`,
+      '1'
+    );
+    
+    const planMap = { '1': 'free', '2': 'silver', '3': 'gold', '4': 'platinum' };
+    const planName = planMap[planChoice] || 'free';
+    
+    // نجيب الباقة
+    const { data: plan } = await supabase
+      .from('subscription_plans')
+      .select('id, price')
+      .eq('name', planName)
+      .maybeSingle();
+    
+    const { error } = await supabase
+      .from('entities')
+      .update({
+        is_active: true,
+        approval_status: 'approved',
+        approved_at: new Date().toISOString(),
+      })
+      .eq('id', ent.id);
+    
+    if (!error && plan?.id) {
+      // نضيف اشتراك شهري
+      const now = new Date();
+      const expiresAt = new Date(now);
+      expiresAt.setMonth(expiresAt.getMonth() + 1);
+      
+      await supabase.from('entity_subscriptions').insert({
+        entity_id: ent.id,
+        plan_id: plan.id,
+        plan_name: planName,
+        plan_price: plan.price || 0,
+        plan_period: 'monthly',
+        status: 'active',
+        started_at: now.toISOString(),
+        expires_at: expiresAt.toISOString(),
+        reminder_sent: false,
+        expired_notified: false,
+      });
+      
+      // نحدّث entities
+      await supabase.from('entities').update({
+        subscription_plan: planName,
+        subscription_expires: expiresAt.toISOString(),
+        approval_status: 'approved',
+        is_active: true,
+        approved_at: now.toISOString(),
+      }).eq('id', ent.id);
+      
+      // إشعار للمستخدم
+      await sendNotification({
+        recipient: ent.display_name,
+        title: '🎉 تم تفعيل حسابك',
+        body: `حسابك معتمد! باقتك الحالية: ${planName.toUpperCase()} — تنتهي في ${expiresAt.toLocaleDateString('ar-EG')}`,
+        type: 'success',
+        targetUrl: '/login',
+      });
+      
+      setEntities((arr) => arr.map((e) => e.id === ent.id 
+        ? { ...e, is_active: true, approval_status: 'approved', subscription_plan: planName } 
+        : e));
+    }
+    }
+  }
+
+  async function rejectEntity(ent) {
+    const reason = prompt('سبب الرفض (اختياري):');
+    const { error } = await supabase
+      .from('entities')
+      .update({
+        is_active: false,
+        approval_status: 'rejected',
+        rejection_reason: reason || null,
+      })
+      .eq('id', ent.id);
+    if (!error) {
+      setEntities((arr) => arr.map((e) => e.id === ent.id 
+        ? { ...e, is_active: false, approval_status: 'rejected' } 
+        : e));
+    }
+  }
+
   async function toggleActive(ent) {
     const { error } = await supabase.from('entities').update({ is_active: !ent.is_active }).eq('id', ent.id);
     if (!error) setEntities((arr) => arr.map((e) => e.id === ent.id ? { ...e, is_active: !e.is_active } : e));
@@ -47,9 +140,12 @@ export default function AdminEntities() {
   }
 
   const types = ['all', ...new Set(entities.map((e) => e.entity_type))];
+  const pendingCount = entities.filter((e) => e.approval_status === 'pending').length;
 
   const filtered = entities.filter((e) => {
-    if (filter !== 'all' && e.entity_type !== filter) return false;
+    if (filter === 'pending') return e.approval_status === 'pending';
+    if (filter === 'approved') return e.approval_status === 'approved' || !e.approval_status;
+    if (filter !== 'all' && filter !== 'approved' && filter !== 'pending' && e.entity_type !== filter) return false;
     if (!search.trim()) return true;
     const q = search.trim().toLowerCase();
     return (e.display_name || '').toLowerCase().includes(q)
@@ -70,6 +166,11 @@ export default function AdminEntities() {
       </div>
 
       <div className="admin-filters">
+        {pendingCount > 0 && (
+          <button className={`admin-filter ${filter === 'pending' ? 'active' : ''}`} onClick={() => setFilter('pending')} type="button" style={{ background: 'rgba(251,191,36,.15)', border: '1px solid rgba(251,191,36,.4)' }}>
+            ⏳ قيد المراجعة ({pendingCount})
+          </button>
+        )}
         <button className={`admin-filter ${filter === 'all' ? 'active' : ''}`} onClick={() => setFilter('all')} type="button">
           الكل ({entities.length})
         </button>
@@ -97,6 +198,12 @@ export default function AdminEntities() {
                   <span className={`admin-badge ${e.is_active ? 'active' : 'danger'}`}>
                     {e.is_active ? 'نشط' : 'موقوف'}
                   </span>
+                  {e.approval_status === 'pending' && (
+                    <span className="admin-badge warn" style={{ marginInlineStart: 4 }}>⏳ قيد المراجعة</span>
+                  )}
+                  {e.approval_status === 'rejected' && (
+                    <span className="admin-badge danger" style={{ marginInlineStart: 4 }}>❌ مرفوض</span>
+                  )}
                 </div>
               </div>
               <div className="admin-item-actions">

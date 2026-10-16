@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import ImageUploader from '@/components/ImageUploader';
+import FileUploader from '@/components/FileUploader';
 
 async function getModerationStatus(supabase, entity) {
   try {
@@ -84,6 +85,7 @@ export default function NewProduct() {
       discount_percent: Number(f.discount_percent) || 0,
       currency: f.currency,
       image_url: f.image_url.trim() || null,
+      file_url: fileUrl || null,
       category: f.category,
       stock: Number(f.stock) || 0,
       unit: f.unit,
@@ -279,6 +281,16 @@ export default function NewProduct() {
             {error}
           </div>
         )}
+
+                <div className="new-service-field">
+          <FileUploader
+            label="📎 ملف / كتالوج PDF"
+            folder="products-files"
+            value={fileUrl}
+            onUpload={(url) => setFileUrl(url)}
+            maxSize={20}
+          />
+        </div>
 
         <button className="new-service-submit" type="submit" disabled={loading}>
           {loading ? '... جارٍ الحفظ' : '+ إضافة المنتج'}

@@ -5,6 +5,8 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
+import ImageUploader from '@/components/ImageUploader';
+import FileUploader from '@/components/FileUploader';
 
 export default function NewMemory() {
   const router = useRouter();

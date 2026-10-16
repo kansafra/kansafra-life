@@ -666,7 +666,8 @@ img { max-width:100%; height:auto; display:block; }
 }
 .nav-btn:active .ico { transform:scale(.9); }
 
-.sos {
+.sos { display: none !important; visibility: hidden !important; pointer-events: none !important; }
+.sos-hidden-placeholder {
   position:fixed;
   bottom:calc(92px + env(safe-area-inset-bottom,0px));
   right:18px;
