@@ -52,7 +52,34 @@ export default function AdminDashboard() {
     router.push('/admin/login');
   }
 
-  if (!admin) return <div className="admin-page"><div style={{ padding: 80, textAlign: 'center' }}>جارٍ التحقق...</div></div>;
+  if (!admin) return <div className="admin-page">
+      <div style={{ display: 'flex', gap: 8, padding: '12px 16px', background: 'linear-gradient(135deg, rgba(15,77,58,.15), rgba(10,107,80,.1))', borderBottom: '1px solid rgba(15,77,58,.2)' }}>
+        <Link 
+          href="/" 
+          style={{ 
+            flex: 1, padding: '12px 16px', 
+            background: 'linear-gradient(135deg, #22c55e, #16a34a)', 
+            color: '#fff', border: 'none', borderRadius: 12, 
+            fontSize: 13, fontWeight: 900, textDecoration: 'none',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+            boxShadow: '0 2px 8px rgba(34,197,94,.3)'
+          }}
+        >
+          🏠 الواجهة الرئيسية
+        </Link>
+        <Link 
+          href="/merchant" 
+          style={{ 
+            flex: 1, padding: '12px 16px', 
+            background: 'rgba(15,77,58,.2)', 
+            color: '#0f4d3a', border: '1px solid rgba(15,77,58,.3)', borderRadius: 12, 
+            fontSize: 13, fontWeight: 900, textDecoration: 'none',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6
+          }}
+        >
+          💼 لوحة التاجر
+        </Link>
+      </div><div style={{ padding: 80, textAlign: 'center' }}>جارٍ التحقق...</div></div>;
 
   const MENU = [
     { icon: '🎛️', title: 'إدارة المحتوى الكامل', desc: 'تحكم بكل جداول النظام', href: '/admin/manage' },
