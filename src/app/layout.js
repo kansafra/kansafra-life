@@ -5,6 +5,7 @@ import InstallPrompt from '@/components/InstallPrompt';
 import NotificationSetup from '@/components/NotificationSetup';
 import AzkarBar from '@/components/AzkarBar';
 import NotificationListener from '@/components/NotificationListener';
+import SubscriptionReminder from '@/components/SubscriptionReminder';
 
 export const metadata = {
   manifest: '/manifest.json',
@@ -38,7 +39,7 @@ export default function RootLayout({ children }) {
           rel="stylesheet"
         />
       </head>
-      <body>{children}<AzkarBar /><NotificationListener /><ServiceWorkerRegistrar /><InstallPrompt /><NotificationSetup /></body>
+      <body>{children}<AzkarBar /><NotificationListener /><SubscriptionReminder /><ServiceWorkerRegistrar /><InstallPrompt /><NotificationSetup /></body>
     </html>
   );
 }

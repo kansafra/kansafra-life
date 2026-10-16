@@ -2,17 +2,28 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
+import { getSession } from '@/lib/auth';
+import { subscribeEntity, getCurrentSubscription } from '@/lib/subscriptions';
 
 export default function PlansPage() {
   const router = useRouter();
   const [plans, setPlans] = useState([]);
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState('monthly');
+  const [currentSub, setCurrentSub] = useState(null);
+  const [subscribing, setSubscribing] = useState(null);
+  const [message, setMessage] = useState(null);
+  const [session, setSession] = useState(null);
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    const s = getSession();
+    setSession(s);
+    load(s);
+  }, []);
 
-  async function load() {
+  async function load(s) {
     if (!supabase) { setLoading(false); return; }
     const { data } = await supabase
       .from('subscription_plans')
@@ -20,7 +31,40 @@ export default function PlansPage() {
       .eq('is_active', true)
       .order('sort_order');
     setPlans(Array.isArray(data) ? data : []);
+
+    if (s?.id) {
+      const sub = await getCurrentSubscription(s.id);
+      setCurrentSub(sub);
+    }
     setLoading(false);
+  }
+
+  async function handleSubscribe(plan) {
+    if (!session) {
+      router.push('/login');
+      return;
+    }
+    setSubscribing(plan.id);
+    setMessage(null);
+    try {
+      await subscribeEntity({
+        entityId: session.id,
+        planId: plan.id,
+        period,
+        paymentMethod: 'cash',
+      });
+      setMessage({
+        type: 'success',
+        text: `🎉 تم تفعيل باقة "${plan.name_en || plan.name}" بنجاح!`,
+      });
+      const sub = await getCurrentSubscription(session.id);
+      setCurrentSub(sub);
+      setTimeout(() => router.push('/merchant'), 1500);
+    } catch (err) {
+      setMessage({ type: 'error', text: 'تعذّر: ' + (err.message || 'خطأ') });
+    } finally {
+      setSubscribing(null);
+    }
   }
 
   return (
@@ -41,6 +85,42 @@ export default function PlansPage() {
         </p>
       </div>
 
+      {/* الباقة الحالية */}
+      {currentSub && (
+        <div style={{
+          margin: '0 16px 20px',
+          padding: 16,
+          background: 'rgba(34,197,94,.1)',
+          border: '1px solid rgba(34,197,94,.3)',
+          borderRadius: 16,
+        }}>
+          <div style={{ fontSize: 12, color: 'rgba(255,255,255,.6)', marginBottom: 4 }}>باقتك الحالية</div>
+          <div style={{ fontSize: 16, fontWeight: 900, color: '#fff' }}>
+            ✅ {currentSub.plan_name?.toUpperCase()}
+          </div>
+          {currentSub.expires_at && (
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,.5)', marginTop: 4 }}>
+              تنتهي في {new Date(currentSub.expires_at).toLocaleDateString('ar-EG')}
+            </div>
+          )}
+        </div>
+      )}
+
+      {message && (
+        <div style={{
+          margin: '0 16px 16px',
+          padding: 12,
+          background: message.type === 'success' ? 'rgba(34,197,94,.15)' : 'rgba(220,38,38,.15)',
+          border: message.type === 'success' ? '1px solid rgba(34,197,94,.3)' : '1px solid rgba(220,38,38,.3)',
+          borderRadius: 12,
+          color: message.type === 'success' ? '#4ade80' : '#f87171',
+          fontSize: 13,
+          textAlign: 'center',
+        }}>
+          {message.text}
+        </div>
+      )}
+
       {/* مفتاح شهري/سنوي */}
       <div style={{ display: 'flex', justifyContent: 'center', padding: '0 16px 24px' }}>
         <div style={{ display: 'inline-flex', background: 'rgba(255,255,255,.05)', borderRadius: 999, padding: 4 }}>
@@ -51,7 +131,7 @@ export default function PlansPage() {
               padding: '8px 20px', borderRadius: 999, border: 'none',
               background: period === 'monthly' ? '#22c55e' : 'transparent',
               color: period === 'monthly' ? '#fff' : 'rgba(255,255,255,.6)',
-              fontWeight: 900, fontSize: 12.5, cursor: 'pointer'
+              fontWeight: 900, fontSize: 12.5, cursor: 'pointer',
             }}
           >
             شهري
@@ -63,7 +143,7 @@ export default function PlansPage() {
               padding: '8px 20px', borderRadius: 999, border: 'none',
               background: period === 'yearly' ? '#22c55e' : 'transparent',
               color: period === 'yearly' ? '#fff' : 'rgba(255,255,255,.6)',
-              fontWeight: 900, fontSize: 12.5, cursor: 'pointer'
+              fontWeight: 900, fontSize: 12.5, cursor: 'pointer',
             }}
           >
             سنوي <span style={{ fontSize: 10 }}>-20%</span>
@@ -76,13 +156,12 @@ export default function PlansPage() {
       ) : (
         <div style={{ padding: '0 16px', display: 'flex', flexDirection: 'column', gap: 16 }}>
           {plans.map((p) => {
-            const price = period === 'yearly' && p.price_yearly > 0
-              ? p.price_yearly
-              : p.price;
             const displayPrice = period === 'yearly' && p.price_yearly > 0
               ? (p.price_yearly / 12).toFixed(1)
               : p.price;
             const features = Array.isArray(p.features) ? p.features : [];
+            const isCurrent = currentSub?.plan_id === p.id;
+            const isFree = Number(p.price) === 0;
 
             return (
               <div
@@ -91,27 +170,28 @@ export default function PlansPage() {
                   background: p.is_featured
                     ? `linear-gradient(135deg, ${p.color}44, ${p.color}22)`
                     : 'rgba(255,255,255,.03)',
-                  border: p.is_featured
-                    ? `2px solid ${p.color}`
-                    : '1px solid rgba(255,255,255,.1)',
+                  border: isCurrent
+                    ? '2px solid #22c55e'
+                    : p.is_featured
+                      ? `2px solid ${p.color}`
+                      : '1px solid rgba(255,255,255,.1)',
                   borderRadius: 20,
                   padding: 24,
                   position: 'relative',
                   overflow: 'hidden',
                 }}
               >
-                {p.badge && (
+                {isCurrent && (
                   <div style={{
                     position: 'absolute', top: 16, left: 16,
-                    background: '#fbbf24', color: '#000',
+                    background: '#22c55e', color: '#fff',
                     fontSize: 10, fontWeight: 900,
                     padding: '4px 10px', borderRadius: 999,
                   }}>
-                    {p.badge}
+                    ✓ باقتك الحالية
                   </div>
                 )}
-
-                {p.is_featured && (
+                {p.is_featured && !isCurrent && (
                   <div style={{
                     position: 'absolute', top: 16, right: 16,
                     background: '#fbbf24', color: '#000',
@@ -150,11 +230,6 @@ export default function PlansPage() {
                   <span style={{ fontSize: 13, color: 'rgba(255,255,255,.5)', marginInlineStart: 6 }}>
                     /شهر
                   </span>
-                  {period === 'yearly' && p.price_yearly > 0 && (
-                    <div style={{ fontSize: 11, color: '#22c55e', fontWeight: 900, marginTop: 4 }}>
-                      توفير ${(p.price * 12 - p.price_yearly).toFixed(0)} سنوياً
-                    </div>
-                  )}
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 24 }}>
@@ -167,21 +242,32 @@ export default function PlansPage() {
                 </div>
 
                 <button
-                  onClick={() => router.push('/login?plan=' + p.name)}
+                  onClick={() => handleSubscribe(p)}
+                  disabled={isCurrent || subscribing === p.id}
                   type="button"
                   style={{
                     width: '100%',
                     padding: 14,
-                    background: p.is_featured ? p.color : 'rgba(255,255,255,.1)',
+                    background: isCurrent
+                      ? 'rgba(34,197,94,.3)'
+                      : subscribing === p.id
+                        ? '#555'
+                        : p.is_featured ? p.color : 'linear-gradient(135deg, #22c55e, #16a34a)',
                     color: '#fff',
                     border: 'none',
                     borderRadius: 12,
                     fontSize: 14,
                     fontWeight: 900,
-                    cursor: 'pointer',
+                    cursor: isCurrent || subscribing ? 'not-allowed' : 'pointer',
                   }}
                 >
-                  {p.price === 0 ? '🚀 ابدأ مجاناً' : '✨ اشترك الآن'}
+                  {isCurrent
+                    ? '✓ باقتك الحالية'
+                    : subscribing === p.id
+                      ? '... جارٍ التفعيل'
+                      : isFree
+                        ? '🚀 ابدأ مجاناً'
+                        : '✨ اشترك الآن'}
                 </button>
               </div>
             );

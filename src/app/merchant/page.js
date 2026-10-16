@@ -5,6 +5,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
+import { getCurrentSubscription, daysRemaining, isExpiringSoon } from '@/lib/subscriptions';
 import { getSession } from '@/lib/auth';
 import { getEntityConfig } from '@/lib/entityConfig';
 import { useT } from '@/lib/useT';
@@ -83,6 +84,7 @@ export default function OlympusDashboard() {
   const [entity, setEntity] = useState(null);
   const [services, setServices] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [currentSub, setCurrentSub] = useState(null);
   const [realStats, setRealStats] = useState({
     products: 0, services: 0, orders: 0, revenue: 0,
     today: 0, pending: 0, customers: 0, reviews: 0,
@@ -145,6 +147,9 @@ export default function OlympusDashboard() {
       const debtsList = Array.isArray(debtsRes.data) ? debtsRes.data : [];
       const totalDebts = debtsList.reduce((s, d) => s + (Number(d.amount || 0) - Number(d.paid || 0)), 0);
 
+      // جلب الباقة الحالية
+      const sub = await getCurrentSubscription(ent.id);
+      setCurrentSub(sub);
       setRealStats({
         products: productsRes.count || 0,
         services: servData?.length || 0,
@@ -263,6 +268,40 @@ export default function OlympusDashboard() {
       </header>
 
       <div className="ol-body">
+
+        {/* بطاقة الباقة */}
+        {currentSub && (
+          <Link href="/plans" style={{
+            display: 'block',
+            margin: '0 0 16px',
+            padding: 16,
+            background: isExpiringSoon(currentSub.expires_at)
+              ? 'linear-gradient(135deg, #f59e0b, #d97706)'
+              : 'linear-gradient(135deg, #22c55e, #16a34a)',
+            borderRadius: 16,
+            color: '#fff',
+            textDecoration: 'none',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+          }}>
+            <div style={{ fontSize: 32 }}>💎</div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 11, opacity: .8, marginBottom: 2 }}>باقتك الحالية</div>
+              <div style={{ fontSize: 16, fontWeight: 900 }}>
+                {currentSub.plan_name?.toUpperCase()}
+              </div>
+              {currentSub.expires_at && (
+                <div style={{ fontSize: 11, opacity: .9, marginTop: 4 }}>
+                  {isExpiringSoon(currentSub.expires_at)
+                    ? `⚠️ باقي ${daysRemaining(currentSub.expires_at)} يوم — جدد الآن`
+                    : `✅ باقي ${daysRemaining(currentSub.expires_at)} يوم`}
+                </div>
+              )}
+            </div>
+            <span style={{ fontSize: 20 }}>›</span>
+          </Link>
+        )}
 
         {/* KPI CARDS */}
         <div className="ol-kpis">
