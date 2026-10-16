@@ -501,14 +501,7 @@ export default function Home() {
             الخصوصية
           </a>
         </div></footer>
-
-
-      <button
-      >
-        SOS
-      </button>
-
-      <nav className="nav bottom-nav">
+<nav className="nav bottom-nav">
         <button className={`nav-btn ${activeTab === 'home' ? 'active' : ''}`} onClick={() => goTo('home')} type="button">
           <span className="nav-icon">🏠</span><span>الرئيسية</span>
         </button>
