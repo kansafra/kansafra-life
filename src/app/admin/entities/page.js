@@ -37,27 +37,25 @@ export default function AdminEntities() {
   }
 
   async function approveEntity(ent) {
-    // نطلب اختيار الباقة
     const planChoice = prompt(
-      `اختر الباقة لـ "${ent.display_name}":\n\n` +
-      `1 = free (مجاني)\n` +
-      `2 = silver (\$5/شهر)\n` +
-      `3 = gold (\$15/شهر)\n` +
-      `4 = platinum (\$40/شهر)\n\n` +
-      `اكتب الرقم:`,
+      'اختر الباقة لـ "' + ent.display_name + '":\n\n' +
+      '1 = free (مجاني)\n' +
+      '2 = silver ($5/شهر)\n' +
+      '3 = gold ($15/شهر)\n' +
+      '4 = platinum ($40/شهر)\n\n' +
+      'اكتب الرقم:',
       '1'
     );
     
     const planMap = { '1': 'free', '2': 'silver', '3': 'gold', '4': 'platinum' };
     const planName = planMap[planChoice] || 'free';
-    
-    // نجيب الباقة
+
     const { data: plan } = await supabase
       .from('subscription_plans')
       .select('id, price')
       .eq('name', planName)
       .maybeSingle();
-    
+
     const { error } = await supabase
       .from('entities')
       .update({
@@ -66,13 +64,14 @@ export default function AdminEntities() {
         approved_at: new Date().toISOString(),
       })
       .eq('id', ent.id);
-    
-    if (!error && plan?.id) {
-      // نضيف اشتراك شهري
+
+    if (error) { alert('تعذّر: ' + error.message); return; }
+
+    if (plan?.id) {
       const now = new Date();
       const expiresAt = new Date(now);
       expiresAt.setMonth(expiresAt.getMonth() + 1);
-      
+
       await supabase.from('entity_subscriptions').insert({
         entity_id: ent.id,
         plan_id: plan.id,
@@ -85,30 +84,24 @@ export default function AdminEntities() {
         reminder_sent: false,
         expired_notified: false,
       });
-      
-      // نحدّث entities
+
       await supabase.from('entities').update({
         subscription_plan: planName,
         subscription_expires: expiresAt.toISOString(),
-        approval_status: 'approved',
-        is_active: true,
-        approved_at: now.toISOString(),
       }).eq('id', ent.id);
-      
-      // إشعار للمستخدم
+
       await sendNotification({
         recipient: ent.display_name,
         title: '🎉 تم تفعيل حسابك',
-        body: `حسابك معتمد! باقتك الحالية: ${planName.toUpperCase()} — تنتهي في ${expiresAt.toLocaleDateString('ar-EG')}`,
+        body: 'حسابك معتمد! باقتك: ' + planName.toUpperCase() + ' — تنتهي في ' + expiresAt.toLocaleDateString('ar-EG'),
         type: 'success',
         targetUrl: '/login',
       });
-      
-      setEntities((arr) => arr.map((e) => e.id === ent.id 
-        ? { ...e, is_active: true, approval_status: 'approved', subscription_plan: planName } 
-        : e));
     }
-    }
+
+    setEntities((arr) => arr.map((e) => e.id === ent.id 
+      ? Object.assign({}, e, { is_active: true, approval_status: 'approved', subscription_plan: planName })
+      : e));
   }
 
   async function rejectEntity(ent) {
@@ -123,7 +116,7 @@ export default function AdminEntities() {
       .eq('id', ent.id);
     if (!error) {
       setEntities((arr) => arr.map((e) => e.id === ent.id 
-        ? { ...e, is_active: false, approval_status: 'rejected' } 
+        ? Object.assign({}, e, { is_active: false, approval_status: 'rejected' })
         : e));
     }
   }
@@ -140,7 +133,6 @@ export default function AdminEntities() {
   }
 
   const types = ['all', ...new Set(entities.map((e) => e.entity_type))];
-  const pendingCount = entities.filter((e) => e.approval_status === 'pending').length;
 
   const filtered = entities.filter((e) => {
     if (filter === 'pending') return e.approval_status === 'pending';
@@ -166,9 +158,9 @@ export default function AdminEntities() {
       </div>
 
       <div className="admin-filters">
-        {pendingCount > 0 && (
+        {entities.filter((e) => e.approval_status === 'pending').length > 0 && (
           <button className={`admin-filter ${filter === 'pending' ? 'active' : ''}`} onClick={() => setFilter('pending')} type="button" style={{ background: 'rgba(251,191,36,.15)', border: '1px solid rgba(251,191,36,.4)' }}>
-            ⏳ قيد المراجعة ({pendingCount})
+            ⏳ قيد المراجعة ({entities.filter((e) => e.approval_status === 'pending').length})
           </button>
         )}
         <button className={`admin-filter ${filter === 'all' ? 'active' : ''}`} onClick={() => setFilter('all')} type="button">
@@ -198,12 +190,6 @@ export default function AdminEntities() {
                   <span className={`admin-badge ${e.is_active ? 'active' : 'danger'}`}>
                     {e.is_active ? 'نشط' : 'موقوف'}
                   </span>
-                  {e.approval_status === 'pending' && (
-                    <span className="admin-badge warn" style={{ marginInlineStart: 4 }}>⏳ قيد المراجعة</span>
-                  )}
-                  {e.approval_status === 'rejected' && (
-                    <span className="admin-badge danger" style={{ marginInlineStart: 4 }}>❌ مرفوض</span>
-                  )}
                 </div>
               </div>
               <div className="admin-item-actions">
