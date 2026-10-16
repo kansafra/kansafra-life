@@ -29,10 +29,25 @@ export default function Checkout() {
   const [error, setError] = useState('');
   const [doneCode, setDoneCode] = useState('');
   const [doneOrderId, setDoneOrderId] = useState('');
+  const [paymentMethods, setPaymentMethods] = useState([]);
+  const [selectedPayment, setSelectedPayment] = useState('cash');
 
   useEffect(() => {
     setCart(getCart());
     setTotals(cartTotals());
+  }, []);
+
+  useEffect(() => {
+    async function loadPaymentMethods() {
+      if (!supabase) return;
+      const { data } = await supabase
+        .from('payment_methods')
+        .select('*')
+        .eq('is_active', true)
+        .order('sort_order');
+      if (Array.isArray(data)) setPaymentMethods(data);
+    }
+    loadPaymentMethods();
   }, []);
 
   async function submit(e) {
@@ -74,6 +89,7 @@ export default function Checkout() {
       const { data, error: err } = await supabase.from('orders').insert({
         order_code: code,
         provider_name: prov,
+        payment_method: selectedPayment,
         provider_phone: providerPhone,
         provider_logo: providerLogo,
         customer_name: name.trim(),
@@ -223,6 +239,41 @@ export default function Checkout() {
         </div>
 
         {error && <div style={{ padding:14, background:'rgba(220,38,38,.14)', border:'1px solid rgba(220,38,38,.35)', borderRadius:14, color:'#dc2626', fontSize:13, fontWeight:600 }}>{error}</div>}
+
+        {paymentMethods.length > 0 && (
+          <div className="new-service-field" style={{ marginTop: 16 }}>
+            <label className="new-service-label">💳 طريقة الدفع</label>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
+              {paymentMethods.map((pm) => (
+                <button
+                  key={pm.id}
+                  type="button"
+                  onClick={() => setSelectedPayment(pm.method_type)}
+                  style={{
+                    padding: 12,
+                    background: selectedPayment === pm.method_type ? 'rgba(34,197,94,.15)' : 'rgba(255,255,255,.04)',
+                    border: selectedPayment === pm.method_type ? '2px solid #22c55e' : '1px solid rgba(255,255,255,.1)',
+                    borderRadius: 12,
+                    color: '#fff',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: 4,
+                  }}
+                >
+                  <span style={{ fontSize: 22 }}>{pm.icon}</span>
+                  <span style={{ fontSize: 11, fontWeight: 800, textAlign: 'center' }}>{pm.name_ar}</span>
+                </button>
+              ))}
+            </div>
+            {paymentMethods.find((p) => p.method_type === selectedPayment)?.instructions && (
+              <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 8, lineHeight: 1.6, padding: 10, background: 'rgba(148,163,184,.08)', borderRadius: 10 }}>
+                ℹ️ {paymentMethods.find((p) => p.method_type === selectedPayment)?.instructions}
+              </div>
+            )}
+          </div>
+        )}
 
         <button className="new-service-submit" type="submit" disabled={loading}>
           {loading ? '... جارٍ الإرسال' : '✓ تأكيد الطلب'}
