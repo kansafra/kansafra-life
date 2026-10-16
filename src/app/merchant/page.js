@@ -78,6 +78,13 @@ const getTimeGreeting = () => {
   return 'مساء الخير';
 };
 
+function withTimeout(promise, ms = 5000) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), ms)),
+  ]);
+}
+
 export default function OlympusDashboard() {
   const router = useRouter();
   const { t } = useT();
@@ -124,7 +131,7 @@ export default function OlympusDashboard() {
       const [
         productsRes, ordersRes, customersRes, reviewsRes,
         inventoryRes, employeesRes, debtsRes, paymentsRes,
-      ] = await Promise.all([
+      ] = await withTimeout(Promise.all([
         supabase.from('products').select('id', { count: 'exact', head: true }).eq('provider_name', ent.display_name),
         supabase.from('orders').select('*').eq('provider_name', ent.display_name),
         supabase.from('customers').select('id', { count: 'exact', head: true }).eq('entity_name', ent.display_name),
@@ -133,7 +140,7 @@ export default function OlympusDashboard() {
         supabase.from('employees').select('id', { count: 'exact', head: true }).eq('entity_name', ent.display_name),
         supabase.from('debts').select('amount, paid').eq('entity_name', ent.display_name),
         supabase.from('payments').select('amount').eq('entity_name', ent.display_name),
-      ]);
+      ]), 5000);
 
       // 3) نحسب الإحصائيات
       const orders = Array.isArray(ordersRes.data) ? ordersRes.data : [];
