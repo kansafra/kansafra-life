@@ -20,6 +20,8 @@ C.merchant = {
     { key: 'products', label: 'منتج' },
     { key: 'orders', label: 'طلبات' },
     { key: 'revenue', label: 'مبيعات' },
+    { key: 'pending', label: 'قيد التحضير' },
+    { key: 'today', label: 'اليوم' },
   ],
   quickActions: [
     { icon: '📦', title: 'المنتجات', href: '/merchant/products' },
@@ -31,7 +33,8 @@ C.merchant = {
     { icon: '👥', title: 'الموظفون', href: '/merchant/employees' },
     { icon: '⭐', title: 'التقييمات', href: '/merchant/reviews' },
     { icon: '💳', title: 'الدفع', href: '/merchant/payments' },
-    { icon: '💎', title: 'اشتراكي', href: '/merchant/subscription' },
+        { icon: '⚙️', title: 'إعدادات حسابي', href: '/merchant/settings' },
+{ icon: '💎', title: 'اشتراكي', href: '/merchant/subscription' },
     { icon: '⏳', title: 'قيد المراجعة', href: '/merchant/moderation' },
   ],
 };
@@ -52,7 +55,8 @@ C.restaurant = {
     { icon: '📊', title: 'المخزون', href: '/merchant/inventory' },
     { icon: '💳', title: 'الدفع', href: '/merchant/payments' },
     { icon: '👥', title: 'الموظفون', href: '/merchant/employees' },
-    { icon: '💎', title: 'اشتراكي', href: '/merchant/subscription' },
+        { icon: '⚙️', title: 'إعدادات حسابي', href: '/merchant/settings' },
+{ icon: '💎', title: 'اشتراكي', href: '/merchant/subscription' },
     { icon: '⏳', title: 'قيد المراجعة', href: '/merchant/moderation' },
   ],
 };
@@ -71,7 +75,8 @@ C.doctor = {
     { icon: '📋', title: 'السجلات', href: '/merchant/medical_records' },
     { icon: '💊', title: 'الوصفات', href: '/merchant/prescriptions' },
     { icon: '💬', title: 'الدردشة', href: '/merchant/chat' },
-    { icon: '💎', title: 'اشتراكي', href: '/merchant/subscription' },
+        { icon: '⚙️', title: 'إعدادات حسابي', href: '/merchant/settings' },
+{ icon: '💎', title: 'اشتراكي', href: '/merchant/subscription' },
     { icon: '⏳', title: 'قيد المراجعة', href: '/merchant/moderation' },
   ],
 };
@@ -89,7 +94,8 @@ C.pharmacy = {
     { icon: '🌙', title: 'المناوبات', href: '/merchant/oncall_shifts' },
     { icon: '🛍️', title: 'الطلبات', href: '/merchant/orders' },
     { icon: '🧾', title: 'الفواتير', href: '/merchant/invoices' },
-    { icon: '💎', title: 'اشتراكي', href: '/merchant/subscription' },
+        { icon: '⚙️', title: 'إعدادات حسابي', href: '/merchant/settings' },
+{ icon: '💎', title: 'اشتراكي', href: '/merchant/subscription' },
     { icon: '⏳', title: 'قيد المراجعة', href: '/merchant/moderation' },
   ],
 };
@@ -109,7 +115,8 @@ C.school = {
     { icon: '📋', title: 'الحضور', href: '/merchant/attendance' },
     { icon: '💰', title: 'الرسوم', href: '/merchant/fees' },
     { icon: '📄', title: 'ملفات الصفوف', href: '/merchant/class_files' },
-    { icon: '💎', title: 'اشتراكي', href: '/merchant/subscription' },
+        { icon: '⚙️', title: 'إعدادات حسابي', href: '/merchant/settings' },
+{ icon: '💎', title: 'اشتراكي', href: '/merchant/subscription' },
     { icon: '⏳', title: 'قيد المراجعة', href: '/merchant/moderation' },
   ],
 };
@@ -127,7 +134,8 @@ C.mosque = {
     { icon: '🗣️', title: 'خطب الجمعة', href: '/merchant/sermons' },
     { icon: '🎯', title: 'الحلقات', href: '/merchant/circles' },
     { icon: '🎁', title: 'التبرعات', href: '/merchant/donations' },
-    { icon: '💎', title: 'اشتراكي', href: '/merchant/subscription' },
+        { icon: '⚙️', title: 'إعدادات حسابي', href: '/merchant/settings' },
+{ icon: '💎', title: 'اشتراكي', href: '/merchant/subscription' },
     { icon: '⏳', title: 'قيد المراجعة', href: '/merchant/moderation' },
   ],
 };
@@ -146,7 +154,8 @@ C.council = {
     { icon: '📩', title: 'الشكاوى', href: '/merchant/office_requests' },
     { icon: '🏗️', title: 'المشاريع', href: '/merchant/budget' },
     { icon: '📜', title: 'الشهادات', href: '/merchant/documents' },
-    { icon: '💎', title: 'اشتراكي', href: '/merchant/subscription' },
+        { icon: '⚙️', title: 'إعدادات حسابي', href: '/merchant/settings' },
+{ icon: '💎', title: 'اشتراكي', href: '/merchant/subscription' },
     { icon: '⏳', title: 'قيد المراجعة', href: '/merchant/moderation' },
   ],
 };
@@ -164,7 +173,8 @@ C.municipality = {
     { icon: '📩', title: 'الطلبات والشكاوى', href: '/merchant/office_requests' },
     { icon: '📜', title: 'الشهادات', href: '/merchant/office_requests' },
     { icon: '🏗️', title: 'المشاريع', href: '/merchant/office_requests' },
-    { icon: '💎', title: 'اشتراكي', href: '/merchant/subscription' },
+        { icon: '⚙️', title: 'إعدادات حسابي', href: '/merchant/settings' },
+{ icon: '💎', title: 'اشتراكي', href: '/merchant/subscription' },
     { icon: '⏳', title: 'قيد المراجعة', href: '/merchant/moderation' },
   ],
 };
@@ -182,7 +192,8 @@ C.charity = {
     { icon: '👥', title: 'طلبات المساعدة', href: '/merchant/elderly_requests' },
     { icon: '🤝', title: 'المتطوعون', href: '/merchant/volunteers' },
     { icon: '📢', title: 'الإعلانات', href: '/merchant/announcements' },
-    { icon: '💎', title: 'اشتراكي', href: '/merchant/subscription' },
+        { icon: '⚙️', title: 'إعدادات حسابي', href: '/merchant/settings' },
+{ icon: '💎', title: 'اشتراكي', href: '/merchant/subscription' },
     { icon: '⏳', title: 'قيد المراجعة', href: '/merchant/moderation' },
   ],
 };
@@ -200,7 +211,8 @@ C.sports = {
     { icon: '⚽', title: 'المباريات', href: '/merchant/sports_matches' },
     { icon: '🏆', title: 'الترتيب', href: '/merchant/sports_standings' },
     { icon: '📢', title: 'الإعلانات', href: '/merchant/announcements' },
-    { icon: '💎', title: 'اشتراكي', href: '/merchant/subscription' },
+        { icon: '⚙️', title: 'إعدادات حسابي', href: '/merchant/settings' },
+{ icon: '💎', title: 'اشتراكي', href: '/merchant/subscription' },
     { icon: '⏳', title: 'قيد المراجعة', href: '/merchant/moderation' },
   ],
 };
@@ -218,7 +230,8 @@ C.hotel = {
     { icon: '👥', title: 'الموظفون', href: '/merchant/employees' },
     { icon: '⭐', title: 'التقييمات', href: '/merchant/reviews' },
     { icon: '💬', title: 'الدردشة', href: '/merchant/chat' },
-    { icon: '💎', title: 'اشتراكي', href: '/merchant/subscription' },
+        { icon: '⚙️', title: 'إعدادات حسابي', href: '/merchant/settings' },
+{ icon: '💎', title: 'اشتراكي', href: '/merchant/subscription' },
     { icon: '⏳', title: 'قيد المراجعة', href: '/merchant/moderation' },
   ],
 };
@@ -236,7 +249,8 @@ C.memory = {
     { icon: '📖', title: 'الحكايات', href: '/merchant/memory_stories' },
     { icon: '📍', title: 'الأماكن', href: '/merchant/memory_places' },
     { icon: '📢', title: 'الإعلانات', href: '/merchant/announcements' },
-    { icon: '💎', title: 'اشتراكي', href: '/merchant/subscription' },
+        { icon: '⚙️', title: 'إعدادات حسابي', href: '/merchant/settings' },
+{ icon: '💎', title: 'اشتراكي', href: '/merchant/subscription' },
     { icon: '⏳', title: 'قيد المراجعة', href: '/merchant/moderation' },
   ],
 };
@@ -254,7 +268,8 @@ C.office = {
     { icon: '💼', title: 'الوظائف', href: '/merchant/job_postings' },
     { icon: '👤', title: 'الباحثون', href: '/merchant/job_seekers' },
     { icon: '💬', title: 'الدردشة', href: '/merchant/chat' },
-    { icon: '💎', title: 'اشتراكي', href: '/merchant/subscription' },
+        { icon: '⚙️', title: 'إعدادات حسابي', href: '/merchant/settings' },
+{ icon: '💎', title: 'اشتراكي', href: '/merchant/subscription' },
     { icon: '⏳', title: 'قيد المراجعة', href: '/merchant/moderation' },
   ],
 };
@@ -272,7 +287,8 @@ C.transport = {
     { icon: '🛣️', title: 'الخطوط', href: '/merchant/vehicles' },
     { icon: '🛍️', title: 'الطلبات', href: '/merchant/orders' },
     { icon: '💳', title: 'الدفع', href: '/merchant/payments' },
-    { icon: '💎', title: 'اشتراكي', href: '/merchant/subscription' },
+        { icon: '⚙️', title: 'إعدادات حسابي', href: '/merchant/settings' },
+{ icon: '💎', title: 'اشتراكي', href: '/merchant/subscription' },
     { icon: '⏳', title: 'قيد المراجعة', href: '/merchant/moderation' },
   ],
 };
@@ -291,7 +307,8 @@ C.exchange = {
     { icon: '📊', title: 'التقارير', href: '/merchant/reports' },
     { icon: '👥', title: 'العملاء', href: '/merchant/customers' },
     { icon: '💬', title: 'الدردشة', href: '/merchant/chat' },
-    { icon: '💎', title: 'اشتراكي', href: '/merchant/subscription' },
+        { icon: '⚙️', title: 'إعدادات حسابي', href: '/merchant/settings' },
+{ icon: '💎', title: 'اشتراكي', href: '/merchant/subscription' },
     { icon: '⏳', title: 'قيد المراجعة', href: '/merchant/moderation' },
   ],
 };

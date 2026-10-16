@@ -1,4 +1,4 @@
-// ═══════════ Sanad File Upload ═══════════
+// ═══════════ رفع الملفات ═══════════
 import { supabase } from './supabase';
 
 const BUCKET = 'sanad-files';

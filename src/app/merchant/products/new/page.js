@@ -5,6 +5,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
+import ImageUploader from '@/components/ImageUploader';
 
 async function getModerationStatus(supabase, entity) {
   try {
@@ -254,17 +255,13 @@ export default function NewProduct() {
         </div>
 
         <div className="new-service-field">
-          <label className="new-service-label">رابط الصورة</label>
-          <input
-            className="new-service-input"
-            type="url"
-            placeholder="https://..."
+          <ImageUploader
+            label="📸 صورة المنتج"
+            folder="products"
             value={f.image_url}
-            onChange={(e) => update('image_url', e.target.value)}
+            onUpload={(url) => update('image_url', url)}
+            aspect="1/1"
           />
-          <div className="new-prod-hint">
-            الصق رابط صورة من الإنترنت (سيتم عرضها بحجم مربع)
-          </div>
         </div>
 
         <div className="new-service-field">

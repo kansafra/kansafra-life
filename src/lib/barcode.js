@@ -1,4 +1,4 @@
-// ═══════════ Sanad Barcode Generator ═══════════
+// ═══════════ Barcode Generator ═══════════
 // ينتج SVG Code 128 (بدون مكتبات خارجية)
 
 const CODE128_PATTERNS = [

@@ -1,4 +1,4 @@
-// ═══════════ Sanad Reviews & Favorites ═══════════
+// ═══════════ التقييمات والمفضلة ═══════════
 import { supabase } from './supabase';
 
 export async function loadReviews(targetType, targetId) {

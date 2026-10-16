@@ -1,4 +1,4 @@
-// ═══════════ Sanad Print Helpers ═══════════
+// ═══════════ Print Helpers ═══════════
 
 export function printThermal(elementId, options = {}) {
   const el = document.getElementById(elementId);

@@ -1,4 +1,4 @@
-// ═══════════ Sanad Offline-First Cache ═══════════
+// ═══════════ Offline-First Cache ═══════════
 const CACHE_PREFIX = 'sanad_cache_';
 const CACHE_TTL = 5 * 60 * 1000; // 5 دقائق
 

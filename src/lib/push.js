@@ -1,4 +1,4 @@
-// ═══════════ Sanad Push Notifications ═══════════
+// ═══════════ إشعارات Push ═══════════
 import { supabase } from './supabase';
 
 export async function requestNotificationPermission() {

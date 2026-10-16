@@ -5,6 +5,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
+import { notifyOrderStatus } from '@/lib/notify';
 
 const STATUS_LABELS = {
   new: 'جديد',
@@ -55,6 +56,12 @@ export default function MerchantOrders() {
     const next = NEXT_STATUS[order.status];
     if (!next) return;
     const { error: err } = await supabase.from('orders').update({ status: next }).eq('id', order.id);
+    if (!err) {
+      // ═══ إشعار للعميل ═══
+      try {
+        await notifyOrderStatus(order.customer_phone, order.order_code, next);
+      } catch (e) { console.warn('notify failed:', e); }
+    }
     if (err) { alert('تعذّر التحديث'); return; }
     setOrders((arr) => arr.map((o) => o.id === order.id ? { ...o, status: next } : o));
   }

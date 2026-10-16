@@ -1,4 +1,4 @@
-// ═══════════ Sanad i18n ═══════════
+// ═══════════ الترجمة ═══════════
 
 export const translations = {
   ar: {
@@ -191,7 +191,7 @@ export const translations = {
     'lang.english': 'English',
   },
   en: {
-    'app.name': 'Sanad',
+    'app.name': 'سند',
     'app.tagline': 'Your services, closer',
     'app.hero.title': 'All your community services in one place',
     'app.browse': 'Browse Categories',
@@ -288,7 +288,7 @@ export const translations = {
     'reports.export': 'Export CSV',
     'security.title': 'Security',
     'security.2fa': 'Two-Factor Auth',
-    'ai.title': 'Sanad Assistant',
+    'ai.title': 'المساعد الذكي',
     'ai.placeholder': 'Ask me anything...',
     'notifications.title': 'Notifications',
     'notifications.mark_all': 'Mark all as read',

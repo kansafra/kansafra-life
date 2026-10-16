@@ -1,4 +1,4 @@
-// ═══════════ Sanad Currency Rates ═══════════
+// ═══════════ Currency Rates ═══════════
 
 const DEFAULT_RATES = {
   SYP: 1,

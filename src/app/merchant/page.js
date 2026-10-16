@@ -5,6 +5,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
+import { getSession } from '@/lib/auth';
 import { getEntityConfig } from '@/lib/entityConfig';
 import { useT } from '@/lib/useT';
 
@@ -82,6 +83,11 @@ export default function OlympusDashboard() {
   const [entity, setEntity] = useState(null);
   const [services, setServices] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [realStats, setRealStats] = useState({
+    products: 0, services: 0, orders: 0, revenue: 0,
+    today: 0, pending: 0, customers: 0, reviews: 0,
+    inventory: 0, employees: 0, debts: 0, expenses: 0,
+  });
   const [weekActivity] = useState([3, 5, 8, 6, 9, 12, 10]);
   const [trends] = useState({
     services: [1, 2, 2, 3, 4, 5, 6],
@@ -92,7 +98,8 @@ export default function OlympusDashboard() {
   useEffect(() => {
     let stored = null;
     try {
-      const raw = localStorage.getItem('sanad_entity');
+      const session = getSession();
+      const raw = session ? JSON.stringify(session) : null;
       if (raw) stored = JSON.parse(raw);
     } catch {}
     if (!stored) { router.replace('/login'); return; }
@@ -103,21 +110,64 @@ export default function OlympusDashboard() {
   async function loadServices(ent) {
     if (!supabase) { setLoading(false); return; }
     try {
-      const { data } = await supabase
+      // 1) الخدمات
+      const { data: servData } = await supabase
         .from('services')
         .select('*')
         .eq('provider_name', ent.display_name)
         .order('created_at', { ascending: false });
-      if (Array.isArray(data)) setServices(data);
+      if (Array.isArray(servData)) setServices(servData);
+
+      // 2) نجلب كل الإحصائيات دفعة وحدة
+      const [
+        productsRes, ordersRes, customersRes, reviewsRes,
+        inventoryRes, employeesRes, debtsRes, paymentsRes,
+      ] = await Promise.all([
+        supabase.from('products').select('id', { count: 'exact', head: true }).eq('provider_name', ent.display_name),
+        supabase.from('orders').select('*').eq('provider_name', ent.display_name),
+        supabase.from('customers').select('id', { count: 'exact', head: true }).eq('entity_name', ent.display_name),
+        supabase.from('reviews').select('id', { count: 'exact', head: true }).eq('target_name', ent.display_name),
+        supabase.from('inventory').select('id', { count: 'exact', head: true }).eq('entity_name', ent.display_name),
+        supabase.from('employees').select('id', { count: 'exact', head: true }).eq('entity_name', ent.display_name),
+        supabase.from('debts').select('amount, paid').eq('entity_name', ent.display_name),
+        supabase.from('payments').select('amount').eq('entity_name', ent.display_name),
+      ]);
+
+      // 3) نحسب الإحصائيات
+      const orders = Array.isArray(ordersRes.data) ? ordersRes.data : [];
+      const today = new Date(); today.setHours(0, 0, 0, 0);
+      const todayOrders = orders.filter((o) => new Date(o.created_at) >= today);
+      const pendingOrders = orders.filter((o) => o.status === 'new' || o.status === 'preparing');
+      const totalRevenue = orders
+        .filter((o) => o.status === 'done')
+        .reduce((s, o) => s + Number(o.total || 0), 0);
+
+      const debtsList = Array.isArray(debtsRes.data) ? debtsRes.data : [];
+      const totalDebts = debtsList.reduce((s, d) => s + (Number(d.amount || 0) - Number(d.paid || 0)), 0);
+
+      setRealStats({
+        products: productsRes.count || 0,
+        services: servData?.length || 0,
+        orders: orders.length,
+        revenue: totalRevenue,
+        today: todayOrders.length,
+        pending: pendingOrders.length,
+        customers: customersRes.count || 0,
+        reviews: reviewsRes.count || 0,
+        inventory: inventoryRes.count || 0,
+        employees: employeesRes.count || 0,
+        debts: totalDebts,
+        expenses: 0,
+      });
     } catch (e) {
-      console.error(e);
+      console.error('load stats error:', e);
     } finally {
       setLoading(false);
     }
   }
 
   function handleLogout() {
-    try { localStorage.removeItem('sanad_entity'); } catch {}
+    try { localStorage.removeItem('sanad_entity'); localStorage.removeItem('sanad_auth_session'); } catch {}
     router.push('/');
   }
 
@@ -136,12 +186,22 @@ export default function OlympusDashboard() {
   const theme = cfg.theme;
 
   const statsData = {
-    services: services.length,
-    orders: 0,
+    // إحصائيات حقيقية من DB
+    products: realStats.products,
+    services: realStats.services,
+    orders: realStats.orders,
+    revenue: realStats.revenue,
+    today: realStats.today,
+    pending: realStats.pending,
+    customers: realStats.customers,
+    reviews: realStats.reviews,
+    inventory: realStats.inventory,
+    employees: realStats.employees,
+    debts: realStats.debts,
+    expenses: realStats.expenses,
+    // باقي الحقول (تفضل 0 لحد ما نضيفها)
     views: 0,
-    today: 0,
     patients: 0,
-    pending: 0,
     medicines: 0,
     onCall: 0,
     students: 0,
@@ -206,7 +266,7 @@ export default function OlympusDashboard() {
 
         {/* KPI CARDS */}
         <div className="ol-kpis">
-          {cfg.stats.map((s) => {
+          {cfg.stats.map((s, i) => {
             const val = statsData[s.key] ?? 0;
             const trendArr = trends[s.key] || [1, 2, 3, 4, 5, 6, 7];
             const isUp = String(s.trend || '').startsWith('+');
@@ -214,7 +274,7 @@ export default function OlympusDashboard() {
             const trendClass = isUp ? 'up' : isDown ? 'down' : 'flat';
             return (
               <div
-                key={s.key}
+                key={s.key || i}
                 className="ol-kpi"
                 style={{
                   '--kpi-from': theme.from,
@@ -235,8 +295,8 @@ export default function OlympusDashboard() {
 
         {/* QUICK ACTIONS */}
         <div className="ol-quick">
-          {cfg.quickActions.map((a) => (
-            <Link key={a.id} href={a.href} className="ol-quick-btn" style={{ textDecoration: 'none' }}>
+          {cfg.quickActions.map((a, i) => (
+            <Link key={a.id || a.href || i} href={a.href} className="ol-quick-btn" style={{ textDecoration: 'none' }}>
               <span className="ol-quick-icon">{a.icon}</span>
               <span className="ol-quick-label">{a.title}</span>
             </Link>

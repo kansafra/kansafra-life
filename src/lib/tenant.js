@@ -1,4 +1,4 @@
-// ═══════════ Sanad Multi-Tenant ═══════════
+// ═══════════ متعدد المجتمعات ═══════════
 import { supabase } from './supabase';
 
 const STORAGE_KEY = 'sanad_community';

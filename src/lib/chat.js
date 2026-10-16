@@ -1,4 +1,4 @@
-// ═══════════ Sanad Chat ═══════════
+// ═══════════ الدردشة ═══════════
 import { supabase } from './supabase';
 
 export function getCustomerKey() {

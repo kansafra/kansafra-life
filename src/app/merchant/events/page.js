@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
+import ImageUploader from '@/components/ImageUploader';
 
 async function getModerationStatus(supabase, entity) {
   try {
@@ -63,6 +64,7 @@ export default function EventsPage() {
       location: form.location?.trim() || null,
       registration_fee: Number(form.registration_fee) || 0,
       max_participants: Number(form.max_participants) || 0,
+      image_url: f.image_url || null,
       is_published: true,
     };
     let err;
@@ -138,7 +140,17 @@ export default function EventsPage() {
 
             <div className="admin-form-actions">
               <button className="mng-btn ghost" onClick={() => { setMode(null); setEditing(null); }} type="button">إلغاء</button>
-              <button className="mng-btn primary" onClick={save} type="button">✓ حفظ</button>
+              <div className="new-service-field">
+              <ImageUploader
+                label="📸 صورة الفعالية"
+                folder="events"
+                value={f.image_url}
+                onUpload={(url) => setF({ ...f, image_url: url })}
+                aspect="16/9"
+              />
+            </div>
+
+            <button className="mng-btn primary" onClick={save} type="button">✓ حفظ</button>
             </div>
           </div>
         </div>

@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
+import { addToCart as addToCartLib } from '@/lib/cart';
 
 const SORTS = [
   { key: 'newest',   label: '🆕 الأحدث' },
@@ -77,12 +78,15 @@ export default function StoresPage() {
 
   const addToCart = (product) => {
     try {
-      const cart = JSON.parse(localStorage.getItem('sanad_cart') || '[]');
-      const existing = cart.find((x) => x.id === product.id);
-      if (existing) existing.qty += 1;
-      else cart.push({ id: product.id, title: product.title, price: product.price, currency: product.currency, image: product.image_url, provider: product.provider_name, qty: 1 });
-      localStorage.setItem('sanad_cart', JSON.stringify(cart));
-      window.dispatchEvent(new Event('sanad-cart-update'));
+      addToCartLib({
+        id: product.id,
+        title: product.title,
+        price: product.price,
+        currency: product.currency,
+        image: product.image_url,
+        provider_name: product.provider_name,
+        qty: 1,
+      });
       alert('✅ تمت الإضافة للسلة');
     } catch (e) {
       alert('تعذّر: ' + e.message);

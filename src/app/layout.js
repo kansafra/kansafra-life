@@ -4,6 +4,7 @@ import ServiceWorkerRegistrar from '@/components/ServiceWorkerRegistrar';
 import InstallPrompt from '@/components/InstallPrompt';
 import NotificationSetup from '@/components/NotificationSetup';
 import AzkarBar from '@/components/AzkarBar';
+import NotificationListener from '@/components/NotificationListener';
 
 export const metadata = {
   manifest: '/manifest.json',
@@ -28,7 +29,7 @@ export const viewport = {
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="ar" dir="rtl">
+    <html lang="ar" dir="rtl" data-scroll-behavior="smooth">
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
@@ -37,7 +38,7 @@ export default function RootLayout({ children }) {
           rel="stylesheet"
         />
       </head>
-      <body>{children}<AzkarBar /><ServiceWorkerRegistrar /><InstallPrompt /><NotificationSetup /></body>
+      <body>{children}<AzkarBar /><NotificationListener /><ServiceWorkerRegistrar /><InstallPrompt /><NotificationSetup /></body>
     </html>
   );
 }

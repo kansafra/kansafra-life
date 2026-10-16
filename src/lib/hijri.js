@@ -1,4 +1,4 @@
-// ═══════════ Sanad Hijri Calendar ═══════════
+// ═══════════ Hijri Calendar ═══════════
 
 export function toHijri(date = new Date()) {
   try {

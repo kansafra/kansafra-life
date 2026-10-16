@@ -57,7 +57,7 @@ export default function InvoicePage() {
 
   return (
     <>
-      <div className="invoice-wrap">
+      <div className="invoice-wrap" id="invoice-capture-area">
         <div className="invoice-header">
           <div className="invoice-brand">
             <div className="invoice-brand-mark">س</div>
@@ -142,7 +142,7 @@ export default function InvoicePage() {
       </div>
 
       <div style={{ padding: '0 20px' }} className="no-print">
-        <ShareButtons title={`فاتورة ${order.order_code} من سند`} />
+        <ShareButtons title={`فاتورة ${order.order_code} من سند`} captureId="invoice-capture-area" />
       </div>
 
       <div className="invoice-actions no-print">

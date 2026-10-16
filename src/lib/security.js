@@ -1,4 +1,4 @@
-// ═══════════ Sanad Security ═══════════
+// ═══════════ Security ═══════════
 import { supabase } from './supabase';
 
 // ═══ TOTP (Time-based One-Time Password) ═══
@@ -70,7 +70,7 @@ export async function generateTOTP(secret) {
   }
 }
 
-export function getOTPAuthURL(secret, label, issuer = 'Sanad') {
+export function getOTPAuthURL(secret, label, issuer = 'سند') {
   return `otpauth://totp/${encodeURIComponent(issuer)}:${encodeURIComponent(label)}?secret=${secret}&issuer=${encodeURIComponent(issuer)}&algorithm=SHA1&digits=6&period=30`;
 }
 

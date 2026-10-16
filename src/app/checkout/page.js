@@ -5,6 +5,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
+import { notifyNewOrder } from '@/lib/notify';
 import { getCart, clearCart, cartTotals, getCartByProvider } from '@/lib/cart';
 
 const genCode = () => {
@@ -27,6 +28,7 @@ export default function Checkout() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [doneCode, setDoneCode] = useState('');
+  const [doneOrderId, setDoneOrderId] = useState('');
 
   useEffect(() => {
     setCart(getCart());
@@ -56,9 +58,24 @@ export default function Checkout() {
       const discount = subtotal - total;
       const code = i === 0 ? firstCode : genCode();
 
+      // نجيب رقم هاتف التاجر
+      let providerPhone = null;
+      let providerLogo = null;
+      try {
+        const { data: entData } = await supabase
+          .from('entities')
+          .select('phone, logo_url')
+          .eq('display_name', prov)
+          .maybeSingle();
+        providerPhone = entData?.phone || null;
+        providerLogo = entData?.logo_url || null;
+      } catch {}
+
       const { data, error: err } = await supabase.from('orders').insert({
         order_code: code,
         provider_name: prov,
+        provider_phone: providerPhone,
+        provider_logo: providerLogo,
         customer_name: name.trim(),
         customer_phone: phone.trim(),
         customer_address: address.trim() || null,
@@ -71,7 +88,7 @@ export default function Checkout() {
 
       if (err) {
         console.error(err);
-        setError('تعذّر إرسال الطلب');
+        setError('تعذّر: ' + (err.message || JSON.stringify(err)));
         setLoading(false);
         return;
       }
@@ -80,11 +97,15 @@ export default function Checkout() {
 
     setLoading(false);
     clearCart();
+    // ═══ إشعار للتاجر ═══
+    try {
+      if (providers.length > 0) {
+        await notifyNewOrder(providers[0], firstCode, name.trim());
+      }
+    } catch (e) { console.warn('notify failed:', e); }
     setDoneCode(firstCode);
-
-    setTimeout(() => {
-      router.push(firstOrderId ? `/invoice/${firstOrderId}` : '/');
-    }, 1400);
+    setDoneOrderId(firstOrderId || '');
+    // ⚠️ ما نوجّه للفاتورة تلقائياً — ننتظر التاجر
   }
 
   if (cart.length === 0 && !doneCode) {
@@ -107,9 +128,47 @@ export default function Checkout() {
       <div className="new-prod-page">
         <div className="new-service-success">
           <div className="chk-circle">✓</div>
-          <h2>تم إرسال الطلب</h2>
+          <h2>تم إرسال طلبك</h2>
           <p>رقم الطلب: <strong style={{ fontFamily:'monospace', direction:'ltr', display:'inline-block' }}>{doneCode}</strong></p>
-          <p style={{ fontSize: 12, color: 'var(--n-400)' }}>سيتم توجيهك إلى الفاتورة...</p>
+          <p style={{ fontSize: 13, color: '#f59e0b', fontWeight: 800, marginTop: 8 }}>
+            ⏳ طلبك قيد المراجعة من التاجر
+          </p>
+          <p style={{ fontSize: 12, color: 'var(--n-400)', lineHeight: 1.7 }}>
+            سيتم تجهيز طلبك قريباً، وتقدر تتابع الحالة من زر التتبع.
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 24, maxWidth: 340, margin: '24px auto 0' }}>
+            <Link
+              href={doneOrderId ? `/order/${doneOrderId}` : '/'}
+              style={{
+                padding: '14px 24px',
+                background: 'linear-gradient(135deg, #22c55e, #16a34a)',
+                color: '#fff',
+                borderRadius: 14,
+                fontSize: 14,
+                fontWeight: 900,
+                textDecoration: 'none',
+                textAlign: 'center'
+              }}
+            >
+              📦 تتبع الطلب
+            </Link>
+            <Link
+              href="/"
+              style={{
+                padding: '12px 24px',
+                background: 'rgba(255,255,255,.06)',
+                color: '#fff',
+                border: '1px solid rgba(255,255,255,.15)',
+                borderRadius: 14,
+                fontSize: 13,
+                fontWeight: 800,
+                textDecoration: 'none',
+                textAlign: 'center'
+              }}
+            >
+              🏠 العودة للرئيسية
+            </Link>
+          </div>
         </div>
       </div>
     );

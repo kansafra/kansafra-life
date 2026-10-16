@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
+import ImageUploader from '@/components/ImageUploader';
 
 async function getModerationStatus(supabase, entity) {
   try {
@@ -60,6 +61,7 @@ export default function P() {
       capacity: Number(f.capacity) || 0,
       price_per_hour: Number(f.price_per_hour) || 0,
       phone: f.phone?.trim() || null,
+      image_url: f.image_url || null,
       is_available: true,
     };
     let err;
@@ -146,6 +148,16 @@ export default function P() {
                 <label className="new-service-label">السعر/ساعة</label>
                 <input className="new-service-input" type="number" value={f.price_per_hour || 0} onChange={(ev) => setF({ ...f, price_per_hour: ev.target.value })} />
               </div>
+            </div>
+
+            <div className="new-service-field">
+              <ImageUploader
+                label="📸 صورة الملعب"
+                folder="venues"
+                value={f.image_url}
+                onUpload={(url) => setF({ ...f, image_url: url })}
+                aspect="16/9"
+              />
             </div>
 
             <div className="new-service-field">

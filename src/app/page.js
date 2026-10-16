@@ -115,7 +115,7 @@ export default function Home() {
       if (cached.cats) setLoading(false);
 
       try {
-        const [c, s, f, a] = await Promise.all([
+        const [c, s, f, a, p] = await Promise.all([
           supabase.from('service_categories').select('*')
             .eq('is_active', true).eq('is_visible', true).order('sort_order', { ascending: true }),
           supabase.from('services').select('*')
@@ -124,6 +124,10 @@ export default function Home() {
             .eq('is_featured', true).limit(8),
           supabase.from('announcements').select('*')
             .order('created_at', { ascending: false }).limit(5),
+          supabase.from('products').select('*')
+            .eq('moderation_status', 'approved')
+            .order('created_at', { ascending: false })
+            .limit(20),
         ]);
         if (!alive) return;
         if (c.data?.length) {
@@ -133,11 +137,28 @@ export default function Home() {
           ]);
         }
         if (Array.isArray(s.data)) setServices(s.data);
+        // نضيف المنتجات كـ items إضافية
+        if (Array.isArray(p?.data)) {
+          const productItems = p.data.map((pr) => ({
+            id: pr.id,
+            title: pr.title,
+            description: pr.description,
+            provider_name: pr.provider_name,
+            phone: null,
+            image_url: pr.image_url,
+            price: pr.price,
+            currency: pr.currency,
+            category_id: 'products',
+            __type: 'product',
+          }));
+          setFeatured((prev) => [...productItems.slice(0, 8), ...prev]);
+          setServices((prev) => [...productItems, ...prev]);
+        }
         if (Array.isArray(f.data)) setFeatured(f.data);
         if (Array.isArray(a.data)) setAnnouncements(a.data);
         setDbNotice(Boolean(c.error || s.error || f.error || a.error));
       } catch (e) {
-        console.error('Sanad load:', e);
+        console.error('خطأ في التحميل:', e);
         if (alive) setDbNotice(true);
       } finally {
         if (alive) setLoading(false);
@@ -336,7 +357,7 @@ export default function Home() {
           </section>
           <div className="deals-scroll">
             {deals.map((d) => (
-              <button key={d.id} className="deal" type="button" onClick={() => router.push('/service/' + d.id)}>
+              <button key={d.id} className="deal" type="button" onClick={() => router.push((d.__type === 'product' ? '/product/' : '/service/') + d.id)}>
                 <span className="deal-tag">🏷️ عرض خاص</span>
                 <div className="deal-title">{d.title}</div>
                 <div className="deal-meta">{d.provider_name || catName(d.category_id)}</div>
@@ -374,7 +395,7 @@ export default function Home() {
         ) : filtered.length > 0 ? (
           <div className="entity-list stagger">
             {filtered.map((x) => (
-              <button key={x.id} className="entity" type="button" onClick={() => router.push('/service/' + x.id)}>
+              <button key={x.id} className="entity" type="button" onClick={() => router.push((x.__type === 'product' ? '/product/' : '/service/') + x.id)}>
                 <div className="entity-logo">
                   {x.image_url ? (
                     <img src={x.image_url} alt={x.title || ''} loading="lazy" />
