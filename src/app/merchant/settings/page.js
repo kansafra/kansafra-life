@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { getSession, updateSession, logout } from '@/lib/auth';
+import PaymentMethodsSettings from '@/components/PaymentMethodsSettings';
 
 const IMAGE_BUCKETS = {
   logo: 'sanad-files',
@@ -212,6 +213,10 @@ export default function MerchantSettings() {
       </div>
 
       {/* ═══ الحقول ═══ */}
+      <div style={{ marginTop: 24, marginBottom: 24, paddingTop: 24, borderTop: '2px solid var(--ink-100)' }}>
+        <PaymentMethodsSettings />
+      </div>
+
       <div style={{ padding: '0 16px' }}>
         <Field label="اسم النشاط *" value={form.display_name} onChange={(v) => update('display_name', v)} />
         <Field label="نبذة عنك" value={form.bio} onChange={(v) => update('bio', v)} multiline />

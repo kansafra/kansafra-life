@@ -134,7 +134,7 @@ export default function DoctorPage() {
             <span style={{ letterSpacing: 3, fontSize: 11, fontWeight: 800, opacity: .7 }}>DOCTOR</span>
           </div>
           <h1 className="doc-title">{doctorName}</h1>
-          <p className="doc-sub">احجز موعدك الآن في دقيقة</p>
+          <p className="doc-sub">احجز موعدك الآن يوجد دقيقة</p>
         </div>
       </header>
 

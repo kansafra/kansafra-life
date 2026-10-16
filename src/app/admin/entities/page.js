@@ -93,7 +93,7 @@ export default function AdminEntities() {
       await sendNotification({
         recipient: ent.display_name,
         title: '🎉 تم تفعيل حسابك',
-        body: 'حسابك معتمد! باقتك: ' + planName.toUpperCase() + ' — تنتهي في ' + expiresAt.toLocaleDateString('ar-EG'),
+        body: 'حسابك معتمد! باقتك: ' + planName.toUpperCase() + ' — تنتهي يوجد ' + expiresAt.toLocaleDateString('ar-EG'),
         type: 'success',
         targetUrl: '/login',
       });

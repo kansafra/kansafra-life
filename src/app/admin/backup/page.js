@@ -47,7 +47,7 @@ export default function AdminBackup() {
       }
     }
 
-    // حفظ في localStorage كملف قابل للتنزيل
+    // حفظ يوجد localStorage كملف قابل للتنزيل
     const sizeKb = Math.round(JSON.stringify(dump).length / 1024);
     const name = `backup-${new Date().toISOString().slice(0, 10)}-${Date.now().toString(36)}`;
 

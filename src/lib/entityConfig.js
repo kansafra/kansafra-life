@@ -78,7 +78,8 @@ C.doctor = {
         { icon: '⚙️', title: 'إعدادات حسابي', href: '/merchant/settings' },
 { icon: '💎', title: 'اشتراكي', href: '/merchant/subscription' },
     { icon: '⏳', title: 'قيد المراجعة', href: '/merchant/moderation' },
-  ],
+  
+    { icon: '👥', title: 'العملاء', href: '/merchant/customers' },],
 };
 
 C.pharmacy = {
@@ -97,7 +98,8 @@ C.pharmacy = {
         { icon: '⚙️', title: 'إعدادات حسابي', href: '/merchant/settings' },
 { icon: '💎', title: 'اشتراكي', href: '/merchant/subscription' },
     { icon: '⏳', title: 'قيد المراجعة', href: '/merchant/moderation' },
-  ],
+  
+    { icon: '👥', title: 'العملاء', href: '/merchant/customers' },],
 };
 
 C.school = {
@@ -233,7 +235,8 @@ C.hotel = {
         { icon: '⚙️', title: 'إعدادات حسابي', href: '/merchant/settings' },
 { icon: '💎', title: 'اشتراكي', href: '/merchant/subscription' },
     { icon: '⏳', title: 'قيد المراجعة', href: '/merchant/moderation' },
-  ],
+  
+    { icon: '👥', title: 'العملاء', href: '/merchant/customers' },],
 };
 
 C.memory = {
@@ -290,7 +293,8 @@ C.transport = {
         { icon: '⚙️', title: 'إعدادات حسابي', href: '/merchant/settings' },
 { icon: '💎', title: 'اشتراكي', href: '/merchant/subscription' },
     { icon: '⏳', title: 'قيد المراجعة', href: '/merchant/moderation' },
-  ],
+  
+    { icon: '👥', title: 'العملاء', href: '/merchant/customers' },],
 };
 
 
@@ -310,6 +314,24 @@ C.exchange = {
         { icon: '⚙️', title: 'إعدادات حسابي', href: '/merchant/settings' },
 { icon: '💎', title: 'اشتراكي', href: '/merchant/subscription' },
     { icon: '⏳', title: 'قيد المراجعة', href: '/merchant/moderation' },
+  ],
+};
+
+C.internet = {
+  label: 'مزود إنترنت', icon: '🌐', greeting: 'أهلًا بك', theme: T.sky,
+  tagline: 'إدارة الباقات والمشتركين والفواتير',
+  stats: [
+    { key: 'subscribers', label: 'مشترك' },
+    { key: 'plans', label: 'باقة' },
+    { key: 'invoices', label: 'فاتورة' },
+  ],
+  quickActions: [
+    { icon: '📶', title: 'الباقات', href: '/merchant/internet/plans' },
+    { icon: '👥', title: 'المشتركون', href: '/merchant/internet/subscribers' },
+    { icon: '🧾', title: 'الفواتير', href: '/merchant/internet/invoices' },
+    { icon: '🛠️', title: 'التذاكر', href: '/merchant/internet/tickets' },
+    { icon: '💎', title: 'اشتراكي', href: '/merchant/subscription' },
+    { icon: '⚙️', title: 'إعدادات حسابي', href: '/merchant/settings' },
   ],
 };
 

@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
+import { getSession } from '@/lib/auth';
 
 export default function BookingsPage() {
   const router = useRouter();
@@ -17,7 +18,7 @@ export default function BookingsPage() {
 
   useEffect(() => {
     let stored = null;
-    try { stored = JSON.parse(localStorage.getItem('sanad_entity') || 'null'); } catch {}
+    try { stored = getSession(); } catch (e) {}
     if (!stored) { router.replace('/login'); return; }
     setEntity(stored);
     load(stored);
@@ -93,7 +94,7 @@ export default function BookingsPage() {
   const STATUS_LABELS = {
     pending: { l: 'قيد المراجعة', c: '#f59e0b' },
     confirmed: { l: 'مؤكد', c: '#16a34a' },
-    checked_in: { l: 'في الفندق', c: '#0891b2' },
+    checked_in: { l: 'يوجد الفندق', c: '#0891b2' },
     checked_out: { l: 'غادر', c: '#6b7280' },
     cancelled: { l: 'ملغي', c: '#dc2626' },
   };
@@ -111,7 +112,7 @@ export default function BookingsPage() {
           { k: 'all', l: 'الكل' },
           { k: 'pending', l: 'قيد المراجعة' },
           { k: 'confirmed', l: 'مؤكد' },
-          { k: 'checked_in', l: 'في الفندق' },
+          { k: 'checked_in', l: 'يوجد الفندق' },
           { k: 'checked_out', l: 'غادر' },
         ].map((f) => (
           <button key={f.k} className={`store-cat-chip ${filter === f.k ? 'active' : ''}`} onClick={() => setFilter(f.k)} type="button">
@@ -231,7 +232,7 @@ export default function BookingsPage() {
               <select className="new-service-select" value={form.status || 'pending'} onChange={(ev) => setForm({ ...form, status: ev.target.value })}>
                 <option value="pending">قيد المراجعة</option>
                 <option value="confirmed">مؤكد</option>
-                <option value="checked_in">في الفندق</option>
+                <option value="checked_in">يوجد الفندق</option>
                 <option value="checked_out">غادر</option>
                 <option value="cancelled">ملغي</option>
               </select>

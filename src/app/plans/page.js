@@ -100,7 +100,7 @@ export default function PlansPage() {
           </div>
           {currentSub.expires_at && (
             <div style={{ fontSize: 11, color: 'rgba(255,255,255,.5)', marginTop: 4 }}>
-              تنتهي في {new Date(currentSub.expires_at).toLocaleDateString('ar-EG')}
+              تنتهي يوجد {new Date(currentSub.expires_at).toLocaleDateString('ar-EG')}
             </div>
           )}
         </div>

@@ -186,7 +186,7 @@ export default function BookAppointmentPage() {
           <div style={{ fontSize: 72, marginBottom: 16 }}>✅</div>
           <h1 style={{ fontSize: 22, fontWeight: 900, marginBottom: 12 }}>تم إرسال طلب الحجز</h1>
           <p style={{ fontSize: 13, color: 'var(--n-500)', lineHeight: 1.8, marginBottom: 24 }}>
-            سيتم تأكيد موعدك من قبل الطبيب. تابع حالته في صفحة "مواعيدي".
+            سيتم تأكيد موعدك من قبل الطبيب. تابع حالته يوجد صفحة "مواعيدي".
           </p>
 
           <div style={{ padding: 20, background: 'rgba(15,77,58,.08)', borderRadius: 16, textAlign: 'right', maxWidth: 340, margin: '0 auto 24px' }}>
@@ -261,7 +261,7 @@ export default function BookAppointmentPage() {
             <label className="new-service-label">⏰ الوقت</label>
             {availableSlots.length === 0 ? (
               <div style={{ padding: 12, background: 'rgba(220,38,38,.1)', borderRadius: 10, fontSize: 12, color: '#f87171', textAlign: 'center' }}>
-                لا توجد أوقات متاحة في هذا اليوم
+                لا توجد أوقات متاحة يوجد هذا اليوم
               </div>
             ) : (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>

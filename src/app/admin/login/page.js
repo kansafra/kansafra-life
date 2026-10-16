@@ -20,7 +20,7 @@ export default function AdminLogin() {
     setLoading(true);
     const { data, error: err } = await supabase.rpc('verify_admin', { un: u.trim(), pw: p });
     setLoading(false);
-    if (err) { setError('خطأ في الخادم'); return; }
+    if (err) { setError('خطأ يوجد الخادم'); return; }
     if (!data || data.length === 0) { setError('بيانات الدخول غير صحيحة'); return; }
     try { localStorage.setItem('sanad_admin', JSON.stringify(data[0])); } catch {}
     router.push('/admin');

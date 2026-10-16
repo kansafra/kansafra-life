@@ -3,6 +3,7 @@ import { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
+import { getSession } from '@/lib/auth';
 
 async function getModerationStatus(supabase, entity) {
   try {
@@ -32,7 +33,7 @@ export default function ImportPage() {
 
   if (!entity && typeof window !== 'undefined') {
     let stored = null;
-    try { stored = JSON.parse(localStorage.getItem('sanad_entity') || 'null'); } catch {}
+    try { stored = getSession(); } catch (e) {}
     if (!stored) { router.replace('/login'); return null; }
     setEntity(stored);
   }

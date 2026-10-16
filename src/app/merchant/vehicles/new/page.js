@@ -5,6 +5,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
+import { getSession } from '@/lib/auth';
 
 export default function NewVehicle() {
   const router = useRouter();
@@ -23,7 +24,7 @@ export default function NewVehicle() {
 
   useEffect(() => {
     let stored = null;
-    try { stored = JSON.parse(localStorage.getItem('sanad_entity') || 'null'); } catch {}
+    try { stored = getSession(); } catch (e) {}
     if (!stored) { router.replace('/login'); return; }
     setEntity(stored);
   }, [router]);
@@ -66,7 +67,7 @@ export default function NewVehicle() {
         <div className="new-service-success">
           <div className="chk-circle">✓</div>
           <h2>تم إضافة المركبة</h2>
-          <p>ستظهر الآن للزوار في صفحة المواصلات</p>
+          <p>ستظهر الآن للزوار يوجد صفحة المواصلات</p>
           <Link href="/merchant" className="new-service-submit" style={{ display: 'block', textAlign: 'center', textDecoration: 'none' }}>
             العودة للوحة
           </Link>

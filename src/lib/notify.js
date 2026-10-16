@@ -30,7 +30,7 @@ export async function sendNotification({ recipient, title, body, type = 'info', 
     });
   } catch {}
 
-  // 3) حفظ في DB
+  // 3) حفظ يوجد DB
   if (!supabase) return { ok: false };
   const { error } = await supabase.from('notifications').insert({
     recipient_entity: recipient || null,
@@ -59,7 +59,7 @@ export async function notifyNewOrder(providerName, orderCode, customerName) {
 export async function notifyOrderStatus(customerPhone, orderCode, status) {
   const STATUS_MSG = {
     preparing:  { title: '👨‍🍳 طلبك قيد التحضير', body: `الطلب ${orderCode} بدأ التحضير` },
-    delivering: { title: '🚚 طلبك في التوصيل', body: `الطلب ${orderCode} في الطريق إليك` },
+    delivering: { title: '🚚 طلبك يوجد التوصيل', body: `الطلب ${orderCode} يوجد الطريق إليك` },
     done:       { title: '✅ اكتمل طلبك', body: `يمكنك الآن عرض الفاتورة ${orderCode}` },
     cancelled:  { title: '❌ تم إلغاء الطلب', body: `الطلب ${orderCode} ملغي` },
   };

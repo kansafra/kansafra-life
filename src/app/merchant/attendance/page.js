@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
+import { getSession } from '@/lib/auth';
 
 const STATUSES = [
   { k: 'present', l: '✅ حاضر', color: '#16a34a' },
@@ -25,7 +26,7 @@ export default function AttendancePage() {
 
   useEffect(() => {
     let stored = null;
-    try { stored = JSON.parse(localStorage.getItem('sanad_entity') || 'null'); } catch {}
+    try { stored = getSession(); } catch (e) {}
     if (!stored) { router.replace('/login'); return; }
     setEntity(stored);
     load(stored);
@@ -197,7 +198,7 @@ export default function AttendancePage() {
       )}
 
       {selectedClass && classStudents.length === 0 && (
-        <div className="sect-empty"><span className="em">👥</span><p>لا يوجد طلاب في هذا الصف</p></div>
+        <div className="sect-empty"><span className="em">👥</span><p>لا يوجد طلاب يوجد هذا الصف</p></div>
       )}
 
       {!selectedClass && !loading && (

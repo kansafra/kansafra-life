@@ -1,287 +1,290 @@
 'use client';
 
-
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
+import { getSession } from '@/lib/auth';
 
-export default function MerchantDebts() {
+export default function DebtsPage() {
   const router = useRouter();
-  const [entity, setEntity] = useState(null);
+  const [s, setS] = useState(null);
   const [debts, setDebts] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState('all');
-  const [mode, setMode] = useState(null);
-  const [editing, setEditing] = useState(null);
-  const [deleting, setDeleting] = useState(null);
-  const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({});
+  const [L, setL] = useState(true);
+  const [fl, setFl] = useState('active');
+  const [q, setQ] = useState('');
+  const [ed, setEd] = useState(null);
+  const [f, setF] = useState({});
+  const [reminderEnabled, setReminderEnabled] = useState(true);
 
   useEffect(() => {
-    let stored = null;
-    try { stored = JSON.parse(localStorage.getItem('sanad_entity') || 'null'); } catch {}
-    if (!stored) { router.replace('/login'); return; }
-    setEntity(stored);
-    load(stored);
+    const x = getSession();
+    if (!x) { router.replace('/login'); return; }
+    setS(x); load(x);
+    loadSettings();
   }, [router]);
 
-  async function load(ent) {
-    if (!supabase) { setLoading(false); return; }
-    const { data } = await supabase.from('debts').select('*').eq('entity_name', ent.display_name).order('created_at', { ascending: false });
+  async function load(x) {
+    if (!supabase) { setL(false); return; }
+    const { data } = await supabase
+      .from('debts')
+      .select('*')
+      .eq('entity_name', x.display_name)
+      .order('created_at', { ascending: false });
     setDebts(Array.isArray(data) ? data : []);
-    setLoading(false);
+    setL(false);
   }
 
-  const today = new Date().toISOString().slice(0, 10);
-
-  const debtStatus = (d) => {
-    const amount = Number(d.amount) || 0;
-    const paid = Number(d.paid) || 0;
-    if (paid >= amount) return 'paid';
-    if (d.due_date && d.due_date < today) return 'overdue';
-    if (d.due_date && (new Date(d.due_date) - new Date()) / (1000 * 60 * 60 * 24) < 7) return 'warning';
-    return 'active';
-  };
-
-  const filtered = debts.filter((d) => {
-    const st = debtStatus(d);
-    if (filter === 'all') return true;
-    if (filter === 'paid') return st === 'paid';
-    if (filter === 'active') return st === 'active' || st === 'warning';
-    if (filter === 'overdue') return st === 'overdue';
-    return true;
-  });
-
-  // إجماليات
-  const totalDebt = debts.reduce((sum, d) => sum + (Number(d.amount) || 0), 0);
-  const totalPaid = debts.reduce((sum, d) => sum + (Number(d.paid) || 0), 0);
-  const totalRemaining = totalDebt - totalPaid;
-  const overdueCount = debts.filter((d) => debtStatus(d) === 'overdue').length;
-
-  function openAdd() {
-    setMode('add');
-    setForm({ customer_name: '', customer_phone: '', amount: '', paid: '0', currency: 'SYP', description: '', due_date: '', notes: '' });
+  async function loadSettings() {
+    if (!supabase) return;
+    const { data } = await supabase
+      .from('app_settings')
+      .select('value')
+      .eq('key', 'debt_reminder_enabled')
+      .maybeSingle();
+    if (data) setReminderEnabled(data.value !== 'false');
   }
 
-  function openEdit(d) {
-    setMode('edit');
-    setEditing(d);
-    setForm({
-      customer_name: d.customer_name || '',
-      customer_phone: d.customer_phone || '',
-      amount: String(d.amount || ''),
-      paid: String(d.paid || ''),
-      currency: d.currency || 'SYP',
-      description: d.description || '',
-      due_date: d.due_date || '',
-      notes: d.notes || '',
+  function add() {
+    setEd('new');
+    const d = new Date(); d.setDate(d.getDate() + 30);
+    setF({
+      customer_name: '',
+      customer_phone: '',
+      amount: '',
+      paid: 0,
+      currency: 'SYP',
+      description: '',
+      due_date: d.toISOString().slice(0, 10),
+      reminder_enabled: true,
+      notes: '',
     });
   }
+  function edit(x) { setEd(x.id); setF({ ...x }); }
 
   async function save() {
-    if (!form.customer_name.trim()) { alert('اسم العميل مطلوب'); return; }
-    if (!form.amount || Number(form.amount) <= 0) { alert('المبلغ مطلوب'); return; }
-    setSaving(true);
-    const payload = {
-      entity_name: entity.display_name,
-      customer_name: form.customer_name.trim(),
-      customer_phone: form.customer_phone.trim() || null,
-      amount: Number(form.amount),
-      paid: Number(form.paid) || 0,
-      currency: form.currency,
-      description: form.description.trim() || null,
-      due_date: form.due_date || null,
-      notes: form.notes.trim() || null,
+    if (!f.customer_name?.trim()) { alert('اسم العميل مطلوب'); return; }
+    if (!f.amount) { alert('المبلغ مطلوب'); return; }
+    const p = {
+      entity_name: s.display_name,
+      customer_name: f.customer_name.trim(),
+      customer_phone: f.customer_phone?.trim() || null,
+      amount: parseFloat(f.amount) || 0,
+      paid: parseFloat(f.paid) || 0,
+      currency: f.currency || 'SYP',
+      description: f.description?.trim() || null,
+      due_date: f.due_date || null,
+      reminder_enabled: f.reminder_enabled !== false,
+      notes: f.notes?.trim() || null,
+      status: f.status || 'active',
     };
     let err;
-    if (mode === 'add') {
-      ({ error: err } = await supabase.from('debts').insert(payload));
-    } else {
-      ({ error: err } = await supabase.from('debts').update(payload).eq('id', editing.id));
-    }
-    setSaving(false);
-    if (err) { alert('تعذّر الحفظ: ' + err.message); return; }
-    setMode(null); setEditing(null);
-    load(entity);
+    if (ed === 'new') ({ error: err } = await supabase.from('debts').insert(p));
+    else ({ error: err } = await supabase.from('debts').update(p).eq('id', ed));
+    if (err) { alert('تعذّر: ' + err.message); return; }
+    setEd(null); load(s);
   }
 
-  async function markPaid(d) {
-    const { error } = await supabase.from('debts').update({ paid: d.amount, status: 'paid' }).eq('id', d.id);
-    if (!error) load(entity);
-  }
-
-  async function del(d) {
+  async function del(x) {
     if (!confirm('حذف هذا الدين؟')) return;
-    await supabase.from('debts').delete().eq('id', d.id);
-    load(entity);
+    await supabase.from('debts').delete().eq('id', x.id);
+    load(s);
   }
 
-  if (!entity) return <div className="sect-empty" style={{ padding: 80 }}><span className="em">⏳</span></div>;
+  async function addPayment(x, amt) {
+    const newPaid = (Number(x.paid) || 0) + amt;
+    const status = newPaid >= Number(x.amount) ? 'settled' : 'partial';
+    await supabase.from('debts').update({ paid: newPaid, status }).eq('id', x.id);
+    load(s);
+  }
+
+  function sendReminder(x) {
+    const ph = (x.customer_phone || '').replace(/[^0-9]/g, '');
+    if (!ph) { alert('لا يوجد رقم هاتف للعميل'); return; }
+    const remaining = Number(x.amount) - (Number(x.paid) || 0);
+    const msg = '🔔 *تذكير بدين — سند*\n\n' +
+      'عزيزنا ' + x.customer_name + '،\n\n' +
+      'نذكركم بأن لديكم ديناً بقيمة *' + Number(x.amount).toLocaleString() + ' ' + x.currency + '*\n' +
+      '📅 تاريخ الاستحقاق: ' + (x.due_date || 'غير محدد') + '\n' +
+      (Number(x.paid) > 0 ? '💰 المدفوع: ' + Number(x.paid).toLocaleString() + ' ' + x.currency + '\n' : '') +
+      '⚠️ *المتبقي: ' + remaining.toLocaleString() + ' ' + x.currency + '*\n' +
+      (x.description ? '\n📝 ' + x.description : '') +
+      '\n\nشكراً لتعاملكم معنا — سند';
+    window.open('https://wa.me/' + ph + '?text=' + encodeURIComponent(msg), '_blank');
+    // نحدّث آخر تذكير
+    supabase.from('debts').update({
+      last_reminder_at: new Date().toISOString(),
+      reminder_count: (x.reminder_count || 0) + 1,
+    }).eq('id', x.id).then(() => load(s));
+  }
+
+  const list = debts.filter((x) => {
+    const rem = Number(x.amount) - (Number(x.paid) || 0);
+    if (fl === 'active' && rem <= 0) return false;
+    if (fl === 'settled' && rem > 0) return false;
+    if (fl === 'overdue') {
+      if (rem <= 0) return false;
+      if (!x.due_date) return false;
+      if (new Date(x.due_date) >= new Date()) return false;
+    }
+    if (!q.trim()) return true;
+    const z = q.trim().toLowerCase();
+    return (x.customer_name || '').toLowerCase().includes(z) || (x.customer_phone || '').includes(z);
+  });
+
+  const totalActive = debts.reduce((sum, x) => {
+    const rem = Number(x.amount) - (Number(x.paid) || 0);
+    return rem > 0 ? sum + rem : sum;
+  }, 0);
 
   return (
-    <div className="mng-page">
-      <div className="mng-header">
-        <Link href="/merchant" className="mng-back">→</Link>
-        <span className="mng-title">💰 الديون والأقساط</span>
-        <span className="mng-count">{debts.length}</span>
-        <button className="mng-add-btn" onClick={openAdd} type="button">+ إضافة</button>
+    <div className="sect-page" style={{ paddingBottom: 60 }}>
+      <div className="inv-header">
+        <Link href="/merchant" className="inv-back">→</Link>
+        <span className="inv-title">📒 دفاتر الديون</span>
+        <button className="mng-add-btn" onClick={add} type="button">+ دين</button>
       </div>
 
-      {!loading && (
-        <div className="debt-summary">
-          <div className="debt-stat">
-            <div className="debt-stat-val">{totalDebt.toLocaleString()}</div>
-            <div className="debt-stat-lbl">إجمالي الديون</div>
-          </div>
-          <div className="debt-stat warn">
-            <div className="debt-stat-val">{totalPaid.toLocaleString()}</div>
-            <div className="debt-stat-lbl">المدفوع</div>
-          </div>
-          <div className="debt-stat danger">
-            <div className="debt-stat-val">{totalRemaining.toLocaleString()}</div>
-            <div className="debt-stat-lbl">المتبقي</div>
-          </div>
-          <div className="debt-stat danger">
-            <div className="debt-stat-val">{overdueCount}</div>
-            <div className="debt-stat-lbl">متأخرة</div>
-          </div>
+      {/* ملخص */}
+      <div style={{ padding: 16, background: 'linear-gradient(135deg, #dc2626, #991b1b)', margin: '12px 16px', borderRadius: 16, color: '#fff' }}>
+        <div style={{ fontSize: 12, opacity: .85, marginBottom: 6 }}>💰 إجمالي الديون النشطة</div>
+        <div style={{ fontSize: 26, fontWeight: 900, direction: 'ltr', textAlign: 'right' }}>
+          {totalActive.toLocaleString()} {debts[0]?.currency || 'SYP'}
         </div>
-      )}
-
-      <div className="debt-filters">
-        <button className={`debt-filter ${filter === 'all' ? 'active' : ''}`} onClick={() => setFilter('all')} type="button">الكل</button>
-        <button className={`debt-filter ${filter === 'active' ? 'active' : ''}`} onClick={() => setFilter('active')} type="button">نشطة</button>
-        <button className={`debt-filter ${filter === 'overdue' ? 'active' : ''}`} onClick={() => setFilter('overdue')} type="button">متأخرة</button>
-        <button className={`debt-filter ${filter === 'paid' ? 'active' : ''}`} onClick={() => setFilter('paid')} type="button">مسددة</button>
+        <div style={{ fontSize: 11, opacity: .75, marginTop: 6 }}>{debts.filter((x) => Number(x.amount) - (Number(x.paid) || 0) > 0).length} دين نشط</div>
       </div>
 
-      {loading ? (
-        <div className="sect-empty"><span className="em">⏳</span><p>جارٍ التحميل...</p></div>
-      ) : filtered.length === 0 ? (
-        <div className="sect-empty">
-          <span className="em">💰</span>
-          <p>لا توجد ديون</p>
-          <button className="mng-add-btn" onClick={openAdd} type="button" style={{ marginTop: 16 }}>+ إضافة الأولى</button>
-        </div>
-      ) : (
-        <div className="mng-rows" style={{ paddingTop: 12 }}>
-          {filtered.map((d) => {
-            const st = debtStatus(d);
-            const amount = Number(d.amount) || 0;
-            const paid = Number(d.paid) || 0;
-            const remaining = amount - paid;
-            const progress = amount > 0 ? (paid / amount) * 100 : 0;
-            const statusLabel = st === 'paid' ? 'مسدد' : st === 'overdue' ? 'متأخر' : st === 'warning' ? 'قريب' : 'نشط';
+      <div style={{ padding: '0 16px 12px' }}>
+        <input className="new-service-input" placeholder="🔍 ابحث بالاسم أو الهاتف..." value={q} onChange={(e) => setQ(e.target.value)} />
+      </div>
+
+      <div className="chips-scroll" style={{ padding: '0 16px 12px' }}>
+        <button className={'chip ' + (fl === 'active' ? 'active' : '')} onClick={() => setFl('active')} type="button">نشطة</button>
+        <button className={'chip ' + (fl === 'overdue' ? 'active' : '')} onClick={() => setFl('overdue')} type="button">متأخرة</button>
+        <button className={'chip ' + (fl === 'settled' ? 'active' : '')} onClick={() => setFl('settled')} type="button">مسددة</button>
+        <button className={'chip ' + (fl === 'all' ? 'active' : '')} onClick={() => setFl('all')} type="button">الكل</button>
+      </div>
+
+      {L ? <div className="sect-empty"><span className="em">⏳</span></div>
+       : list.length === 0 ? <div className="sect-empty"><span className="em">📒</span><p>لا توجد ديون</p></div>
+       : <div style={{ padding: 16 }}>
+          {list.map((x) => {
+            const remaining = Number(x.amount) - (Number(x.paid) || 0);
+            const overdue = x.due_date && new Date(x.due_date) < new Date() && remaining > 0;
             return (
-              <div key={d.id} className={`debt-card ${st}`}>
-                <div className="debt-head">
-                  <div>
-                    <div className="debt-customer">{d.customer_name}</div>
-                    {d.customer_phone && <div className="debt-phone">{d.customer_phone}</div>}
+              <div key={x.id} className="debt-card" style={{ borderRightColor: overdue ? '#dc2626' : remaining > 0 ? '#f59e0b' : '#22c55e', marginBottom: 10 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 15, fontWeight: 900, marginBottom: 4 }}>👤 {x.customer_name}</div>
+                    {x.customer_phone && <div style={{ fontSize: 12, color: 'var(--ink-500)', direction: 'ltr', textAlign: 'right' }}>📞 {x.customer_phone}</div>}
                   </div>
-                  <span className={`debt-badge ${st}`}>{statusLabel}</span>
+                  {overdue && <span className="admin-badge danger">متأخر</span>}
+                  {!overdue && remaining <= 0 && <span className="admin-badge active">مسدد</span>}
                 </div>
 
-                <div className="debt-amounts">
-                  <div className="debt-amount-item">
-                    <div className="debt-amount-val">{amount.toLocaleString()}</div>
-                    <div className="debt-amount-lbl">الإجمالي</div>
+                {x.description && <div style={{ fontSize: 12, color: 'var(--ink-600)', marginBottom: 6, lineHeight: 1.6 }}>{x.description}</div>}
+
+                <div style={{ display: 'flex', gap: 8, marginTop: 8, padding: 10, background: 'var(--ink-50)', borderRadius: 10 }}>
+                  <div style={{ flex: 1, textAlign: 'center' }}>
+                    <div style={{ fontSize: 10, color: 'var(--ink-500)', marginBottom: 3 }}>الإجمالي</div>
+                    <div style={{ fontSize: 13, fontWeight: 900 }}>{Number(x.amount).toLocaleString()}</div>
                   </div>
-                  <div className="debt-amount-item">
-                    <div className="debt-amount-val green">{paid.toLocaleString()}</div>
-                    <div className="debt-amount-lbl">مدفوع</div>
+                  <div style={{ flex: 1, textAlign: 'center' }}>
+                    <div style={{ fontSize: 10, color: 'var(--ink-500)', marginBottom: 3 }}>المدفوع</div>
+                    <div style={{ fontSize: 13, fontWeight: 900, color: '#22c55e' }}>{Number(x.paid || 0).toLocaleString()}</div>
                   </div>
-                  <div className="debt-amount-item">
-                    <div className="debt-amount-val red">{remaining.toLocaleString()}</div>
-                    <div className="debt-amount-lbl">متبقي</div>
+                  <div style={{ flex: 1, textAlign: 'center' }}>
+                    <div style={{ fontSize: 10, color: 'var(--ink-500)', marginBottom: 3 }}>المتبقي</div>
+                    <div style={{ fontSize: 13, fontWeight: 900, color: remaining > 0 ? '#dc2626' : '#22c55e' }}>{remaining.toLocaleString()}</div>
                   </div>
                 </div>
 
-                <div className="debt-progress">
-                  <div className={`debt-progress-fill ${st === 'overdue' ? 'overdue' : ''}`} style={{ width: `${progress}%` }} />
-                </div>
-
-                {d.description && (
-                  <div style={{ fontSize: 12, color: 'var(--n-500)', marginBottom: 8, lineHeight: 1.6 }}>
-                    {d.description}
-                  </div>
-                )}
-
-                {d.due_date && (
-                  <div style={{ fontSize: 11.5, color: 'var(--n-500)', fontWeight: 700, marginBottom: 8 }}>
-                    📅 الاستحقاق: {new Date(d.due_date).toLocaleDateString('ar-EG')}
+                {x.due_date && (
+                  <div style={{ fontSize: 11, color: overdue ? '#dc2626' : 'var(--ink-500)', marginTop: 6, textAlign: 'center', fontWeight: overdue ? 900 : 600 }}>
+                    📅 الاستحقاق: {x.due_date} {overdue && '⚠️ متأخر'}
                   </div>
                 )}
 
                 <div className="debt-actions">
-                  {st !== 'paid' && (
-                    <button className="debt-action pay" onClick={() => markPaid(d)} type="button">✓ سدّد</button>
+                  {remaining > 0 && (
+                    <button className="debt-action ok" onClick={() => {
+                      const v = prompt('المبلغ المدفوع:', remaining);
+                      if (v) addPayment(x, parseFloat(v) || 0);
+                    }} type="button" title="تسجيل دفعة">💰</button>
                   )}
-                  {d.customer_phone && (
-                    <a href={`tel:${d.customer_phone}`} className="debt-action call" style={{ textDecoration: 'none' }}>📞</a>
+                  {remaining > 0 && x.customer_phone && (
+                    <button className="debt-action" onClick={() => sendReminder(x)} type="button" title="إرسال تذكير واتساب">💬</button>
                   )}
-                  <button className="debt-action edit" onClick={() => openEdit(d)} type="button">✏️</button>
-                  <button className="debt-action del" onClick={() => del(d)} type="button">🗑️</button>
+                  <button className="debt-action edit" onClick={() => edit(x)} type="button">✏️</button>
+                  <button className="debt-action del" onClick={() => del(x)} type="button">🗑️</button>
                 </div>
+
+                {x.last_reminder_at && (
+                  <div style={{ fontSize: 10, color: 'var(--ink-400)', marginTop: 6, textAlign: 'center' }}>
+                    آخر تذكير: {new Date(x.last_reminder_at).toLocaleDateString('ar-EG')}
+                  </div>
+                )}
               </div>
             );
           })}
         </div>
-      )}
+      }
 
-      {mode && (
-        <div className="mng-modal-bg" onClick={() => { setMode(null); setEditing(null); }}>
-          <div className="mng-modal" onClick={(e) => e.stopPropagation()}>
+      {ed && (
+        <div className="mng-modal-bg" onClick={() => setEd(null)}>
+          <div className="mng-modal" onClick={(e) => e.stopPropagation()} style={{ maxHeight: '90vh', overflowY: 'auto' }}>
             <div className="mng-modal-handle" />
-            <h3 className="mng-modal-title">{mode === 'add' ? '➕ دين جديد' : '✏️ تعديل'}</h3>
+            <h3 className="mng-modal-title">{ed === 'new' ? '➕ دين جديد' : '✏️ تعديل'}</h3>
 
             <div className="new-service-field">
-              <label className="new-service-label">اسم العميل <span className="req">*</span></label>
-              <input className="new-service-input" value={form.customer_name} onChange={(e) => setForm({ ...form, customer_name: e.target.value })} />
+              <label className="new-service-label">اسم العميل *</label>
+              <input className="new-service-input" value={f.customer_name || ''} onChange={(e) => setF({ ...f, customer_name: e.target.value })} />
             </div>
 
             <div className="new-service-field">
-              <label className="new-service-label">رقم الهاتف</label>
-              <input className="new-service-input" type="tel" value={form.customer_phone} onChange={(e) => setForm({ ...form, customer_phone: e.target.value })} />
+              <label className="new-service-label">📞 الهاتف (للتذكير)</label>
+              <input className="new-service-input" type="tel" value={f.customer_phone || ''} onChange={(e) => setF({ ...f, customer_phone: e.target.value })} style={{ direction: 'ltr' }} placeholder="09XXXXXXXX" />
             </div>
 
             <div className="new-prod-row">
               <div className="new-service-field">
-                <label className="new-service-label">المبلغ <span className="req">*</span></label>
-                <input className="new-service-input" type="number" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} />
+                <label className="new-service-label">المبلغ *</label>
+                <input className="new-service-input" type="number" value={f.amount || ''} onChange={(e) => setF({ ...f, amount: e.target.value })} />
               </div>
               <div className="new-service-field">
                 <label className="new-service-label">المدفوع</label>
-                <input className="new-service-input" type="number" value={form.paid} onChange={(e) => setForm({ ...form, paid: e.target.value })} />
+                <input className="new-service-input" type="number" value={f.paid || 0} onChange={(e) => setF({ ...f, paid: e.target.value })} />
               </div>
             </div>
 
             <div className="new-prod-row">
               <div className="new-service-field">
                 <label className="new-service-label">العملة</label>
-                <select className="new-service-select" value={form.currency} onChange={(e) => setForm({ ...form, currency: e.target.value })}>
+                <select className="new-service-select" value={f.currency || 'SYP'} onChange={(e) => setF({ ...f, currency: e.target.value })}>
                   <option value="SYP">ليرة سورية</option>
                   <option value="USD">دولار</option>
                   <option value="TRY">ليرة تركية</option>
                 </select>
               </div>
               <div className="new-service-field">
-                <label className="new-service-label">تاريخ الاستحقاق</label>
-                <input className="new-service-input" type="date" value={form.due_date} onChange={(e) => setForm({ ...form, due_date: e.target.value })} />
+                <label className="new-service-label">📅 تاريخ الاستحقاق</label>
+                <input className="new-service-input" type="date" value={f.due_date || ''} onChange={(e) => setF({ ...f, due_date: e.target.value })} />
               </div>
             </div>
 
             <div className="new-service-field">
               <label className="new-service-label">الوصف</label>
-              <textarea className="new-service-textarea" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
+              <textarea className="new-service-textarea" value={f.description || ''} onChange={(e) => setF({ ...f, description: e.target.value })} />
+            </div>
+
+            <div className="new-service-field" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <input type="checkbox" checked={f.reminder_enabled !== false} onChange={(e) => setF({ ...f, reminder_enabled: e.target.checked })} id="rm" />
+              <label htmlFor="rm" style={{ margin: 0, cursor: 'pointer', fontWeight: 800 }}>🔔 تفعيل التذكير التلقائي</label>
             </div>
 
             <div className="admin-form-actions">
-              <button className="mng-btn ghost" onClick={() => { setMode(null); setEditing(null); }} type="button">إلغاء</button>
-              <button className="mng-btn primary" onClick={save} disabled={saving} type="button">
-                {saving ? '...' : '✓ حفظ'}
-              </button>
+              <button className="mng-btn ghost" onClick={() => setEd(null)} type="button">إلغاء</button>
+              <button className="mng-btn primary" onClick={save} type="button">✓ حفظ</button>
             </div>
           </div>
         </div>

@@ -15,7 +15,7 @@ export default function SecurityPage() {
 
   useEffect(() => {
     let stored = null;
-    try { stored = JSON.parse(localStorage.getItem('sanad_entity') || 'null'); } catch {}
+    try { stored = getSession(); } catch (e) {}
     if (!stored) { router.replace('/login'); return; }
     setEntity(stored);
     load();

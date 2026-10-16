@@ -10,7 +10,7 @@ const STATUS_FLOW = ['new', 'preparing', 'delivering', 'done'];
 const STATUS_INFO = {
   new:        { label: 'بانتظار موافقة التاجر', icon: '⏳', color: '#f59e0b' },
   preparing:  { label: 'قيد التحضير',           icon: '👨‍🍳', color: '#0ea5e9' },
-  delivering: { label: 'في التوصيل',            icon: '🚚', color: '#8b5cf6' },
+  delivering: { label: 'يوجد التوصيل',            icon: '🚚', color: '#8b5cf6' },
   done:       { label: 'مكتمل',                 icon: '✅', color: '#22c55e' },
   cancelled:  { label: 'ملغي',                  icon: '❌', color: '#dc2626' },
 };

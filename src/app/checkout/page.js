@@ -70,7 +70,7 @@ export default function Checkout() {
     if (!name.trim() || name.trim().length < 3) { setError('الاسم مطلوب'); return; }
     if (!phone.trim() || phone.trim().length < 9) { setError('رقم الهاتف مطلوب'); return; }
     
-    // إذا ما في حساب — نطلب واحد
+    // إذا لا يوجد حساب — نطلب واحد
     if (!customer) {
       saveGuestSession({ full_name: name.trim(), phone: phone.trim(), address: address.trim() });
       setShowAuthModal(true);

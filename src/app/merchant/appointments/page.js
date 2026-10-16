@@ -68,7 +68,7 @@ export default function MerchantAppointments() {
         const bodies = {
           confirmed: `موعدك مع ${apt.doctor_name} يوم ${apt.appointment_date} الساعة ${apt.appointment_time} تم تأكيده`,
           rejected: reason ? `سبب الرفض: ${reason}` : 'يرجى حجز موعد آخر',
-          done: 'شكراً لزيارتك — نتمنى لك الشفاء',
+          done: 'شكراً لزيارتك — نتمنى لكن الشفاء',
           cancelled: 'تم إلغاء الموعد من قبل الطبيب',
         };
         

@@ -33,7 +33,7 @@ export default function PrivacyPage() {
         <ul>
           <li>تشفير AES-256 للبيانات الحساسة</li>
           <li>TLS 1.3 لكل الاتصالات</li>
-          <li>Row Level Security في قاعدة البيانات</li>
+          <li>Row Level Security يوجد قاعدة البيانات</li>
           <li>سياسات وصول صارمة</li>
         </ul>
 

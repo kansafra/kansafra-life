@@ -79,7 +79,7 @@ export default function ClassPage() {
       {filtered.length === 0 ? (
         <div className="trans-empty">
           <span className="em">📄</span>
-          <p>لا توجد ملفات في هذا القسم</p>
+          <p>لا توجد ملفات يوجد هذا القسم</p>
         </div>
       ) : (
         <div className="files-list">

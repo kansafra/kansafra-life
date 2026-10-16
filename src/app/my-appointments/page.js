@@ -118,7 +118,7 @@ export default function MyAppointments() {
                     )}
                     {apt.status === 'confirmed' && (
                       <div style={{ marginTop: 10, padding: 10, background: 'rgba(34,197,94,.1)', borderRadius: 10, fontSize: 12, color: '#4ade80' }}>
-                        ✅ موعدك مؤكد — يرجى الحضور في الوقت المحدد
+                        ✅ موعدك مؤكد — يرجى الحضور يوجد الوقت المحدد
                       </div>
                     )}
                   </div>

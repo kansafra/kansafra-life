@@ -158,7 +158,7 @@ export default function Home() {
         if (Array.isArray(a.data)) setAnnouncements(a.data);
         setDbNotice(Boolean(c.error || s.error || f.error || a.error));
       } catch (e) {
-        console.error('خطأ في التحميل:', e);
+        console.error('خطأ يوجد التحميل:', e);
         if (alive) setDbNotice(true);
       } finally {
         if (alive) setLoading(false);

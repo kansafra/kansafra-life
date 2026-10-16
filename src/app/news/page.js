@@ -39,7 +39,7 @@ export default function NewsPage() {
       </div>
 
       <div style={{ padding: '16px 20px 0' }}>
-        <input className="new-service-input" placeholder="ابحث في الأخبار..." value={search} onChange={(e) => setSearch(e.target.value)} />
+        <input className="new-service-input" placeholder="ابحث يوجد الأخبار..." value={search} onChange={(e) => setSearch(e.target.value)} />
       </div>
 
       {categories.length > 0 && (

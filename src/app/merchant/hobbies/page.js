@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
+import { getSession } from '@/lib/auth';
 
 const HOBBY = [
   { k: 'drawing', l: '🎨 رسم' }, { k: 'music', l: '🎵 موسيقى' },

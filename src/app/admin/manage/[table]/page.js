@@ -122,7 +122,7 @@ export default function TableManager() {
         const cols = Object.keys(list[0]).filter((k) => !AUTO_FIELDS.includes(k));
         setColumns(cols);
       } else if (cfg) {
-        // إذا فارغ، نستخدم الأعمدة المعرّفة في cfg
+        // إذا فارغ، نستخدم الأعمدة المعرّفة يوجد cfg
         const allEditable = cfg.editable || [];
         setColumns(allEditable);
       }
@@ -134,7 +134,7 @@ export default function TableManager() {
     setMode('add');
     setEditing(null);
     const init = {};
-    // استخدام الأعمدة المعرّفة في cfg + القائمة
+    // استخدام الأعمدة المعرّفة يوجد cfg + القائمة
     const allCols = [...new Set([...(cfg?.editable || []), ...columns])];
     allCols.forEach((k) => { init[k] = ''; });
     setForm(init);
@@ -216,7 +216,7 @@ export default function TableManager() {
     return s.length > 30 ? s.slice(0, 30) + '…' : s;
   };
 
-  // الحقول التي ستُعرض في النموذج
+  // الحقول التي ستُعرض يوجد النموذج
   const formColumns = [...new Set([...(cfg?.editable || []), ...columns])];
 
   return (

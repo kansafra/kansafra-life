@@ -5,6 +5,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
+import { getSession } from '@/lib/auth';
 import ImageUploader from '@/components/ImageUploader';
 import FileUploader from '@/components/FileUploader';
 
@@ -176,7 +177,7 @@ export default function NewServicePage() {
         <div className="new-service-success">
           <div className="chk-circle">✓</div>
           <h2>تمت إضافة الخدمة</h2>
-          <p>خدمتك ظاهرة الآن للزوار في الصفحة الرئيسية</p>
+          <p>خدمتك ظاهرة الآن للزوار يوجد الصفحة الرئيسية</p>
           <Link href="/merchant" className="new-service-submit" style={{ display: 'block', textAlign: 'center', textDecoration: 'none' }}>
             العودة للوحة التحكم
           </Link>
@@ -279,7 +280,7 @@ export default function NewServicePage() {
           />
           <div>
             <div className="new-service-checkbox-label">⭐ خدمة مميزة</div>
-            <div className="new-service-checkbox-hint">ستظهر في قسم "عروض اليوم"</div>
+            <div className="new-service-checkbox-hint">ستظهر يوجد قسم "عروض اليوم"</div>
           </div>
         </label>
 

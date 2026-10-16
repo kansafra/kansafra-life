@@ -5,6 +5,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
+import { getSession } from '@/lib/auth';
 
 export default function SupportPage() {
   const router = useRouter();
@@ -16,7 +17,7 @@ export default function SupportPage() {
 
   useEffect(() => {
     let stored = null;
-    try { stored = JSON.parse(localStorage.getItem('sanad_entity') || 'null'); } catch {}
+    try { stored = getSession(); } catch (e) {}
     if (!stored) { router.replace('/login'); return; }
     setEntity(stored);
     load(stored);
@@ -92,7 +93,7 @@ export default function SupportPage() {
             <h3 className="mng-modal-title">💬 تذكرة دعم جديدة</h3>
             <div className="new-service-field">
               <label className="new-service-label">الموضوع</label>
-              <input className="new-service-input" value={form.subject} onChange={(e) => setForm({ ...form, subject: e.target.value })} placeholder="مثال: مشكلة في رفع المنتجات" />
+              <input className="new-service-input" value={form.subject} onChange={(e) => setForm({ ...form, subject: e.target.value })} placeholder="مثال: مشكلة يوجد رفع المنتجات" />
             </div>
             <div className="new-prod-row">
               <div className="new-service-field">

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { registerEntity } from '@/lib/auth';
@@ -36,6 +36,8 @@ export default function RegisterPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [pendingApproval, setPendingApproval] = useState(null);
+  const [availablePlans, setAvailablePlans] = useState([]);
+  const [selectedPlanId, setSelectedPlanId] = useState('');
 
   function update(field, value) {
     setForm((f) => ({ ...f, [field]: value }));
@@ -72,7 +74,7 @@ export default function RegisterPage() {
         display_name: form.display_name,
         entity_type: form.entity_type,
         pendingApproval: true,
-      });
+        plan_id: selectedPlanId});
       
       // نجهز رسالة واتساب للأدمن
       try {
@@ -94,7 +96,7 @@ export default function RegisterPage() {
         
         const waUrl = `https://wa.me/${adminPhone}?text=${encodeURIComponent(msg)}`;
         
-        // نفتح واتساب في نفس التبويب
+        // نفتح واتساب يوجد نفس التبويب
         setPendingApproval({ entity: newEntity, waUrl });
         
         // نحاول نفتح واتساب تلقائياً بعد ثانية
@@ -109,6 +111,24 @@ export default function RegisterPage() {
       setLoading(false);
     }
   }
+
+  useEffect(() => {
+    async function loadPlans() {
+      if (!supabase) return;
+      const { data } = await supabase
+        .from('subscription_plans')
+        .select('*')
+        .eq('is_active', true)
+        .order('sort_order');
+      if (Array.isArray(data)) {
+        setAvailablePlans(data);
+        // نختار Free افتراضياً
+        const free = data.find((p) => p.name === 'free');
+        if (free) setSelectedPlanId(free.id);
+      }
+    }
+    loadPlans();
+  }, []);
 
   if (pendingApproval) {
     return (
@@ -304,6 +324,88 @@ export default function RegisterPage() {
                 → رجوع
               </button>
               <button
+                type="button"
+                onClick={() => setStep(3)}
+                style={{ flex: 2, padding: 16, background: 'linear-gradient(135deg, #22c55e, #16a34a)', color: '#fff', border: 'none', borderRadius: 14, fontSize: 15, fontWeight: 900, cursor: 'pointer' }}
+              >
+                التالي ←
+              </button>
+            </div>
+          </>
+        )}
+
+        {/* الخطوة 3: اختيار الباقة */}
+        {step === 3 && (
+          <>
+            <div style={{ fontSize: 13, fontWeight: 900, color: '#fff', marginBottom: 12 }}>
+              3️⃣ اختر باقتك
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 20 }}>
+              {availablePlans.map((p) => {
+                const isSelected = selectedPlanId === p.id;
+                const isFree = Number(p.price) === 0;
+                const features = Array.isArray(p.features) ? p.features.slice(0, 3) : [];
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => setSelectedPlanId(p.id)}
+                    style={{
+                      padding: 16,
+                      background: isSelected ? p.color + '25' : 'rgba(255,255,255,.04)',
+                      border: isSelected ? '2px solid ' + (p.color || '#22c55e') : '1px solid rgba(255,255,255,.1)',
+                      borderRadius: 14,
+                      color: '#fff',
+                      cursor: 'pointer',
+                      textAlign: 'right',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                      <span style={{ fontSize: 26 }}>{p.icon || '💎'}</span>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 15, fontWeight: 900 }}>
+                          {p.name_en || p.name}
+                          {p.is_featured && <span style={{ fontSize: 10, marginInlineStart: 8, color: '#fbbf24' }}>⭐ مميزة</span>}
+                        </div>
+                        <div style={{ fontSize: 16, fontWeight: 900, color: p.color || '#22c55e', direction: 'ltr', marginTop: 4 }}>
+                          ${p.price} <span style={{ fontSize: 10, color: 'rgba(255,255,255,.5)' }}>/شهر</span>
+                        </div>
+                      </div>
+                      {isSelected && (
+                        <span style={{ fontSize: 20 }}>✅</span>
+                      )}
+                    </div>
+                    {features.length > 0 && (
+                      <div style={{ fontSize: 11, color: 'rgba(255,255,255,.7)', lineHeight: 1.6 }}>
+                        {features.map((f, i) => <div key={i}>✓ {f}</div>)}
+                      </div>
+                    )}
+                    {isFree && (
+                      <div style={{ fontSize: 11, marginTop: 6, color: '#22c55e', fontWeight: 900 }}>
+                        🎁 يبدأ فوراً بعد الموافقة
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            {error && (
+              <div style={{ padding: 12, background: 'rgba(220,38,38,.15)', border: '1px solid rgba(220,38,38,.3)', borderRadius: 12, color: '#fca5a5', fontSize: 12.5, marginBottom: 16, textAlign: 'center' }}>
+                ⚠️ {error}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button
+                type="button"
+                onClick={() => setStep(2)}
+                style={{ flex: 1, padding: 16, background: 'rgba(255,255,255,.08)', color: '#fff', border: 'none', borderRadius: 14, fontSize: 14, fontWeight: 900, cursor: 'pointer' }}
+              >
+                → رجوع
+              </button>
+              <button
                 type="submit"
                 disabled={loading}
                 style={{ flex: 2, padding: 16, background: loading ? '#555' : 'linear-gradient(135deg, #22c55e, #16a34a)', color: '#fff', border: 'none', borderRadius: 14, fontSize: 15, fontWeight: 900, cursor: loading ? 'wait' : 'pointer' }}
@@ -317,7 +419,7 @@ export default function RegisterPage() {
 
       <div style={{ textAlign: 'center', marginTop: 30, padding: '0 20px' }}>
         <div style={{ fontSize: 12.5, color: 'rgba(255,255,255,.5)' }}>
-          عندك حساب؟
+          لديك حساب؟
           <Link href="/login" style={{ color: '#22c55e', fontWeight: 900, marginInlineStart: 6, textDecoration: 'none' }}>
             سجّل دخولك
           </Link>

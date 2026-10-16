@@ -58,7 +58,7 @@ export default function SosPage() {
         setGeoStatus('err');
         setGeoMsg(
           err.code === 1 ? 'تم رفض الوصول للموقع — يرجى السماح'
-          : err.code === 2 ? 'تعذّر تحديد الموقع — جرّب في مكان مفتوح'
+          : err.code === 2 ? 'تعذّر تحديد الموقع — جرّب يوجد مكان مفتوح'
           : 'انتهت مدة المحاولة — أعد المحاولة'
         );
       },
@@ -116,7 +116,7 @@ export default function SosPage() {
     const code = genRefCode();
     const currentContact = categories.find((c) => c.category === category);
 
-    // حفظ في قاعدة البيانات
+    // حفظ يوجد قاعدة البيانات
     if (supabase) {
       const { error: insErr } = await supabase.from('sos_alerts').insert({
         ref_code: code,
@@ -159,7 +159,7 @@ export default function SosPage() {
           <div className="sos-success-icon"><span className="chk">✓</span></div>
           <h1 className="sos-success-title">{t("sos.success")}</h1>
           <p className="sos-success-sub">
-            تم استلام بلاغك بنجاح، سيتم التعامل معه في أقرب وقت.
+            تم استلام بلاغك بنجاح، سيتم التعامل معه يوجد أقرب وقت.
             <br />احتفظ برقم البلاغ لمتابعة الحالة.
           </p>
           <div className="sos-ref-card">
@@ -226,7 +226,7 @@ export default function SosPage() {
       <div className="sos-warning">
         <span className="w-icon">⚠️</span>
         <div className="w-text">
-          الإبلاغ الكاذب يعرّضك للمساءلة القانونية والغرامات. استخدم الزر فقط في الحالات الحقيقية.
+          الإبلاغ الكاذب يعرّضك للمساءلة القانونية والغرامات. استخدم الزر فقط يوجد الحالات الحقيقية.
         </div>
       </div>
 

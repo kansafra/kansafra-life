@@ -211,7 +211,7 @@ export default function AdminEmergencyContacts() {
 
             <div className="new-service-field" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <input type="checkbox" checked={form.include_location !== false} onChange={(e) => setForm({ ...form, include_location: e.target.checked })} id="inc_loc" />
-              <label htmlFor="inc_loc" style={{ margin: 0, cursor: 'pointer' }}>تضمين الموقع تلقائياً في الرسالة</label>
+              <label htmlFor="inc_loc" style={{ margin: 0, cursor: 'pointer' }}>تضمين الموقع تلقائياً يوجد الرسالة</label>
             </div>
 
             <div className="new-service-field" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>

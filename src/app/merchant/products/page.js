@@ -5,6 +5,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
+import { getSession } from '@/lib/auth';
 
 export default function ProductsList() {
   const router = useRouter();
@@ -97,7 +98,7 @@ export default function ProductsList() {
         <input
           className="new-service-input"
           type="text"
-          placeholder="ابحث في منتجاتك..."
+          placeholder="ابحث يوجد منتجاتك..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />

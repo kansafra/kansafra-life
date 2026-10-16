@@ -1,11 +1,13 @@
 export const dynamic = 'force-dynamic';
 import './globals.css';
+import './premium.css';
 import ServiceWorkerRegistrar from '@/components/ServiceWorkerRegistrar';
 import InstallPrompt from '@/components/InstallPrompt';
 import NotificationSetup from '@/components/NotificationSetup';
 import AzkarBar from '@/components/AzkarBar';
 import NotificationListener from '@/components/NotificationListener';
 import SubscriptionReminder from '@/components/SubscriptionReminder';
+import DebtReminder from '@/components/DebtReminder';
 
 export const metadata = {
   manifest: '/manifest.json',
@@ -39,7 +41,7 @@ export default function RootLayout({ children }) {
           rel="stylesheet"
         />
       </head>
-      <body>{children}<AzkarBar /><NotificationListener /><SubscriptionReminder /><ServiceWorkerRegistrar /><InstallPrompt /><NotificationSetup /></body>
+      <body>{children}<AzkarBar /><NotificationListener /><SubscriptionReminder /><DebtReminder /><ServiceWorkerRegistrar /><InstallPrompt /><NotificationSetup /></body>
     </html>
   );
 }

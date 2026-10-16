@@ -106,7 +106,7 @@ export default function StorePage() {
       ) : filtered.length === 0 ? (
         <div className="ol-empty-state" style={{ padding: 80 }}>
           <span className="em">📦</span>
-          <p>لا توجد منتجات في هذه الفئة</p>
+          <p>لا توجد منتجات يوجد هذه الفئة</p>
         </div>
       ) : (
         <div className="store-grid">

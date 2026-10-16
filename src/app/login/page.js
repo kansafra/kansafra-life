@@ -100,7 +100,7 @@ export default function LoginPage() {
 
       <div style={{ textAlign: 'center', marginTop: 24, padding: '0 20px' }}>
         <div style={{ fontSize: 12.5, color: 'rgba(255,255,255,.5)', marginBottom: 12 }}>
-          ما عندك حساب؟
+          ما لديك حساب؟
         </div>
         <Link
           href="/register"

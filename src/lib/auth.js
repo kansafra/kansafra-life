@@ -17,7 +17,7 @@ export async function hashPassword(password) {
 }
 
 // ═══ تسجيل حساب جديد ═══
-export async function registerEntity({ phone, password, display_name, entity_type, pendingApproval = false }) {
+export async function registerEntity({ phone, password, display_name, entity_type, pendingApproval = false, plan_id = null }) {
   if (!supabase) throw new Error('قاعدة البيانات غير متصلة');
 
   const cleanPhone = phone.replace(/[^0-9]/g, '');
@@ -56,7 +56,66 @@ export async function registerEntity({ phone, password, display_name, entity_typ
 
   if (error) throw error;
 
-  // نحفظ الجلسة فقط إذا ما في انتظار موافقة
+  // ═══ إنشاء اشتراك شهري للباقة المختارة ═══
+  try {
+    // نجلب الباقة
+    let plan = null;
+    if (plan_id) {
+      const { data: planData } = await supabase
+        .from('subscription_plans')
+        .select('*')
+        .eq('id', plan_id)
+        .maybeSingle();
+      plan = planData;
+    }
+    
+    // إذا لا يوجد باقة محددة → نستخدم Free
+    if (!plan) {
+      const { data: freePlan } = await supabase
+        .from('subscription_plans')
+        .select('*')
+        .eq('name', 'free')
+        .maybeSingle();
+      plan = freePlan;
+    }
+
+    if (plan) {
+      const now = new Date();
+      const expiresAt = new Date(now);
+      if (plan.period === 'yearly') {
+        expiresAt.setFullYear(expiresAt.getFullYear() + 1);
+      } else {
+        expiresAt.setMonth(expiresAt.getMonth() + 1);
+      }
+
+      // نضيف الاشتراك
+      await supabase.from('entity_subscriptions').insert({
+        entity_id: newEntity.id,
+        plan_id: plan.id,
+        plan_name: plan.name,
+        plan_price: plan.price || 0,
+        plan_period: plan.period || 'monthly',
+        status: pendingApproval ? 'pending' : 'active',
+        started_at: now.toISOString(),
+        expires_at: expiresAt.toISOString(),
+        reminder_sent: false,
+        expired_notified: false,
+      });
+
+      // نحدّث entities
+      await supabase.from('entities').update({
+        subscription_plan: plan.name,
+        subscription_expires: expiresAt.toISOString(),
+      }).eq('id', newEntity.id);
+
+      newEntity.subscription_plan = plan.name;
+      newEntity.subscription_expires = expiresAt.toISOString();
+    }
+  } catch (e) {
+    console.warn('subscription create failed:', e);
+  }
+
+  // نحفظ الجلسة فقط إذا لا يوجد انتظار موافقة
   if (!pendingApproval) saveSession(newEntity);
   return newEntity;
 }
@@ -92,7 +151,7 @@ export async function loginEntity({ phone, password }) {
   return entity;
 }
 
-// ═══ حفظ الجلسة (في الاثنين للتوافق) ═══
+// ═══ حفظ الجلسة (يوجد الاثنين للتوافق) ═══
 function saveSession(entity) {
   if (typeof window === 'undefined') return;
   

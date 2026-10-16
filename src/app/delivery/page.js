@@ -40,7 +40,7 @@ export default function DeliveryPage() {
       </div>
 
       <div style={{ padding: '16px 20px 0', fontSize: 12, color: 'var(--n-500)', fontWeight: 600 }}>
-        مندوبون متاحون للتوصيل في المنطقة
+        مندوبون متاحون للتوصيل يوجد المنطقة
       </div>
 
       {loading ? (

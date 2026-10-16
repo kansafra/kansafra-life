@@ -106,7 +106,7 @@ export default function CustomerAuthModal({ isOpen, onClose, onSuccess, defaultP
       <div className="mng-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 420 }}>
         <div className="mng-modal-handle" />
         
-        {/* إذا في جلسة موجودة */}
+        {/* إذا يوجد جلسة موجودة */}
         {existing && mode === 'choose' && (
           <>
             <h3 className="mng-modal-title">مرحباً {existing.full_name}</h3>

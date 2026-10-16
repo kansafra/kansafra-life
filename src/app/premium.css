@@ -1,0 +1,307 @@
+/* ═══════════════════════════════════════════════
+   سند — نظام تصميم عالمي (Premium)
+   كلاسيكي • عصري • احترافي
+   ═══════════════════════════════════════════════ */
+
+:root {
+  /* ═══ الألوان الأساسية ═══ */
+  --brand-deep: #0a3d2e;
+  --brand-primary: #0f4d3a;
+  --brand-medium: #0a6b50;
+  --brand-soft: #14b8a6;
+  --brand-glow: rgba(20, 184, 166, 0.35);
+  --gold-accent: #c9a961;
+  --gold-light: #e6d29c;
+  --gold-deep: #a88941;
+  
+  /* ═══ الألوان المساعدة ═══ */
+  --ink-900: #0a0f0d;
+  --ink-800: #1a2420;
+  --ink-700: #2d3a34;
+  --ink-600: #4a5550;
+  --ink-500: #6b7670;
+  --ink-400: #96a09b;
+  --ink-300: #c4cdc8;
+  --ink-200: #e2e8e5;
+  --ink-100: #f2f6f4;
+  --ink-50: #f8fbfa;
+  
+  /* ═══ الظلال ═══ */
+  --shadow-xs: 0 1px 2px rgba(10, 15, 13, 0.04);
+  --shadow-sm: 0 2px 8px rgba(10, 15, 13, 0.06);
+  --shadow-md: 0 4px 16px rgba(10, 15, 13, 0.08);
+  --shadow-lg: 0 12px 32px rgba(10, 15, 13, 0.12);
+  --shadow-xl: 0 24px 64px rgba(10, 15, 13, 0.16);
+  --shadow-glow: 0 8px 32px rgba(20, 184, 166, 0.25);
+  
+  /* ═══ الزوايا ═══ */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 22px;
+  --radius-2xl: 28px;
+  --radius-full: 999px;
+  
+  /* ═══ الحركات ═══ */
+  --ease-smooth: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* ═══ تحسين الجسم ═══ */
+body {
+  font-family: 'Cairo', 'Tajawal', 'IBM Plex Sans Arabic', system-ui, -apple-system, sans-serif !important;
+  font-feature-settings: 'ss01', 'ss02', 'cv01', 'cv11';
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* ═══ العناوين بتصميم جديد ═══ */
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'Cairo', sans-serif !important;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+}
+
+h1 { font-weight: 900; letter-spacing: -0.02em; }
+h2 { font-weight: 800; }
+h3 { font-weight: 800; }
+
+/* ═══ البطاقات — تصميم كلاسيكي فاخر ═══ */
+.card-premium,
+.debt-card,
+.mng-modal,
+.admin-item,
+.entity,
+.deal {
+  background: linear-gradient(180deg, #ffffff 0%, #fafcfb 100%);
+  border: 1px solid var(--ink-200);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-sm);
+  transition: all 0.3s var(--ease-smooth);
+}
+
+.card-premium:hover,
+.debt-card:hover,
+.entity:hover,
+.deal:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+  border-color: rgba(20, 184, 166, 0.3);
+}
+
+/* ═══ الأزرار — تصميم فاخر ═══ */
+.btn-premium,
+.mng-btn.primary,
+.new-service-submit {
+  background: linear-gradient(135deg, var(--brand-primary) 0%, var(--brand-medium) 50%, var(--brand-primary) 100%);
+  background-size: 200% 200%;
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-md);
+  padding: 14px 24px;
+  font-family: 'Cairo', sans-serif;
+  font-weight: 900;
+  font-size: 14px;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  transition: all 0.4s var(--ease-smooth);
+  box-shadow: 0 4px 16px rgba(15, 77, 58, 0.25);
+}
+
+.btn-premium::before,
+.new-service-submit::before {
+  content: '';
+  position: absolute;
+  top: 0; left: -100%;
+  width: 100%; height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+  transition: left 0.6s var(--ease-smooth);
+}
+
+.btn-premium:hover::before,
+.new-service-submit:hover::before {
+  left: 100%;
+}
+
+.btn-premium:hover,
+.new-service-submit:hover {
+  background-position: 100% 0;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(15, 77, 58, 0.35);
+}
+
+/* ═══ الحقول ═══ */
+.new-service-input,
+.new-service-textarea,
+.new-service-select {
+  background: #ffffff;
+  border: 1.5px solid var(--ink-200);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+  font-family: 'Cairo', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink-800);
+  transition: all 0.25s var(--ease-smooth);
+}
+
+.new-service-input:focus,
+.new-service-textarea:focus,
+.new-service-select:focus {
+  outline: none;
+  border-color: var(--brand-soft);
+  box-shadow: 0 0 0 4px rgba(20, 184, 166, 0.12);
+  background: #ffffff;
+}
+
+/* ═══ الهيدر / الهيرو ═══ */
+.hero {
+  background: linear-gradient(160deg, var(--brand-deep) 0%, var(--brand-primary) 40%, var(--brand-medium) 100%);
+  position: relative;
+  overflow: hidden;
+}
+
+.hero::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: 
+    radial-gradient(circle at 20% 80%, rgba(201, 169, 97, 0.15) 0%, transparent 50%),
+    radial-gradient(circle at 80% 20%, rgba(20, 184, 166, 0.2) 0%, transparent 50%);
+  pointer-events: none;
+}
+
+/* ═══ الشريط السفلي ═══ */
+.bottom-nav,
+.nav {
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border-top: 1px solid var(--ink-200);
+  box-shadow: 0 -8px 32px rgba(10, 15, 13, 0.08);
+}
+
+/* ═══ الأيقونات الفاخرة ═══ */
+.cat-tile {
+  background: linear-gradient(180deg, #ffffff 0%, #f5f9f7 100%);
+  border: 1px solid var(--ink-200);
+  border-radius: var(--radius-xl);
+  padding: 16px 12px;
+  transition: all 0.3s var(--ease-smooth);
+  box-shadow: var(--shadow-xs);
+}
+
+.cat-tile:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-md);
+  border-color: var(--brand-soft);
+}
+
+.cat-tile-icon {
+  font-size: 32px;
+  filter: drop-shadow(0 2px 4px rgba(10, 15, 13, 0.1));
+}
+
+/* ═══ الأزرار الذهبية (مميزة) ═══ */
+.btn-gold {
+  background: linear-gradient(135deg, var(--gold-accent) 0%, var(--gold-light) 50%, var(--gold-accent) 100%);
+  color: var(--ink-900);
+  box-shadow: 0 4px 16px rgba(201, 169, 97, 0.35);
+}
+
+/* ═══ المودالات ═══ */
+.mng-modal {
+  background: linear-gradient(180deg, #ffffff 0%, #fafcfb 100%);
+  border-radius: var(--radius-2xl) var(--radius-2xl) 0 0;
+  box-shadow: var(--shadow-xl);
+  border: 1px solid var(--ink-200);
+}
+
+/* ═══ الشرائح (chips) ═══ */
+.chip {
+  background: #ffffff;
+  border: 1.5px solid var(--ink-200);
+  border-radius: var(--radius-full);
+  padding: 8px 16px;
+  font-family: 'Cairo', sans-serif;
+  font-weight: 800;
+  font-size: 12.5px;
+  color: var(--ink-700);
+  transition: all 0.25s var(--ease-smooth);
+  cursor: pointer;
+}
+
+.chip.active,
+.chip:hover {
+  background: linear-gradient(135deg, var(--brand-primary), var(--brand-medium));
+  color: #ffffff;
+  border-color: var(--brand-primary);
+  box-shadow: 0 4px 12px rgba(15, 77, 58, 0.25);
+}
+
+/* ═══ الفواصل ═══ */
+.section-title {
+  font-family: 'Cairo', sans-serif;
+  font-weight: 900;
+  font-size: 20px;
+  color: var(--ink-900);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.section-title .bar {
+  display: inline-block;
+  width: 4px;
+  height: 24px;
+  background: linear-gradient(180deg, var(--gold-accent), var(--brand-soft));
+  border-radius: 2px;
+}
+
+/* ═══ الحركات ═══ */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.fade-up { animation: fadeUp 0.4s var(--ease-smooth); }
+
+.sk {
+  background: linear-gradient(90deg, #eef2f0 0%, #f8faf9 50%, #eef2f0 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite linear;
+}
+
+/* ═══ Premium Badge ═══ */
+.badge-gold {
+  background: linear-gradient(135deg, var(--gold-accent), var(--gold-light));
+  color: var(--ink-900);
+  font-weight: 900;
+  padding: 3px 10px;
+  border-radius: var(--radius-full);
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  box-shadow: 0 2px 8px rgba(201, 169, 97, 0.3);
+}
+
+/* ═══ Scrollbar ═══ */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, var(--brand-soft), var(--brand-medium));
+  border-radius: 3px;
+}
+
+/* ═══ Selection ═══ */
+::selection {
+  background: var(--brand-soft);
+  color: #ffffff;
+}

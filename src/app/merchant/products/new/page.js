@@ -5,6 +5,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
+import { getSession } from '@/lib/auth';
 import ImageUploader from '@/components/ImageUploader';
 import FileUploader from '@/components/FileUploader';
 
@@ -124,7 +125,7 @@ export default function NewProduct() {
         <div className="new-service-success">
           <div className="chk-circle">✓</div>
           <h2>تم إضافة المنتج</h2>
-          <p>منتجك ظاهر الآن في قائمة منتجاتك</p>
+          <p>منتجك ظاهر الآن يوجد قائمة منتجاتك</p>
           <Link href="/merchant/products" className="new-service-submit" style={{ display: 'block', textAlign: 'center', textDecoration: 'none' }}>
             عرض المنتجات
           </Link>

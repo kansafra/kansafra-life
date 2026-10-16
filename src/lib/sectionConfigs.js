@@ -153,7 +153,7 @@ export const SECTION_CONFIGS = {
       { key: 'starting_price', label: 'السعر الابتدائي', type: 'number' },
       { key: 'current_price', label: 'السعر الحالي', type: 'number' },
       { key: 'currency', label: 'العملة', type: 'select', options: ['SYP', 'USD', 'TRY'] },
-      { key: 'ends_at', label: 'ينتهي في', type: 'datetime-local' },
+      { key: 'ends_at', label: 'ينتهي يوجد', type: 'datetime-local' },
       { key: 'image_url', label: 'رابط الصورة', type: 'url' },
     ],
     iconField: 'title',

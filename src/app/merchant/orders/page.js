@@ -5,12 +5,13 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
+import { getSession } from '@/lib/auth';
 import { notifyOrderStatus } from '@/lib/notify';
 
 const STATUS_LABELS = {
   new: 'جديد',
   preparing: 'قيد التحضير',
-  delivering: 'في التوصيل',
+  delivering: 'يوجد التوصيل',
   done: 'مكتمل',
   cancelled: 'ملغي',
 };
@@ -88,7 +89,7 @@ export default function MerchantOrders() {
           { k: 'all', l: 'الكل' },
           { k: 'new', l: 'جديد' },
           { k: 'preparing', l: 'قيد التحضير' },
-          { k: 'delivering', l: 'في التوصيل' },
+          { k: 'delivering', l: 'يوجد التوصيل' },
           { k: 'done', l: 'مكتمل' },
           { k: 'cancelled', l: 'ملغي' },
         ].map((f) => (
@@ -111,7 +112,7 @@ export default function MerchantOrders() {
       ) : filtered.length === 0 ? (
         <div className="ol-empty-state" style={{ padding: 60 }}>
           <span className="em">📦</span>
-          <p>لا توجد طلبات في هذه الحالة</p>
+          <p>لا توجد طلبات يوجد هذه الحالة</p>
         </div>
       ) : (
         <div className="orders-list">
