@@ -9,20 +9,34 @@ import { useT } from '@/lib/useT';
 import CommunityPicker from '@/components/CommunityPicker';
 import HeroCarousel from '@/components/HeroCarousel';
 import PrayerBar from '@/components/PrayerBar';
+import HijriDate from '@/components/HijriDate';
 import NewsTicker from '@/components/NewsTicker';
 import { cacheSet, cacheGet, fetchWithCache } from '@/lib/offline';
 import { supabase } from '@/lib/supabase';
 
 const FALLBACK_CATEGORIES = [
-  { id: 'all',    name: 'الكل',            slug: 'all',        icon: '✦'  },
-  { id: 'shops',  name: 'المتاجر',          slug: 'shops',      icon: '🏪' },
-  { id: 'health', name: 'الصحة',            slug: 'health',     icon: '❤️' },
-  { id: 'mosque', name: 'المساجد',          slug: 'mosque',     icon: '🕌' },
-  { id: 'edu',    name: 'التعليم',          slug: 'education',  icon: '🎓' },
-  { id: 'trans',  name: 'النقل',            slug: 'transport',  icon: '🚚' },
-  { id: 'charity',name: 'الجمعيات الخيرية', slug: 'charity',    icon: '🎁' },
-  { id: 'public', name: 'خدمات عامة',        slug: 'public',     icon: '🏢' },
-  { id: 'food',   name: 'المطاعم',          slug: 'food',       icon: '🍽️' },
+  { id: 'all',      name: 'الكل',                 slug: 'all',        icon: '✦'  },
+  { id: 'shops',    name: 'المتاجر والتسوق',      slug: 'shops',      icon: '🛍️' },
+  { id: 'health',   name: 'الصحة والعيادات',      slug: 'health',     icon: '❤️' },
+  { id: 'mosque',   name: 'المساجد',              slug: 'mosque',     icon: '🕌' },
+  { id: 'edu',      name: 'التعليم',              slug: 'education',  icon: '🎓' },
+  { id: 'trans',    name: 'المواصلات',            slug: 'transport',  icon: '🚗' },
+  { id: 'charity',  name: 'الجمعيات الخيرية',     slug: 'charity',    icon: '🎁' },
+  { id: 'public',   name: 'الخدمات العامة',       slug: 'public',     icon: '🏢' },
+  { id: 'food',     name: 'المطاعم',              slug: 'food',       icon: '🍽️' },
+  { id: 'sports',   name: 'الرياضة',              slug: 'sports',     icon: '⚽' },
+  { id: 'sos',      name: 'الطوارئ',              slug: 'sos',        icon: '🚨' },
+  { id: 'news',     name: 'الأخبار والإعلانات',   slug: 'news',       icon: '📰' },
+  { id: 'jobs',     name: 'التوظيف',              slug: 'jobs',       icon: '💼' },
+  { id: 'library',  name: 'المكتبة',              slug: 'library',    icon: '📚' },
+  { id: 'memory',   name: 'ذاكرة كنصفرة',         slug: 'memory',     icon: '📷' },
+  { id: 'realestate', name: 'العقارات',           slug: 'realestate', icon: '🏠' },
+  { id: 'auctions', name: 'المزادات',             slug: 'auctions',   icon: '🏆' },
+  { id: 'lostfound', name: 'المفقودات',           slug: 'lostfound',  icon: '🔍' },
+  { id: 'exchange', name: 'الصرافة والحوالات',    slug: 'exchange',   icon: '💱' },
+  { id: 'crafts',   name: 'الحرفيون',             slug: 'crafts',     icon: '🛠️' },
+  { id: 'workshops', name: 'ورشات التصنيع',       slug: 'workshops',  icon: '🏭' },
+  { id: 'internet', name: 'مزودو الإنترنت',       slug: 'internet',   icon: '📡' },
 ];
 
 const iconFor = (v = '') => {
@@ -37,6 +51,15 @@ const iconFor = (v = '') => {
   if (/mosque|جامع|مسجد|صلاة/.test(s))                    return '🕌';
   if (/charity|خير|تبرع|جمعية/.test(s))                   return '🎁';
   if (/gov|بلدية|مجلس|شهادات|تصاريح/.test(s))              return '🏢';
+  if (/خياط|حرفي|حرفي|خياطة|نجار|حداد|كهربائي|سباك|سنكري|باطون|لياسة|صيانة|حرف|مهن/.test(s)) return '🛠️';
+  if (/ورشة|مصنع|تصنيع|معمل|إنتاج|فرز|تعبئة/.test(s)) return '🏭';
+  if (/إنترنت|انترنت|شبكة|واي|wifi|internet|مزود|ISP/.test(s)) return '📡';
+  if (/ذهب|صرافة|حوالات|تحويل|دولار/.test(s)) return '💱';
+  if (/رياضة|ملعب|كرة|نادي|فريق/.test(s)) return '⚽';
+  if (/طوارئ|إسعاف|SOS|إنقاذ/.test(s)) return '🚨';
+  if (/أخبار|إعلان|جريدة|خبر/.test(s)) return '📰';
+  if (/ذاكرة|تراث|صور قديمة/.test(s)) return '📷';
+
   return '✦';
 };
 
@@ -108,7 +131,13 @@ export default function Home() {
         featured: cacheGet('featured'),
         announcements: cacheGet('announcements'),
       };
-      if (cached.cats) setCategories([FALLBACK_CATEGORIES[0], ...cached.cats]);
+      if (cached.cats) setCategories([
+      FALLBACK_CATEGORIES[0],
+      ...cached.cats,
+      ...FALLBACK_CATEGORIES.slice(1).filter(
+        (fc) => !cached.cats.some((cc) => cc.id === fc.id || cc.slug === fc.slug)
+      ),
+    ]);
       if (cached.services) setServices(cached.services);
       if (cached.featured) setFeatured(cached.featured);
       if (cached.announcements) setAnnouncements(cached.announcements);
@@ -131,10 +160,8 @@ export default function Home() {
         ]);
         if (!alive) return;
         if (c.data?.length) {
-          setCategories([
-            FALLBACK_CATEGORIES[0],
-            ...c.data.map((x) => ({ ...x, icon: resolveIcon(x.icon, x.name) })),
-          ]);
+          const fromDB = c.data.map((x) => ({ ...x, icon: resolveIcon(x.icon, x.name) }));
+          setCategories([FALLBACK_CATEGORIES[0], ...fromDB]);
         }
         if (Array.isArray(s.data)) setServices(s.data);
         // نضيف المنتجات كـ items إضافية
@@ -207,12 +234,26 @@ export default function Home() {
       <header className="hero">
         <div className="hero-inner">
 
-          <div className="geo-path">
+          <div className="geo-path" style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            fontSize: 11.5,
+            fontWeight: 800,
+            color: 'rgba(255,255,255,.9)',
+            padding: '6px 12px',
+            background: 'rgba(0,0,0,.2)',
+            borderRadius: 999,
+            backdropFilter: 'blur(10px)',
+            width: 'fit-content',
+            margin: '0 auto 12px',
+          }}>
+            <span>🇸🇾</span>
             <span>سوريا</span>
-            <span className="sep">›</span>
+            <span style={{ opacity: .6 }}>›</span>
             <span>إدلب</span>
-            <span className="sep">›</span>
-            <span className="current">كنصفرة</span>
+            <span style={{ opacity: .6 }}>›</span>
+            <span style={{ color: '#fbbf24', fontWeight: 900 }}>كنصفرة</span>
           </div>
 
           <div className="hero-top">
@@ -233,6 +274,10 @@ export default function Home() {
             <p className="brand-tagline">
               كل خدمات مجتمعك <strong>بين يديك</strong>
             </p>
+          </div>
+
+          <div style={{ padding: '0 16px 12px' }}>
+            <HijriDate />
           </div>
 
           <div className="hero-actions">

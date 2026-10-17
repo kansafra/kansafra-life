@@ -8,17 +8,14 @@ import AzkarBar from '@/components/AzkarBar';
 import NotificationListener from '@/components/NotificationListener';
 import SubscriptionReminder from '@/components/SubscriptionReminder';
 import DebtReminder from '@/components/DebtReminder';
+import HijriBar from '@/components/HijriBar';
 
 export const metadata = {
   manifest: '/manifest.json',
   title: 'سند | خدماتك أقرب',
   description: 'سند يجمع الخدمات المحلية والمتاجر والاحتياجات اليومية في مكان واحد.',
   applicationName: 'سند',
-  appleWebApp: {
-    capable: true,
-    statusBarStyle: 'default',
-    title: 'سند',
-  },
+  appleWebApp: { capable: true, statusBarStyle: 'default', title: 'سند' },
   formatDetection: { telephone: false },
 };
 
@@ -41,7 +38,17 @@ export default function RootLayout({ children }) {
           rel="stylesheet"
         />
       </head>
-      <body>{children}<AzkarBar /><NotificationListener /><SubscriptionReminder /><DebtReminder /><ServiceWorkerRegistrar /><InstallPrompt /><NotificationSetup /></body>
+      <body>
+        <HijriBar />
+        {children}
+        <AzkarBar />
+        <NotificationListener />
+        <SubscriptionReminder />
+        <DebtReminder />
+        <ServiceWorkerRegistrar />
+        <InstallPrompt />
+        <NotificationSetup />
+      </body>
     </html>
   );
 }

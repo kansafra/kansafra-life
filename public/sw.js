@@ -69,3 +69,72 @@ self.addEventListener('notificationclick', (event) => {
     })
   );
 });
+
+// ═══════════════════════════════════════════════
+// Push Notifications — Web Push
+// ═══════════════════════════════════════════════
+
+self.addEventListener('push', (event) => {
+  let data = {
+    title: 'سند',
+    body: 'لديك إشعار جديد',
+    icon: '/icon-192.svg',
+    badge: '/icon-192.svg',
+    url: '/',
+  };
+
+  try {
+    if (event.data) {
+      const parsed = event.data.json();
+      data = { ...data, ...parsed };
+    }
+  } catch (e) {
+    try {
+      data.body = event.data.text();
+    } catch (e2) {}
+  }
+
+  const options = {
+    body: data.body,
+    icon: data.icon || '/icon-192.svg',
+    badge: data.badge || '/icon-192.svg',
+    tag: data.tag || 'sanad-' + Date.now(),
+    dir: 'rtl',
+    lang: 'ar',
+    vibrate: [200, 100, 200],
+    data: { url: data.url || '/' },
+    requireInteraction: data.requireInteraction || false,
+    actions: [
+      { action: 'open', title: 'فتح' },
+      { action: 'close', title: 'إغلاق' },
+    ],
+  };
+
+  event.waitUntil(
+    self.registration.showNotification(data.title, options)
+  );
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+
+  if (event.action === 'close') return;
+
+  const url = event.notification.data?.url || '/';
+
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((list) => {
+      // إذا في نافذة مفتوحة → ركّز عليها
+      for (const c of list) {
+        if (c.url.includes(self.location.origin) && 'focus' in c) {
+          c.navigate(url);
+          return c.focus();
+        }
+      }
+      // إذا لأ → افتح نافذة جديدة
+      if (clients.openWindow) {
+        return clients.openWindow(url);
+      }
+    })
+  );
+});

@@ -54,6 +54,7 @@ export default function NewProduct() {
     stock: '1',
     unit: 'قطعة',
   });
+  const [fileUrl, setFileUrl] = useState('');
 
   useEffect(() => {
     let stored = null;
@@ -92,8 +93,8 @@ export default function NewProduct() {
       unit: f.unit,
     };
     const moderation = await getModerationStatus(supabase, entity);
-    const payloadWithStatus = { ...payload, moderation_status: moderation.status };
-    const { error: err } = await supabase.from('products').insert({ ...payloadWithStatus, moderation_status: moderation.status });
+    const payloadWithStatus = { ...payload, moderation_status: moderationInfo.moderation };
+    const { error: err } = await supabase.from('products').insert({ ...payloadWithStatus, moderation_status: moderationInfo.moderation });
     setLoading(false);
 
     if (err) {

@@ -185,25 +185,11 @@ h3 { font-weight: 800; }
 }
 
 /* ═══ الأيقونات الفاخرة ═══ */
-.cat-tile {
-  background: linear-gradient(180deg, #ffffff 0%, #f5f9f7 100%);
-  border: 1px solid var(--ink-200);
-  border-radius: var(--radius-xl);
-  padding: 16px 12px;
-  transition: all 0.3s var(--ease-smooth);
-  box-shadow: var(--shadow-xs);
-}
 
-.cat-tile:hover {
-  transform: translateY(-4px);
-  box-shadow: var(--shadow-md);
-  border-color: var(--brand-soft);
-}
 
-.cat-tile-icon {
-  font-size: 32px;
-  filter: drop-shadow(0 2px 4px rgba(10, 15, 13, 0.1));
-}
+
+
+
 
 /* ═══ الأزرار الذهبية (مميزة) ═══ */
 .btn-gold {

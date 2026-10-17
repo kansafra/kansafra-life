@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { getCustomer, logoutCustomer, updateCustomerSession } from '@/lib/customerAuth';
+import NotificationToggle from '@/components/NotificationToggle';
 
 export default function CustomerAccountPage() {
   const router = useRouter();
@@ -182,6 +183,10 @@ export default function CustomerAccountPage() {
           ))}
         </div>
       )}
+
+      <div style={{ padding: '0 16px 16px' }}>
+        <NotificationToggle userKey={customer?.phone} userType="customer" />
+      </div>
 
       <div style={{ padding: '0 16px' }}>
         <button onClick={handleLogout} type="button" style={{ width: '100%', padding: 14, background: 'rgba(220,38,38,.1)', color: '#f87171', border: '1px solid rgba(220,38,38,.3)', borderRadius: 14, fontSize: 14, fontWeight: 900, cursor: 'pointer' }}>

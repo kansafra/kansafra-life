@@ -21,6 +21,10 @@ const ENTITY_TYPES = [
   { key: 'transport',   label: 'مواصلات',        icon: '🚗' },
   { key: 'memory',      label: 'ذاكرة رقمية',    icon: '📸' },
   { key: 'municipality',label: 'بلدية',          icon: '🏢' },
+  { key: 'craftsman',   label: 'حرفي',          icon: '🛠️' },
+  { key: 'workshop',    label: 'ورشة تصنيع',    icon: '🏭' },
+  { key: 'isp',         label: 'مزود إنترنت',   icon: '📡' },
+
 ];
 
 export default function RegisterPage() {

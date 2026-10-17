@@ -33,6 +33,7 @@ C.merchant = {
     { icon: '👥', title: 'الموظفون', href: '/merchant/employees' },
     { icon: '⭐', title: 'التقييمات', href: '/merchant/reviews' },
     { icon: '💳', title: 'الدفع', href: '/merchant/payments' },
+    { icon: '💰', title: 'دفتر الديون', href: '/merchant/debts' },
         { icon: '⚙️', title: 'إعدادات حسابي', href: '/merchant/settings' },
 { icon: '💎', title: 'اشتراكي', href: '/merchant/subscription' },
     { icon: '⏳', title: 'قيد المراجعة', href: '/merchant/moderation' },
@@ -317,6 +318,52 @@ C.exchange = {
   ],
 };
 
+C.craftsman = {
+  label: 'حرفي', icon: '🛠️', greeting: 'أهلًا بك', theme: T.amber,
+  tagline: 'خدماتك وحرفك وطلباتك',
+  stats: [
+    { key: 'services', label: 'خدمة' },
+    { key: 'orders', label: 'طلب' },
+    { key: 'revenue', label: 'دخل' },
+    { key: 'reviews', label: 'تقييم' },
+  ],
+  quickActions: [
+    { icon: '🛠️', title: 'خدماتي', href: '/merchant/services' },
+    { icon: '📋', title: 'الطلبات', href: '/merchant/orders' },
+    { icon: '👥', title: 'العملاء', href: '/merchant/customers' },
+    { icon: '🧾', title: 'الفواتير', href: '/merchant/invoices' },
+    { icon: '💰', title: 'دفتر الديون', href: '/merchant/debts' },
+    { icon: '⭐', title: 'التقييمات', href: '/merchant/reviews' },
+    { icon: '💬', title: 'الدردشة', href: '/merchant/chat' },
+    { icon: '⚙️', title: 'إعدادات حسابي', href: '/merchant/settings' },
+    { icon: '💎', title: 'اشتراكي', href: '/merchant/subscription' },
+    { icon: '⏳', title: 'قيد المراجعة', href: '/merchant/moderation' },
+  ],
+};
+
+C.workshop = {
+  label: 'ورشة تصنيع', icon: '🏭', greeting: 'أهلًا بك', theme: T.orange,
+  tagline: 'إدارة إنتاجك ومنتجاتك وطلباتك',
+  stats: [
+    { key: 'products', label: 'منتج' },
+    { key: 'orders', label: 'طلب' },
+    { key: 'inventory', label: 'مخزون' },
+    { key: 'revenue', label: 'مبيعات' },
+  ],
+  quickActions: [
+    { icon: '🏭', title: 'المنتجات', href: '/merchant/products' },
+    { icon: '📦', title: 'المخزون', href: '/merchant/inventory' },
+    { icon: '🛍️', title: 'الطلبات', href: '/merchant/orders' },
+    { icon: '👥', title: 'العملاء', href: '/merchant/customers' },
+    { icon: '🧾', title: 'الفواتير', href: '/merchant/invoices' },
+    { icon: '💰', title: 'دفتر الديون', href: '/merchant/debts' },
+    { icon: '⭐', title: 'التقييمات', href: '/merchant/reviews' },
+    { icon: '⚙️', title: 'إعدادات حسابي', href: '/merchant/settings' },
+    { icon: '💎', title: 'اشتراكي', href: '/merchant/subscription' },
+    { icon: '⏳', title: 'قيد المراجعة', href: '/merchant/moderation' },
+  ],
+};
+
 C.internet = {
   label: 'مزود إنترنت', icon: '🌐', greeting: 'أهلًا بك', theme: T.sky,
   tagline: 'إدارة الباقات والمشتركين والفواتير',
@@ -334,6 +381,9 @@ C.internet = {
     { icon: '⚙️', title: 'إعدادات حسابي', href: '/merchant/settings' },
   ],
 };
+
+// register uses key "isp" — alias to internet config
+C.isp = C.internet;
 
 export const ENTITY_CONFIG = C;
 

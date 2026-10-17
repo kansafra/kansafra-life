@@ -139,16 +139,15 @@ export default function NewServicePage() {
       category_id: form.category_id,
       phone: form.phone.trim(),
       address: form.address.trim() || null,
-      image_url: form.image_url.trim() || null,
-      provider_name: entity.display_name,
-      image_url: imageUrl || null,
+      image_url: imageUrl || form.image_url.trim() || null,
       file_url: fileUrl || null,
+      provider_name: entity.display_name,
       is_featured: form.is_featured,
       status: moderationInfo.status,
       moderation_status: moderationInfo.moderation,
     };
 
-    const { error: insErr } = await supabase.from('services').insert({ ...payload, moderation_status: moderation.status });
+    const { error: insErr } = await supabase.from('services').insert(payload);
     setLoading(false);
 
     if (insErr) {

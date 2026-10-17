@@ -1,0 +1,38 @@
+======================================
+DIAGNOSTIC - Sections Sources
+======================================
+
+[1] page.js:
+    supabase calls: from('service_categories'), from('services'), from('services'), from('announcements'), from('products')
+    Uses FALLBACK_CATEGORIES: YES
+    .map() count: 7
+
+[2] Arrays defined in page.js:
+    - const FALLBACK_CATEGORIES = [
+
+[3] lib files item counts:
+    sectionConfigs.js: 84 items
+    adminTables.js: 100 items
+    i18n.js: 0 items
+    entityTables.js: 68 items
+
+[4] FALLBACK_CATEGORIES:
+    Count: 22
+
+[5] Category loading logic:
+    L17: const FALLBACK_CATEGORIES = [
+    L107: const [categories, setCategories]         = useState(FALLBACK_CATEGORIES);
+    L134: if (cached.cats) setCategories([FALLBACK_CATEGORIES[0], ...cached.cats]);
+    L142: supabase.from('service_categories').select('*')
+    L157: setCategories([
+    L158: FALLBACK_CATEGORIES[0],
+    L198: const cat = categories.find((c) => c.id === x.category_id || c.slug === x.category_id);
+    L208: }, [services, categories, search, activeCategory]);
+    L213: categories.find((c) => c.id === id || c.slug === id)?.name || 'خدمة محلية';
+    L317: {categories.filter((c) => c.id !== 'all' && c.is_visible !== false).slice(0, 24).map((c) => (
+    L355: {categories.filter((c) => c.id !== 'all' && c.is_visible !== false).map((c) => (
+    L374: <div className="stat-val">{categories.length - 1}</div>
+
+[6] Where categories are rendered:
+
+======================================

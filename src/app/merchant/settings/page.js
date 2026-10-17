@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { getSession, updateSession, logout } from '@/lib/auth';
+import NotificationToggle from '@/components/NotificationToggle';
 import PaymentMethodsSettings from '@/components/PaymentMethodsSettings';
 
 const IMAGE_BUCKETS = {
@@ -210,6 +211,11 @@ export default function MerchantSettings() {
             <span style={{ fontSize: 40 }}>🏪</span>
           )}
         </label>
+      </div>
+
+      {/* ═══ زر الإشعارات ═══ */}
+      <div style={{ padding: '0 16px 16px' }}>
+        <NotificationToggle userKey={session?.display_name} userType="entity" />
       </div>
 
       {/* ═══ الحقول ═══ */}
