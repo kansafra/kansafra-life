@@ -3,7 +3,8 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
-import { getSession } from '@/lib/auth';
+import { getSession, hashPassword } from '@/lib/auth';
+import { SkeletonList } from '@/components/Skeleton';
 
 const ROLES = [
   { k: 'manager', l: '👔 مدير فرع' },
@@ -51,7 +52,7 @@ export default function EmployeesPage() {
 
   function openAdd() {
     setMode('add');
-    setForm({ full_name: '', phone: '', email: '', role: 'sales', permissions: [], salary: 0, notes: '' });
+    setForm({ full_name: '', phone: '', email: '', password: '', password_confirm: '', role: 'sales', permissions: [], salary: 0, notes: '' });
   }
 
   function openEdit(e) {
@@ -61,6 +62,8 @@ export default function EmployeesPage() {
       full_name: e.full_name,
       phone: e.phone || '',
       email: e.email || '',
+      password: '',
+      password_confirm: '',
       role: e.role || 'sales',
       permissions: Array.isArray(e.permissions) ? e.permissions : [],
       salary: e.salary || 0,
@@ -71,7 +74,36 @@ export default function EmployeesPage() {
 
   async function save() {
     if (!form.full_name?.trim()) { alert('الاسم مطلوب'); return; }
+    if (!form.phone?.trim()) { alert('رقم الهاتف مطلوب (لتسجيل الدخول)'); return; }
+    
+    const needsPassword = (mode === 'add') || (form.password && form.password.length > 0);
+    
+    if (needsPassword) {
+      if (!form.password || form.password.length < 6) {
+        alert('كلمة المرور مطلوبة (6 أحرف على الأقل)');
+        return;
+      }
+      if (form.password !== form.password_confirm) {
+        alert('كلمتا المرور غير متطابقتين');
+        return;
+      }
+    }
+    
     setSaving(true);
+    
+    // التحقق من عدم تكرار رقم الهاتف
+    const { data: existing } = await supabase
+      .from('employees')
+      .select('id')
+      .eq('phone', form.phone.trim())
+      .maybeSingle();
+    
+    if (existing && (mode === 'add' || existing.id !== editing?.id)) {
+      setSaving(false);
+      alert('رقم الهاتف مستخدم بالفعل لموظف آخر');
+      return;
+    }
+    
     const payload = {
       entity_name: entity.display_name,
       full_name: form.full_name.trim(),
@@ -83,6 +115,11 @@ export default function EmployeesPage() {
       notes: form.notes?.trim() || null,
       is_active: form.is_active === false ? false : true,
     };
+    
+    if (needsPassword) {
+      payload.password_hash = await hashPassword(form.password);
+    }
+    
     let err;
     if (mode === 'add') {
       ({ error: err } = await supabase.from('employees').insert(payload));
@@ -122,7 +159,9 @@ export default function EmployeesPage() {
       </div>
 
       {loading ? (
-        <div className="sect-empty"><span className="em">⏳</span></div>
+        <div style={{ padding: 20 }}>
+          <SkeletonList count={3} />
+        </div>
       ) : employees.length === 0 ? (
         <div className="sect-empty">
           <span className="em">👥</span>
@@ -183,12 +222,23 @@ export default function EmployeesPage() {
 
             <div className="new-prod-row">
               <div className="new-service-field">
-                <label className="new-service-label">الهاتف</label>
+                <label className="new-service-label">الهاتف *</label>
                 <input className="new-service-input" type="tel" value={form.phone || ''} onChange={(ev) => setForm({ ...form, phone: ev.target.value })} />
               </div>
               <div className="new-service-field">
                 <label className="new-service-label">البريد</label>
                 <input className="new-service-input" type="email" value={form.email || ''} onChange={(ev) => setForm({ ...form, email: ev.target.value })} />
+              </div>
+            </div>
+
+            <div className="new-prod-row">
+              <div className="new-service-field">
+                <label className="new-service-label">كلمة المرور {mode === 'add' ? '*' : '(اتركها فارغة لعدم التغيير)'}</label>
+                <input className="new-service-input" type="password" value={form.password || ''} onChange={(ev) => setForm({ ...form, password: ev.target.value })} placeholder="••••••••" autoComplete="new-password" />
+              </div>
+              <div className="new-service-field">
+                <label className="new-service-label">تأكيد كلمة المرور</label>
+                <input className="new-service-input" type="password" value={form.password_confirm || ''} onChange={(ev) => setForm({ ...form, password_confirm: ev.target.value })} placeholder="••••••••" autoComplete="new-password" />
               </div>
             </div>
 

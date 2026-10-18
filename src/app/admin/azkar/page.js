@@ -1,18 +1,21 @@
 'use client';
-
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
+import { useToast } from '@/components/Toast';
+import { SkeletonList } from '@/components/Skeleton';
+import EmptyState from '@/components/EmptyState';
 
 export default function AdminAzkar() {
   const router = useRouter();
-  const [azkar, setAzkar] = useState([]);
-  const [settings, setSettings] = useState({});
+  const { success, error: tE } = useToast();
+  const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [modal, setModal] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form, setForm] = useState({});
-  const [savingSettings, setSavingSettings] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     let stored = null;
@@ -23,258 +26,82 @@ export default function AdminAzkar() {
 
   async function load() {
     if (!supabase) { setLoading(false); return; }
-    const [azkarRes, settingsRes] = await Promise.all([
-      supabase.from('azkar').select('*').order('sort_order'),
-      supabase.from('app_settings').select('*').in('key', [
-        'azkar_enabled', 'azkar_interval_minutes',
-        'azkar_display_seconds', 'azkar_sound_enabled'
-      ]),
-    ]);
-    setAzkar(Array.isArray(azkarRes.data) ? azkarRes.data : []);
-    const s = {};
-    (settingsRes.data || []).forEach((x) => { s[x.key] = x.value; });
-    setSettings(s);
+    const { data } = await supabase.from('azkar').select('*').order('sort_order');
+    setItems(data || []);
     setLoading(false);
   }
 
-  async function saveSetting(key, value) {
-    setSavingSettings(true);
-    const { error } = await supabase
-      .from('app_settings')
-      .upsert({ key, value: String(value), category: 'azkar', updated_at: new Date().toISOString() }, { onConflict: 'key' });
-    if (error) { alert('خطأ: ' + error.message); }
-    else {
-      setSettings((prev) => ({ ...prev, [key]: String(value) }));
-    }
-    setSavingSettings(false);
+  function openAdd() {
+    setEditing(null);
+    setForm({ text: '', source: '', category: 'general', is_active: true, sort_order: items.length + 1 });
+    setModal(true);
   }
 
-  function openNew() {
-    setEditing('new');
-    setForm({ text: '', source: '', category: 'تسبيح', is_active: true, sort_order: azkar.length + 1 });
-  }
-
-  function openEdit(a) {
-    setEditing(a.id);
-    setForm({ ...a });
-  }
+  function openEdit(a) { setEditing(a); setForm({ ...a }); setModal(true); }
 
   async function save() {
-    if (!form.text?.trim()) { alert('النص مطلوب'); return; }
-    const payload = {
-      text: form.text.trim(),
-      source: form.source?.trim() || null,
-      category: form.category || 'عام',
-      repeat_count: parseInt(form.repeat_count) || 1,
-      is_active: form.is_active !== false,
-      sort_order: parseInt(form.sort_order) || 0,
-    };
-    let err;
-    if (editing === 'new') {
-      ({ error: err } = await supabase.from('azkar').insert(payload));
-    } else {
-      ({ error: err } = await supabase.from('azkar').update(payload).eq('id', editing));
-    }
-    if (err) { alert('تعذّر الحفظ: ' + err.message); return; }
-    setEditing(null);
-    load();
+    if (!form.text?.trim()) { tE('الذكر مطلوب'); return; }
+    setSaving(true);
+    try {
+      const payload = {
+        text: form.text.trim(),
+        source: form.source?.trim() || null,
+        category: form.category || 'general',
+        is_active: form.is_active !== false,
+        sort_order: Number(form.sort_order) || 0,
+      };
+      let err;
+      if (editing) ({ error: err } = await supabase.from('azkar').update(payload).eq('id', editing.id));
+      else ({ error: err } = await supabase.from('azkar').insert(payload));
+      if (err) throw err;
+      success(editing ? '✅ تم التعديل' : '✅ تمت الإضافة');
+      setModal(false); load();
+    } catch (e) { tE('تعذّر: ' + e.message); }
+    setSaving(false);
   }
 
   async function del(a) {
     if (!confirm('حذف هذا الذكر؟')) return;
-    const { error } = await supabase.from('azkar').delete().eq('id', a.id);
-    if (error) { alert('تعذّر الحذف'); return; }
+    await supabase.from('azkar').delete().eq('id', a.id);
+    success('✅ تم'); load();
+  }
+
+  async function toggle(a) {
+    await supabase.from('azkar').update({ is_active: !a.is_active }).eq('id', a.id);
     load();
   }
 
-  async function toggleActive(a) {
-    const { error } = await supabase.from('azkar').update({ is_active: !a.is_active }).eq('id', a.id);
-    if (!error) {
-      setAzkar((arr) => arr.map((x) => x.id === a.id ? { ...x, is_active: !a.is_active } : x));
-    }
-  }
-
-  const activeCount = azkar.filter((a) => a.is_active).length;
+  if (loading) return <div style={{ padding: 16, background: '#f8fafc', minHeight: '100vh' }}><SkeletonList count={4} /></div>;
 
   return (
-    <div className="admin-page">
-      <div className="admin-sub-header">
-        <Link href="/admin" className="admin-sub-back">→</Link>
-        <span className="admin-sub-title">إدارة الأذكار</span>
-        <span className="admin-sub-count">{activeCount}/{azkar.length}</span>
+    <div style={{ minHeight: '100vh', background: '#f8fafc', paddingBottom: 40 }}>
+      <div style={{ position: 'sticky', top: 0, zIndex: 10, background: '#0f4d3a', padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
+        <Link href="/admin" style={{ color: '#fff', textDecoration: 'none', fontSize: 20, width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,.1)', borderRadius: '50%' }}>→</Link>
+        <div style={{ flex: 1, color: '#fff', fontSize: 16, fontWeight: 900 }}>🕌 الأذكار ({items.length})</div>
+        <button onClick={openAdd} style={{ background: '#fbbf24', color: '#0f4d3a', border: 'none', padding: '8px 14px', borderRadius: 10, fontSize: 12, fontWeight: 900, cursor: 'pointer', fontFamily: 'inherit' }}>+ ذكر</button>
       </div>
-
-      {/* ═══ الإعدادات ═══ */}
-      <div style={{ padding: 16, background: 'rgba(15,77,58,.08)', borderBottom: '1px solid rgba(15,77,58,.15)' }}>
-        <div style={{ fontSize: 12, color: 'rgba(255,255,255,.7)', fontWeight: 800, marginBottom: 12 }}>
-          ⚙️ الإعدادات
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
-          <span style={{ flex: 1, fontSize: 13, color: '#fff' }}>تفعيل شريط الأذكار</span>
-          <button
-            onClick={() => saveSetting('azkar_enabled', settings.azkar_enabled === 'false' ? 'true' : 'false')}
-            style={{
-              background: settings.azkar_enabled !== 'false' ? '#0f4d3a' : '#444',
-              color: '#fff', border: 'none', borderRadius: 999, padding: '6px 16px',
-              fontSize: 12, fontWeight: 800, cursor: 'pointer'
-            }}
-          >
-            {settings.azkar_enabled !== 'false' ? 'مُفعّل ✓' : 'معطّل ✗'}
-          </button>
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
-          <span style={{ flex: 1, fontSize: 13, color: '#fff' }}>صوت التنبيه</span>
-          <button
-            onClick={() => saveSetting('azkar_sound_enabled', settings.azkar_sound_enabled === 'false' ? 'true' : 'false')}
-            style={{
-              background: settings.azkar_sound_enabled !== 'false' ? '#0f4d3a' : '#444',
-              color: '#fff', border: 'none', borderRadius: 999, padding: '6px 16px',
-              fontSize: 12, fontWeight: 800, cursor: 'pointer'
-            }}
-          >
-            {settings.azkar_sound_enabled !== 'false' ? '🔔 مُفعّل' : '🔕 معطّل'}
-          </button>
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
-          <span style={{ flex: 1, fontSize: 13, color: '#fff' }}>كل كم دقيقة يظهر؟</span>
-          <input
-            type="number"
-            min="1"
-            max="120"
-            value={settings.azkar_interval_minutes || 15}
-            onChange={(e) => setSettings((s) => ({ ...s, azkar_interval_minutes: e.target.value }))}
-            onBlur={(e) => saveSetting('azkar_interval_minutes', e.target.value)}
-            style={{
-              width: 80, padding: '6px 10px', borderRadius: 8, border: '1px solid rgba(255,255,255,.2)',
-              background: 'rgba(0,0,0,.2)', color: '#fff', fontSize: 13, textAlign: 'center'
-            }}
-          />
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <span style={{ flex: 1, fontSize: 13, color: '#fff' }}>مدة الظهور (ثانية)</span>
-          <input
-            type="number"
-            min="3"
-            max="60"
-            value={settings.azkar_display_seconds || 12}
-            onChange={(e) => setSettings((s) => ({ ...s, azkar_display_seconds: e.target.value }))}
-            onBlur={(e) => saveSetting('azkar_display_seconds', e.target.value)}
-            style={{
-              width: 80, padding: '6px 10px', borderRadius: 8, border: '1px solid rgba(255,255,255,.2)',
-              background: 'rgba(0,0,0,.2)', color: '#fff', fontSize: 13, textAlign: 'center'
-            }}
-          />
-        </div>
-      </div>
-
-      {/* ═══ الأزرار ═══ */}
       <div style={{ padding: 16 }}>
-        <button className="mng-btn primary" onClick={openNew} type="button" style={{ width: '100%' }}>
-          + إضافة ذكر جديد
-        </button>
+        {items.length === 0 ? <EmptyState icon="🕌" title="لا توجد أذكار" actionLabel="+ إضافة" onAction={openAdd} /> : items.map(a => (
+          <div key={a.id} style={{ background: '#fff', borderRadius: 14, padding: 14, marginBottom: 10, border: '1px solid #e5e7eb', opacity: a.is_active ? 1 : 0.6 }}>
+            <div style={{ fontSize: 14, fontWeight: 900, color: '#0f4d3a', marginBottom: 6, lineHeight: 1.6, textAlign: 'center', padding: '8px 0' }}>{a.text}</div>
+            {a.source && <div style={{ fontSize: 11, color: '#64748b', textAlign: 'center', marginBottom: 8 }}>— {a.source}</div>}
+            <div style={{ display: 'flex', gap: 4 }}>
+              <button onClick={() => openEdit(a)} style={{ flex: 1, padding: 8, background: '#f1f5f9', border: 'none', borderRadius: 8, fontSize: 11, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' }}>✏️</button>
+              <button onClick={() => toggle(a)} style={{ flex: 1, padding: 8, background: a.is_active ? 'rgba(16,185,129,.15)' : '#f1f5f9', color: a.is_active ? '#10b981' : '#64748b', border: 'none', borderRadius: 8, fontSize: 11, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' }}>{a.is_active ? '● نشط' : '○ معطل'}</button>
+              <button onClick={() => del(a)} style={{ padding: 8, background: 'rgba(220,38,38,.1)', color: '#dc2626', border: 'none', borderRadius: 8, fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>🗑️</button>
+            </div>
+          </div>
+        ))}
       </div>
-
-      {/* ═══ القائمة ═══ */}
-      {loading ? (
-        <div className="sect-empty"><span className="em">⏳</span><p>جارٍ التحميل...</p></div>
-      ) : azkar.length === 0 ? (
-        <div className="sect-empty"><span className="em">📿</span><p>لا توجد أذكار</p></div>
-      ) : (
-        <div className="admin-items">
-          {azkar.map((a) => (
-            <div key={a.id} className="admin-item" style={{ opacity: a.is_active ? 1 : 0.5 }}>
-              <div className="admin-item-icon" style={{ background: 'rgba(15,77,58,.15)', color: '#4ade80', fontSize: 18 }}>📿</div>
-              <div className="admin-item-body">
-                <div className="admin-item-title" style={{ fontSize: 13, lineHeight: 1.5 }}>{a.text}</div>
-                <div className="admin-item-meta">
-                  {a.source && <span>{a.source}</span>}
-                  <span>{a.category}</span>
-                  {!a.is_active && <span className="admin-badge info">معطّل</span>}
-                </div>
-              </div>
-              <div className="admin-item-actions" style={{ flexDirection: 'column', gap: 4 }}>
-                <button
-                  className="admin-act-btn"
-                  onClick={() => toggleActive(a)}
-                  type="button"
-                  title={a.is_active ? 'إخفاء' : 'إظهار'}
-                >
-                  {a.is_active ? '👁️' : '🚫'}
-                </button>
-                <button className="admin-act-btn" onClick={() => openEdit(a)} type="button" title="تعديل">✏️</button>
-                <button className="admin-act-btn del" onClick={() => del(a)} type="button" title="حذف">🗑️</button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* ═══ نافذة تعديل/إضافة ═══ */}
-      {editing && (
-        <div className="mng-modal-bg" onClick={() => setEditing(null)}>
-          <div className="mng-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="mng-modal-handle" />
-            <h3 className="mng-modal-title">{editing === 'new' ? '➕ ذكر جديد' : '✏️ تعديل'}</h3>
-
-            <div className="new-service-field">
-              <label className="new-service-label">نص الذكر *</label>
-              <textarea
-                className="new-service-input"
-                style={{ minHeight: 80, fontFamily: 'inherit' }}
-                value={form.text || ''}
-                onChange={(e) => setForm({ ...form, text: e.target.value })}
-                placeholder="مثال: سُبْحَانَ اللَّهِ وَبِحَمْدِهِ"
-              />
-            </div>
-
-            <div className="new-service-field">
-              <label className="new-service-label">المصدر</label>
-              <input
-                className="new-service-input"
-                value={form.source || ''}
-                onChange={(e) => setForm({ ...form, source: e.target.value })}
-                placeholder="مثال: رواه مسلم"
-              />
-            </div>
-
-            <div className="new-prod-row">
-              <div className="new-service-field">
-                <label className="new-service-label">التصنيف</label>
-                <input
-                  className="new-service-input"
-                  value={form.category || ''}
-                  onChange={(e) => setForm({ ...form, category: e.target.value })}
-                  placeholder="تسبيح"
-                />
-              </div>
-              <div className="new-service-field">
-                <label className="new-service-label">الترتيب</label>
-                <input
-                  className="new-service-input"
-                  type="number"
-                  value={form.sort_order || 0}
-                  onChange={(e) => setForm({ ...form, sort_order: e.target.value })}
-                />
-              </div>
-            </div>
-
-            <div className="new-service-field" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <input
-                type="checkbox"
-                checked={form.is_active !== false}
-                onChange={(e) => setForm({ ...form, is_active: e.target.checked })}
-                id="azk_act"
-              />
-              <label htmlFor="azk_act" style={{ margin: 0, cursor: 'pointer' }}>مُفعّل</label>
-            </div>
-
-            <div className="admin-form-actions">
-              <button className="mng-btn ghost" onClick={() => setEditing(null)} type="button">إلغاء</button>
-              <button className="mng-btn primary" onClick={save} type="button">✓ حفظ</button>
+      {modal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 100, display: 'flex', alignItems: 'flex-end' }} onClick={() => setModal(false)}>
+          <div style={{ background: '#fff', borderRadius: '24px 24px 0 0', width: '100%', maxWidth: 500, margin: '0 auto', padding: '24px 20px 30px' }} onClick={(e) => e.stopPropagation()}>
+            <h3 style={{ fontSize: 18, fontWeight: 900, marginBottom: 16 }}>{editing ? 'تعديل ذكر' : 'ذكر جديد'}</h3>
+            <textarea placeholder="نص الذكر *" value={form.text || ''} onChange={(e) => setForm({ ...form, text: e.target.value })} rows={3} style={{ width: '100%', padding: 12, border: '1px solid #e5e7eb', borderRadius: 10, fontSize: 14, marginBottom: 10, boxSizing: 'border-box', fontFamily: 'inherit', resize: 'vertical', textAlign: 'center', fontWeight: 700 }} />
+            <input type="text" placeholder="المصدر (رواه البخاري، إلخ)" value={form.source || ''} onChange={(e) => setForm({ ...form, source: e.target.value })} style={{ width: '100%', padding: 12, border: '1px solid #e5e7eb', borderRadius: 10, fontSize: 13, marginBottom: 16, boxSizing: 'border-box', fontFamily: 'inherit' }} />
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button onClick={() => setModal(false)} style={{ flex: 1, padding: 12, background: '#f1f5f9', border: 'none', borderRadius: 10, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' }}>إلغاء</button>
+              <button onClick={save} disabled={saving} style={{ flex: 1, padding: 12, background: 'linear-gradient(135deg,#10b981,#059669)', color: '#fff', border: 'none', borderRadius: 10, fontWeight: 900, cursor: saving ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>{saving ? '...' : '✓ حفظ'}</button>
             </div>
           </div>
         </div>

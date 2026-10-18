@@ -31,8 +31,10 @@ C.merchant = {
     { icon: '📊', title: 'المخزون', href: '/merchant/inventory' },
     { icon: '🚚', title: 'التوصيل', href: '/merchant/delivery' },
     { icon: '👥', title: 'الموظفون', href: '/merchant/employees' },
+    { icon: '🏆', title: 'مزاداتي', href: '/merchant/auctions' },
     { icon: '⭐', title: 'التقييمات', href: '/merchant/reviews' },
     { icon: '💳', title: 'الدفع', href: '/merchant/payments' },
+    { icon: '🏦', title: 'طرق الدفع', href: '/merchant/payment_methods' },
     { icon: '💰', title: 'دفتر الديون', href: '/merchant/debts' },
         { icon: '⚙️', title: 'إعدادات حسابي', href: '/merchant/settings' },
 { icon: '💎', title: 'اشتراكي', href: '/merchant/subscription' },
@@ -70,17 +72,19 @@ C.doctor = {
     { key: 'patients', label: 'مرضى' },
     { key: 'records', label: 'سجلات' },
   ],
+  
   quickActions: [
-    { icon: '🕐', title: 'الجدول', href: '/merchant/doctor_schedules' },
     { icon: '📅', title: 'المواعيد', href: '/merchant/appointments' },
+    { icon: '🕐', title: 'جدول العمل', href: '/merchant/doctor_schedules' },
     { icon: '📋', title: 'السجلات', href: '/merchant/medical_records' },
     { icon: '💊', title: 'الوصفات', href: '/merchant/prescriptions' },
+    { icon: '👥', title: 'العملاء', href: '/merchant/customers' },
+    { icon: '💰', title: 'دفتر الديون', href: '/merchant/debts' },
+    { icon: '⭐', title: 'التقييمات', href: '/merchant/reviews' },
     { icon: '💬', title: 'الدردشة', href: '/merchant/chat' },
-        { icon: '⚙️', title: 'إعدادات حسابي', href: '/merchant/settings' },
-{ icon: '💎', title: 'اشتراكي', href: '/merchant/subscription' },
-    { icon: '⏳', title: 'قيد المراجعة', href: '/merchant/moderation' },
-  
-    { icon: '👥', title: 'العملاء', href: '/merchant/customers' },],
+    { icon: '⚙️', title: 'إعداداتي', href: '/merchant/settings' },
+  ],
+
 };
 
 C.pharmacy = {
@@ -91,16 +95,19 @@ C.pharmacy = {
     { key: 'orders', label: 'طلبات' },
     { key: 'shifts', label: 'مناوبة' },
   ],
-  quickActions: [
-    { icon: '💊', title: 'الأدوية', href: '/merchant/products' },
-    { icon: '🌙', title: 'المناوبات', href: '/merchant/oncall_shifts' },
-    { icon: '🛍️', title: 'الطلبات', href: '/merchant/orders' },
-    { icon: '🧾', title: 'الفواتير', href: '/merchant/invoices' },
-        { icon: '⚙️', title: 'إعدادات حسابي', href: '/merchant/settings' },
-{ icon: '💎', title: 'اشتراكي', href: '/merchant/subscription' },
-    { icon: '⏳', title: 'قيد المراجعة', href: '/merchant/moderation' },
   
-    { icon: '👥', title: 'العملاء', href: '/merchant/customers' },],
+  quickActions: [
+    { icon: '💊', title: 'الوصفات', href: '/merchant/prescriptions' },
+    { icon: '🌙', title: 'المناوبات', href: '/merchant/oncall_shifts' },
+    { icon: '📦', title: 'المنتجات', href: '/merchant/products' },
+    { icon: '🛍️', title: 'الطلبات', href: '/merchant/orders' },
+    { icon: '👥', title: 'العملاء', href: '/merchant/customers' },
+    { icon: '💰', title: 'دفتر الديون', href: '/merchant/debts' },
+    { icon: '⭐', title: 'التقييمات', href: '/merchant/reviews' },
+    { icon: '💬', title: 'الدردشة', href: '/merchant/chat' },
+    { icon: '⚙️', title: 'إعداداتي', href: '/merchant/settings' },
+  ],
+
 };
 
 C.school = {
@@ -171,15 +178,16 @@ C.municipality = {
     { key: 'requests', label: 'طلب' },
     { key: 'services', label: 'خدمة' },
   ],
+  
   quickActions: [
+    { icon: '📝', title: 'الشكاوى', href: '/merchant/municipal/complaints' },
+    { icon: '📋', title: 'المعاملات', href: '/merchant/municipal/permits' },
+    { icon: '💰', title: 'المدفوعات', href: '/merchant/municipal/payments' },
     { icon: '📢', title: 'الإعلانات', href: '/merchant/announcements' },
-    { icon: '📩', title: 'الطلبات والشكاوى', href: '/merchant/office_requests' },
-    { icon: '📜', title: 'الشهادات', href: '/merchant/office_requests' },
-    { icon: '🏗️', title: 'المشاريع', href: '/merchant/office_requests' },
-        { icon: '⚙️', title: 'إعدادات حسابي', href: '/merchant/settings' },
-{ icon: '💎', title: 'اشتراكي', href: '/merchant/subscription' },
-    { icon: '⏳', title: 'قيد المراجعة', href: '/merchant/moderation' },
+    { icon: '📊', title: 'التقارير', href: '/merchant/reports' },
+    { icon: '⚙️', title: 'الإعدادات', href: '/merchant/settings' },
   ],
+
 };
 
 C.charity = {
@@ -268,13 +276,14 @@ C.office = {
     { key: 'completed', label: 'منجز' },
   ],
   quickActions: [
-    { icon: '📋', title: 'الطلبات', href: '/merchant/office_requests' },
+
     { icon: '💼', title: 'الوظائف', href: '/merchant/job_postings' },
     { icon: '👤', title: 'الباحثون', href: '/merchant/job_seekers' },
+    { icon: '📋', title: 'الطلبات', href: '/merchant/office_requests' },
+    { icon: '📄', title: 'المستندات', href: '/merchant/documents' },
     { icon: '💬', title: 'الدردشة', href: '/merchant/chat' },
-        { icon: '⚙️', title: 'إعدادات حسابي', href: '/merchant/settings' },
-{ icon: '💎', title: 'اشتراكي', href: '/merchant/subscription' },
-    { icon: '⏳', title: 'قيد المراجعة', href: '/merchant/moderation' },
+    { icon: '⚙️', title: 'الإعدادات', href: '/merchant/settings' },
+
   ],
 };
 
@@ -286,16 +295,17 @@ C.transport = {
     { key: 'routes', label: 'خط' },
     { key: 'orders', label: 'رحلة' },
   ],
+  
   quickActions: [
     { icon: '🚗', title: 'المركبات', href: '/merchant/vehicles' },
-    { icon: '🛣️', title: 'الخطوط', href: '/merchant/vehicles' },
-    { icon: '🛍️', title: 'الطلبات', href: '/merchant/orders' },
-    { icon: '💳', title: 'الدفع', href: '/merchant/payments' },
-        { icon: '⚙️', title: 'إعدادات حسابي', href: '/merchant/settings' },
-{ icon: '💎', title: 'اشتراكي', href: '/merchant/subscription' },
-    { icon: '⏳', title: 'قيد المراجعة', href: '/merchant/moderation' },
-  
-    { icon: '👥', title: 'العملاء', href: '/merchant/customers' },],
+    { icon: '📦', title: 'الطلبات', href: '/merchant/orders' },
+    { icon: '👥', title: 'العملاء', href: '/merchant/customers' },
+    { icon: '💰', title: 'المحفظة', href: '/merchant/payments' },
+    { icon: '⭐', title: 'التقييمات', href: '/merchant/reviews' },
+    { icon: '💬', title: 'الدردشة', href: '/merchant/chat' },
+    { icon: '⚙️', title: 'الإعدادات', href: '/merchant/settings' },
+  ],
+
 };
 
 
@@ -307,15 +317,16 @@ C.exchange = {
     { key: 'updates', label: 'تحديث اليوم' },
     { key: 'transfers', label: 'حوالة' },
   ],
+  
   quickActions: [
-    { icon: '💱', title: 'تحديث الأسعار', href: '/merchant/exchange-rates' },
-    { icon: '📊', title: 'التقارير', href: '/merchant/reports' },
+    { icon: '💱', title: 'أسعاري', href: '/merchant/exchange-rates' },
     { icon: '👥', title: 'العملاء', href: '/merchant/customers' },
+    { icon: '💰', title: 'دفتر الديون', href: '/merchant/debts' },
+    { icon: '🧾', title: 'الفواتير', href: '/merchant/invoices' },
     { icon: '💬', title: 'الدردشة', href: '/merchant/chat' },
-        { icon: '⚙️', title: 'إعدادات حسابي', href: '/merchant/settings' },
-{ icon: '💎', title: 'اشتراكي', href: '/merchant/subscription' },
-    { icon: '⏳', title: 'قيد المراجعة', href: '/merchant/moderation' },
+    { icon: '⚙️', title: 'الإعدادات', href: '/merchant/settings' },
   ],
+
 };
 
 C.craftsman = {
@@ -328,16 +339,15 @@ C.craftsman = {
     { key: 'reviews', label: 'تقييم' },
   ],
   quickActions: [
+
     { icon: '🛠️', title: 'خدماتي', href: '/merchant/services' },
-    { icon: '📋', title: 'الطلبات', href: '/merchant/orders' },
+    { icon: '🛍️', title: 'الطلبات', href: '/merchant/orders' },
     { icon: '👥', title: 'العملاء', href: '/merchant/customers' },
-    { icon: '🧾', title: 'الفواتير', href: '/merchant/invoices' },
     { icon: '💰', title: 'دفتر الديون', href: '/merchant/debts' },
     { icon: '⭐', title: 'التقييمات', href: '/merchant/reviews' },
     { icon: '💬', title: 'الدردشة', href: '/merchant/chat' },
-    { icon: '⚙️', title: 'إعدادات حسابي', href: '/merchant/settings' },
-    { icon: '💎', title: 'اشتراكي', href: '/merchant/subscription' },
-    { icon: '⏳', title: 'قيد المراجعة', href: '/merchant/moderation' },
+    { icon: '⚙️', title: 'الإعدادات', href: '/merchant/settings' },
+
   ],
 };
 
@@ -351,16 +361,16 @@ C.workshop = {
     { key: 'revenue', label: 'مبيعات' },
   ],
   quickActions: [
+
     { icon: '🏭', title: 'المنتجات', href: '/merchant/products' },
-    { icon: '📦', title: 'المخزون', href: '/merchant/inventory' },
     { icon: '🛍️', title: 'الطلبات', href: '/merchant/orders' },
+    { icon: '📦', title: 'المخزون', href: '/merchant/inventory' },
     { icon: '👥', title: 'العملاء', href: '/merchant/customers' },
-    { icon: '🧾', title: 'الفواتير', href: '/merchant/invoices' },
     { icon: '💰', title: 'دفتر الديون', href: '/merchant/debts' },
     { icon: '⭐', title: 'التقييمات', href: '/merchant/reviews' },
-    { icon: '⚙️', title: 'إعدادات حسابي', href: '/merchant/settings' },
-    { icon: '💎', title: 'اشتراكي', href: '/merchant/subscription' },
-    { icon: '⏳', title: 'قيد المراجعة', href: '/merchant/moderation' },
+    { icon: '💬', title: 'الدردشة', href: '/merchant/chat' },
+    { icon: '⚙️', title: 'الإعدادات', href: '/merchant/settings' },
+
   ],
 };
 

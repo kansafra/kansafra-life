@@ -1,234 +1,188 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
-import { getSession } from '@/lib/auth';
-
-function genRef() {
-  return 'RX-' + Date.now().toString(36).toUpperCase() + '-' + Math.floor(Math.random() * 9000 + 1000);
-}
+import { useCurrentUser } from '@/lib/useCurrentUser';
+import { useToast } from '@/components/Toast';
+import { SkeletonList } from '@/components/Skeleton';
+import EmptyState from '@/components/EmptyState';
 
 export default function PrescriptionsPage() {
   const router = useRouter();
-  const [entity, setEntity] = useState(null);
-  const [items, setItems] = useState([]);
+  const { user, loading: userLoading, isOwner, dataOwnerName } = useCurrentUser();
+  const { success, error: tE } = useToast();
+  const [prescriptions, setPrescriptions] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [mode, setMode] = useState(null);
-  const [editing, setEditing] = useState(null);
+  const [search, setSearch] = useState('');
+  const [modal, setModal] = useState(null);
   const [form, setForm] = useState({});
-  const [meds, setMeds] = useState([]);
   const [saving, setSaving] = useState(false);
+  const [selectedPrescription, setSelectedPrescription] = useState(null);
 
   useEffect(() => {
-    let stored = null;
-    try { stored = getSession(); } catch (e) {}
-    if (!stored) { router.replace('/login'); return; }
-    setEntity(stored);
-    load(stored);
-  }, [router]);
+    if (userLoading) return;
+    if (!user) { router.replace('/login'); return; }
+    load();
+  }, [user, userLoading]);
 
-  async function load(ent) {
-    if (!supabase) return;
-    const { data } = await supabase.from('prescriptions').select('*').eq('doctor_name', ent.display_name).order('created_at', { ascending: false });
-    setItems(Array.isArray(data) ? data : []);
+  async function load() {
+    if (!supabase || !dataOwnerName) { setLoading(false); return; }
+    try {
+      const { data } = await supabase.from('prescriptions')
+        .select('*')
+        .eq('doctor_name', dataOwnerName)
+        .order('created_at', { ascending: false });
+      setPrescriptions(data || []);
+    } catch (e) { tE('تعذّر التحميل'); }
     setLoading(false);
   }
 
-  function openAdd() {
-    setMode('add');
-    setForm({ patient_name: '', patient_phone: '', diagnosis: '', notes: '' });
-    setMeds([{ name: '', dose: '', frequency: '', duration: '' }]);
-  }
+  const filtered = useMemo(() => {
+    if (!search.trim()) return prescriptions;
+    const q = search.trim().toLowerCase();
+    return prescriptions.filter(p =>
+      (p.patient_name || '').toLowerCase().includes(q) ||
+      (p.patient_phone || '').includes(q)
+    );
+  }, [prescriptions, search]);
 
-  function openEdit(p) {
-    setMode('edit');
-    setEditing(p);
-    setForm({ patient_name: p.patient_name, patient_phone: p.patient_phone || '', diagnosis: p.diagnosis || '', notes: p.notes || '' });
-    setMeds(Array.isArray(p.medications) ? p.medications : [{ name: '', dose: '', frequency: '', duration: '' }]);
-  }
-
-  function addMed() { setMeds([...meds, { name: '', dose: '', frequency: '', duration: '' }]); }
-  function removeMed(i) { setMeds(meds.filter((_, idx) => idx !== i)); }
-  function updateMed(i, k, v) {
-    const next = [...meds];
-    next[i][k] = v;
-    setMeds(next);
-  }
-
-  async function save() {
-    if (!form.patient_name?.trim()) { alert('اسم المريض مطلوب'); return; }
-    const validMeds = meds.filter((m) => m.name.trim());
-    if (!validMeds.length) { alert('أضف دواءً واحداً على الأقل'); return; }
+  async function savePrescription() {
+    if (!form.patient_name?.trim()) { tE('اسم المريض مطلوب'); return; }
+    if (!form.patient_phone?.trim()) { tE('الهاتف مطلوب'); return; }
+    if (!form.medications?.trim()) { tE('الأدوية مطلوبة'); return; }
 
     setSaving(true);
-    const payload = {
-      doctor_name: entity.display_name,
-      patient_name: form.patient_name.trim(),
-      patient_phone: form.patient_phone?.trim() || null,
-      diagnosis: form.diagnosis?.trim() || null,
-      medications: validMeds,
-      notes: form.notes?.trim() || null,
-      qr_code: editing?.qr_code || genRef(),
-    };
-    let err;
-    if (mode === 'add') {
-      ({ error: err } = await supabase.from('prescriptions').insert(payload));
-    } else {
-      ({ error: err } = await supabase.from('prescriptions').update(payload).eq('id', editing.id));
-    }
+    try {
+      const { error } = await supabase.from('prescriptions').insert({
+        doctor_name: dataOwnerName,
+        patient_name: form.patient_name.trim(),
+        patient_phone: form.patient_phone.trim(),
+        diagnosis: form.diagnosis?.trim() || null,
+        medications: form.medications.trim(),
+        instructions: form.instructions?.trim() || null,
+      });
+      if (error) throw error;
+      success('✅ تم حفظ الوصفة');
+      setModal(null); setForm({}); load();
+    } catch (e) { tE('تعذّر: ' + e.message); }
     setSaving(false);
-    if (err) { alert('تعذّر الحفظ: ' + err.message); return; }
-    setMode(null); setEditing(null);
-    load(entity);
   }
 
-  function printRx(p) {
-    const w = window.open('', '_blank');
-    const meds = Array.isArray(p.medications) ? p.medications : [];
-    w.document.write(`
-      <!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="UTF-8"><title>وصفة ${p.qr_code}</title>
+  function printPrescription(p) {
+    const win = window.open('', '_blank');
+    win.document.write(`
+      <html dir="rtl"><head><title>وصفة طبية - ${p.patient_name}</title>
       <style>
-        body{font-family:Cairo,Arial;padding:20px;color:#111}
-        .head{border-bottom:3px solid #0e8a66;padding-bottom:12px;margin-bottom:20px;display:flex;justify-content:space-between}
-        h1{margin:0;color:#0e8a66}
-        .row{display:flex;justify-content:space-between;margin:6px 0;font-size:13px}
-        table{width:100%;border-collapse:collapse;margin-top:14px}
-        th,td{border-bottom:1px solid #ddd;padding:8px;text-align:right;font-size:13px}
-        th{background:#f0f9f5;color:#0e8a66}
-        .qr{margin-top:20px;text-align:center}
-      </style></head><body>
-      <div class="head">
-        <div><h1>${p.doctor_name}</h1><div style="font-size:12px;color:#666">وصفة طبية</div></div>
-        <div style="text-align:left;font-family:monospace;font-size:12px">
-          <div>${p.qr_code}</div>
-          <div>${new Date(p.issued_at || p.created_at).toLocaleDateString('ar-EG')}</div>
+        body { font-family: Arial, sans-serif; padding: 40px; max-width: 800px; margin: 0 auto; }
+        .header { text-align: center; border-bottom: 3px double #0f4d3a; padding-bottom: 20px; margin-bottom: 30px; }
+        .logo { font-size: 48px; margin-bottom: 10px; }
+        .title { font-size: 24px; font-weight: 900; color: #0f4d3a; }
+        .info { background: #f8fafc; padding: 20px; border-radius: 10px; margin-bottom: 30px; }
+        .info-row { display: flex; justify-content: space-between; margin-bottom: 10px; }
+        .section { margin-bottom: 30px; }
+        .section-title { font-size: 16px; font-weight: 900; color: #0f4d3a; border-bottom: 2px solid #0f4d3a; padding-bottom: 5px; margin-bottom: 15px; }
+        .medications { white-space: pre-line; line-height: 2; }
+        .footer { text-align: center; margin-top: 60px; padding-top: 20px; border-top: 2px solid #e5e7eb; font-size: 12px; color: #64748b; }
+        @media print { body { padding: 20px; } }
+      </style></head>
+      <body>
+        <div class="header">
+          <div class="logo">🏥</div>
+          <div class="title">وصفة طبية</div>
+          <div style="font-size: 14px; color: #64748b; margin-top: 8px;">د. ${p.doctor_name}</div>
         </div>
-      </div>
-      <div class="row"><strong>المريض:</strong> ${p.patient_name}</div>
-      ${p.patient_phone ? `<div class="row"><strong>الهاتف:</strong> ${p.patient_phone}</div>` : ''}
-      ${p.diagnosis ? `<div class="row"><strong>التشخيص:</strong> ${p.diagnosis}</div>` : ''}
-      <table>
-        <thead><tr><th>الدواء</th><th>الجرعة</th><th>التكرار</th><th>المدة</th></tr></thead>
-        <tbody>${meds.map((m) => `<tr><td>${m.name}</td><td>${m.dose || '-'}</td><td>${m.frequency || '-'}</td><td>${m.duration || '-'}</td></tr>`).join('')}</tbody>
-      </table>
-      ${p.notes ? `<div style="margin-top:14px;font-size:13px"><strong>ملاحظات:</strong> ${p.notes}</div>` : ''}
-      <div class="qr">
-        <img src="https://api.qrserver.com/v1/create-qr-code/?size=140x140&data=${encodeURIComponent(p.qr_code)}" />
-        <div style="font-size:11px;color:#666;margin-top:6px">امسح للتحقق</div>
-      </div>
-      <script>window.onload=()=>setTimeout(()=>{window.print();window.close()},400)</script>
+        <div class="info">
+          <div class="info-row"><span><strong>المريض:</strong> ${p.patient_name}</span><span><strong>الهاتف:</strong> ${p.patient_phone}</span></div>
+          <div class="info-row"><span><strong>التاريخ:</strong> ${new Date(p.created_at).toLocaleDateString('ar-EG')}</span><span><strong>رقم الوصفة:</strong> ${p.id.slice(0, 8).toUpperCase()}</span></div>
+          ${p.diagnosis ? `<div class="info-row"><span><strong>التشخيص:</strong> ${p.diagnosis}</span></div>` : ''}
+        </div>
+        <div class="section">
+          <div class="section-title">💊 الأدوية</div>
+          <div class="medications">${p.medications}</div>
+        </div>
+        ${p.instructions ? `<div class="section"><div class="section-title">📝 التعليمات</div><div style="line-height: 1.8;">${p.instructions}</div></div>` : ''}
+        <div class="footer">
+          <div>منصة سند · كنصفرة · إدلب · سوريا</div>
+          <div style="margin-top: 8px;">هذه الوصفة صادرة إلكترونياً ولا تحتاج ختم</div>
+        </div>
+        <script>window.onload = () => window.print();</script>
       </body></html>
     `);
-    w.document.close();
+    win.document.close();
   }
 
-  if (!entity) return <div className="sect-empty" style={{ padding: 80 }}><span className="em">⏳</span></div>;
+  function sendWhatsApp(p) {
+    const clean = String(p.patient_phone).replace(/\D/g, '');
+    const phone = clean.startsWith('0') ? '963' + clean.slice(1) : clean;
+    const msg = `*وصفة طبية*\n\n👨‍⚕️ د. ${p.doctor_name}\n👤 ${p.patient_name}\n📅 ${new Date(p.created_at).toLocaleDateString('ar-EG')}\n\n💊 *الأدوية:*\n${p.medications}\n${p.instructions ? `\n📝 *التعليمات:*\n${p.instructions}` : ''}\n\n— منصة سند`;
+    window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, '_blank');
+  }
+
+  if (userLoading || loading) return <div style={{ padding: 16, background: '#f8fafc', minHeight: '100vh' }}><SkeletonList count={4} /></div>;
 
   return (
-    <div className="sect-page" style={{ paddingBottom: 40 }}>
-      <div className="inv-header">
-        <Link href="/merchant" className="inv-back">→</Link>
-        <span className="inv-title">💊 الوصفات الطبية</span>
-        <button className="mng-add-btn" onClick={openAdd} type="button">+ وصفة</button>
+    <div style={{ minHeight: '100vh', background: '#f8fafc', paddingBottom: 40 }}>
+      <div style={{ position: 'sticky', top: 0, zIndex: 10, background: 'linear-gradient(135deg,#dc2626,#991b1b)', padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
+        <Link href="/merchant" style={{ color: '#fff', textDecoration: 'none', fontSize: 20, width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,.15)', borderRadius: '50%' }}>→</Link>
+        <div style={{ flex: 1 }}>
+          <div style={{ color: '#fff', fontSize: 16, fontWeight: 900 }}>💊 الوصفات الطبية</div>
+          <div style={{ color: 'rgba(255,255,255,.8)', fontSize: 11, marginTop: 2 }}>{filtered.length} وصفة</div>
+        </div>
+        <button onClick={() => { setForm({}); setModal('new'); }} style={{ background: '#fff', color: '#dc2626', border: 'none', padding: '8px 14px', borderRadius: 10, fontSize: 12, fontWeight: 900, cursor: 'pointer', fontFamily: 'inherit' }}>+ وصفة</button>
       </div>
 
-      {loading ? (
-        <div className="sect-empty"><span className="em">⏳</span></div>
-      ) : items.length === 0 ? (
-        <div className="sect-empty"><span className="em">💊</span><p>لا توجد وصفات</p></div>
-      ) : (
-        <div style={{ padding: 20 }}>
-          {items.map((p) => {
-            const meds = Array.isArray(p.medications) ? p.medications : [];
-            return (
-              <div key={p.id} className="debt-card" style={{ borderRightColor: '#0e8a66' }}>
-                <div className="debt-head">
-                  <div>
-                    <div className="debt-customer">👤 {p.patient_name}</div>
-                    <div style={{ fontSize: 11, color: 'var(--n-500)', fontFamily: 'monospace', direction: 'ltr', textAlign: 'right' }}>{p.qr_code}</div>
-                  </div>
-                </div>
-                {p.diagnosis && (
-                  <div style={{ fontSize: 12, color: 'var(--n-600)', marginTop: 8, fontWeight: 700 }}>
-                    🔍 {p.diagnosis}
-                  </div>
-                )}
-                <div style={{ marginTop: 8, padding: 10, background: 'var(--c-50)', borderRadius: 10 }}>
-                  <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--f-700)', marginBottom: 6 }}>
-                    💊 {meds.length} دواء
-                  </div>
-                  {meds.slice(0, 3).map((m, i) => (
-                    <div key={i} style={{ fontSize: 12, color: 'var(--n-700)', marginBottom: 2 }}>
-                      • {m.name} {m.dose && `— ${m.dose}`}
-                    </div>
-                  ))}
-                </div>
-                <div style={{ fontSize: 10.5, color: 'var(--n-400)', marginTop: 8 }}>
-                  {new Date(p.issued_at || p.created_at).toLocaleDateString('ar-EG')}
-                </div>
-                <div className="debt-actions">
-                  <button className="debt-action edit" onClick={() => openEdit(p)} type="button">✏️ تعديل</button>
-                  <button className="debt-action pay" onClick={() => printRx(p)} type="button">🖨️ طباعة</button>
-                </div>
+      <div style={{ padding: 16 }}>
+        <input type="text" placeholder="🔍 ابحث باسم المريض..." value={search} onChange={(e) => setSearch(e.target.value)}
+          style={{ width: '100%', padding: '12px 14px', border: '1px solid #e5e7eb', borderRadius: 12, fontSize: 13, fontFamily: 'inherit', boxSizing: 'border-box', outline: 'none', background: '#fff' }} />
+      </div>
+
+      <div style={{ padding: '0 16px' }}>
+        {filtered.length === 0 ? (
+          <EmptyState icon="💊" title="لا توجد وصفات" description="ستظهر هنا الوصفات الطبية التي تصدرها" actionLabel="+ وصفة جديدة" onAction={() => { setForm({}); setModal('new'); }} />
+        ) : filtered.map(p => (
+          <div key={p.id} style={{ background: '#fff', borderRadius: 14, padding: 14, marginBottom: 10, border: '1px solid #e5e7eb' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 14, fontWeight: 900, color: '#0f172a' }}>👤 {p.patient_name}</div>
+                <div style={{ fontSize: 11, color: '#64748b', marginTop: 2, direction: 'ltr', textAlign: 'right' }}>{p.patient_phone}</div>
+                <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 4 }}>📅 {new Date(p.created_at).toLocaleString('ar-EG')}</div>
               </div>
-            );
-          })}
-        </div>
-      )}
-
-      {mode && (
-        <div className="mng-modal-bg" onClick={() => { setMode(null); setEditing(null); }}>
-          <div className="mng-modal" onClick={(ev) => ev.stopPropagation()}>
-            <div className="mng-modal-handle" />
-            <h3 className="mng-modal-title">{mode === 'add' ? '➕ وصفة جديدة' : '✏️ تعديل الوصفة'}</h3>
-
-            <div className="new-service-field">
-              <label className="new-service-label">اسم المريض *</label>
-              <input className="new-service-input" value={form.patient_name || ''} onChange={(ev) => setForm({ ...form, patient_name: ev.target.value })} />
+              <div style={{ display: 'flex', gap: 4 }}>
+                <button onClick={() => printPrescription(p)} title="طباعة" style={{ width: 32, height: 32, borderRadius: 8, background: '#f1f5f9', border: 'none', fontSize: 14, cursor: 'pointer' }}>🖨️</button>
+                <button onClick={() => sendWhatsApp(p)} title="واتساب" style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(37,211,102,.15)', color: '#059669', border: 'none', fontSize: 14, cursor: 'pointer' }}>📱</button>
+              </div>
             </div>
-
-            <div className="new-service-field">
-              <label className="new-service-label">هاتف المريض</label>
-              <input className="new-service-input" type="tel" value={form.patient_phone || ''} onChange={(ev) => setForm({ ...form, patient_phone: ev.target.value })} />
+            {p.diagnosis && (
+              <div style={{ fontSize: 11.5, color: '#dc2626', fontWeight: 800, marginBottom: 6 }}>🔍 {p.diagnosis}</div>
+            )}
+            <div style={{ padding: 10, background: 'rgba(16,185,129,.05)', borderRadius: 8, marginBottom: 8 }}>
+              <div style={{ fontSize: 10, fontWeight: 900, color: '#10b981', marginBottom: 4 }}>💊 الأدوية</div>
+              <div style={{ fontSize: 12, color: '#334155', whiteSpace: 'pre-line', lineHeight: 1.6 }}>{p.medications}</div>
             </div>
+            {p.instructions && (
+              <div style={{ fontSize: 11, color: '#64748b', lineHeight: 1.6 }}>📝 {p.instructions}</div>
+            )}
+          </div>
+        ))}
+      </div>
 
-            <div className="new-service-field">
-              <label className="new-service-label">التشخيص</label>
-              <input className="new-service-input" value={form.diagnosis || ''} onChange={(ev) => setForm({ ...form, diagnosis: ev.target.value })} />
-            </div>
+      {modal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 100, display: 'flex', alignItems: 'flex-end' }} onClick={() => setModal(null)}>
+          <div style={{ background: '#fff', borderRadius: '24px 24px 0 0', width: '100%', maxWidth: 500, margin: '0 auto', padding: '24px 20px 30px', maxHeight: '90vh', overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
+            <h3 style={{ fontSize: 18, fontWeight: 900, marginBottom: 16 }}>وصفة جديدة</h3>
 
-            <div className="new-service-field">
-              <label className="new-service-label">الأدوية</label>
-              {meds.map((m, i) => (
-                <div key={i} style={{ padding: 10, background: 'var(--c-50)', borderRadius: 12, marginBottom: 8 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                    <span style={{ fontSize: 12, fontWeight: 800 }}>دواء #{i + 1}</span>
-                    {meds.length > 1 && (
-                      <button type="button" onClick={() => removeMed(i)} style={{ background: 'transparent', border: 'none', color: '#dc2626', fontWeight: 900, cursor: 'pointer', fontSize: 14 }}>✕</button>
-                    )}
-                  </div>
-                  <input className="new-service-input" placeholder="اسم الدواء" value={m.name} onChange={(ev) => updateMed(i, 'name', ev.target.value)} style={{ marginBottom: 6 }} />
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
-                    <input className="new-service-input" placeholder="الجرعة" value={m.dose} onChange={(ev) => updateMed(i, 'dose', ev.target.value)} style={{ fontSize: 12 }} />
-                    <input className="new-service-input" placeholder="التكرار" value={m.frequency} onChange={(ev) => updateMed(i, 'frequency', ev.target.value)} style={{ fontSize: 12 }} />
-                    <input className="new-service-input" placeholder="المدة" value={m.duration} onChange={(ev) => updateMed(i, 'duration', ev.target.value)} style={{ fontSize: 12 }} />
-                  </div>
-                </div>
-              ))}
-              <button type="button" onClick={addMed} className="mng-btn ghost" style={{ width: '100%', marginTop: 4 }}>+ دواء آخر</button>
-            </div>
+            <input type="text" placeholder="اسم المريض *" value={form.patient_name || ''} onChange={(e) => setForm({ ...form, patient_name: e.target.value })} style={{ width: '100%', padding: 12, border: '1px solid #e5e7eb', borderRadius: 10, fontSize: 13, marginBottom: 10, boxSizing: 'border-box', fontFamily: 'inherit' }} />
+            <input type="tel" placeholder="رقم الهاتف *" value={form.patient_phone || ''} onChange={(e) => setForm({ ...form, patient_phone: e.target.value })} style={{ width: '100%', padding: 12, border: '1px solid #e5e7eb', borderRadius: 10, fontSize: 13, marginBottom: 10, boxSizing: 'border-box', fontFamily: 'inherit', direction: 'ltr', textAlign: 'right' }} />
+            <input type="text" placeholder="التشخيص (اختياري)" value={form.diagnosis || ''} onChange={(e) => setForm({ ...form, diagnosis: e.target.value })} style={{ width: '100%', padding: 12, border: '1px solid #e5e7eb', borderRadius: 10, fontSize: 13, marginBottom: 10, boxSizing: 'border-box', fontFamily: 'inherit' }} />
+            <label style={{ display: 'block', fontSize: 12, fontWeight: 800, color: '#334155', marginBottom: 6 }}>💊 الأدوية *</label>
+            <textarea placeholder="دواء 1 - جرعة - مدة&#10;دواء 2 - جرعة - مدة" value={form.medications || ''} onChange={(e) => setForm({ ...form, medications: e.target.value })} rows={4} style={{ width: '100%', padding: 12, border: '1px solid #e5e7eb', borderRadius: 10, fontSize: 13, marginBottom: 10, boxSizing: 'border-box', fontFamily: 'inherit', resize: 'vertical' }} />
+            <label style={{ display: 'block', fontSize: 12, fontWeight: 800, color: '#334155', marginBottom: 6 }}>📝 التعليمات</label>
+            <textarea placeholder="تعليمات إضافية للمريض" value={form.instructions || ''} onChange={(e) => setForm({ ...form, instructions: e.target.value })} rows={2} style={{ width: '100%', padding: 12, border: '1px solid #e5e7eb', borderRadius: 10, fontSize: 13, marginBottom: 16, boxSizing: 'border-box', fontFamily: 'inherit', resize: 'vertical' }} />
 
-            <div className="new-service-field">
-              <label className="new-service-label">ملاحظات</label>
-              <textarea className="new-service-textarea" rows={2} value={form.notes || ''} onChange={(ev) => setForm({ ...form, notes: ev.target.value })} />
-            </div>
-
-            <div className="admin-form-actions">
-              <button className="mng-btn ghost" onClick={() => { setMode(null); setEditing(null); }} type="button">إلغاء</button>
-              <button className="mng-btn primary" onClick={save} disabled={saving} type="button">
-                {saving ? '...' : mode === 'add' ? '✓ إصدار' : '✓ حفظ'}
-              </button>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button onClick={() => setModal(null)} style={{ flex: 1, padding: 12, background: '#f1f5f9', border: 'none', borderRadius: 10, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' }}>إلغاء</button>
+              <button onClick={savePrescription} disabled={saving} style={{ flex: 1, padding: 12, background: 'linear-gradient(135deg,#dc2626,#991b1b)', color: '#fff', border: 'none', borderRadius: 10, fontWeight: 900, cursor: saving ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>{saving ? '...' : '✓ حفظ'}</button>
             </div>
           </div>
         </div>

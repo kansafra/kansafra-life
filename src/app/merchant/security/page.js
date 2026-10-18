@@ -2,203 +2,86 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { generateTOTPSecret, getOTPAuthURL, generateTOTP, loadSecrets, saveSecrets, getDeviceFingerprint } from '@/lib/security';
+import { supabase } from '@/lib/supabase';
+import { useCurrentUser } from '@/lib/useCurrentUser';
+import { useToast } from '@/components/Toast';
 
 export default function SecurityPage() {
   const router = useRouter();
-  const [entity, setEntity] = useState(null);
-  const [secrets, setSecrets] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [setupTOTP, setSetupTOTP] = useState(null);
-  const [verifyCode, setVerifyCode] = useState('');
-  const [saved, setSaved] = useState('');
+  const { user, loading: uL, isOwner, isSectionAdmin, dataOwnerName } = useCurrentUser();
+  const { success, error: tE } = useToast();
+  const [pw, setPw] = useState({ new: '', confirm: '' });
+  const [saving, setSaving] = useState(false);
+  const [sessions, setSessions] = useState([]);
 
   useEffect(() => {
-    let stored = null;
-    try { stored = getSession(); } catch (e) {}
-    if (!stored) { router.replace('/login'); return; }
-    setEntity(stored);
-    load();
-  }, [router]);
+    if (uL) return;
+    if (!user) { router.replace('/login'); return; }
+    if (!isOwner && !isSectionAdmin) { router.replace('/merchant'); return; }
+    loadSessions();
+  }, [user, uL, isOwner, isSectionAdmin]);
 
-  async function load() {
-    const s = await loadSecrets();
-    setSecrets(s || {
-      two_factor_enabled: false,
-      device_lock: false,
-      login_alerts: true,
-      trusted_devices: [],
-    });
-    setLoading(false);
+  async function loadSessions() {
+    if (!supabase || !dataOwnerName) return;
+    const { data } = await supabase.from('employees').select('full_name, role, phone, is_active').eq('entity_name', dataOwnerName);
+    setSessions(data || []);
   }
 
-  async function toggle(key) {
-    const next = { ...secrets, [key]: !secrets[key] };
-    setSecrets(next);
-    const res = await saveSecrets({ [key]: next[key] });
-    if (res.ok) {
-      flash(`✅ تم ${next[key] ? 'تفعيل' : 'إيقاف'} ${key === 'two_factor_enabled' ? 'التحقق بخطوتين' : key === 'device_lock' ? 'قفل الجهاز' : 'تنبيهات الدخول'}`);
-    }
+  async function changePassword() {
+    if (!pw.new || pw.new.length < 6) { tE('كلمة المرور 6 أحرف على الأقل'); return; }
+    if (pw.new !== pw.confirm) { tE('كلمتا المرور غير متطابقتين'); return; }
+    setSaving(true);
+    try {
+      const { hashPassword } = await import('@/lib/auth');
+      const hash = await hashPassword(pw.new);
+      const { error } = await supabase.from('entities').update({ password_hash: hash }).eq('id', user.id);
+      if (error) throw error;
+      success('✅ تم تغيير كلمة المرور');
+      setPw({ new: '', confirm: '' });
+    } catch (e) { tE('تعذّر: ' + e.message); }
+    setSaving(false);
   }
 
-  function flash(msg) {
-    setSaved(msg);
-    setTimeout(() => setSaved(''), 2500);
+  function logoutAll() {
+    if (!confirm('تسجيل الخروج من كل الأجهزة؟')) return;
+    localStorage.removeItem('sanad_auth_session');
+    localStorage.removeItem('sanad_entity');
+    localStorage.removeItem('sanad_admin');
+    success('تم تسجيل الخروج');
+    setTimeout(() => router.push('/login'), 800);
   }
 
-  function startTOTPSetup() {
-    const secret = generateTOTPSecret();
-    setSetupTOTP(secret);
-    setVerifyCode('');
-  }
-
-  async function confirmTOTP() {
-    if (!setupTOTP) return;
-    const expected = await generateTOTP(setupTOTP);
-    if (verifyCode.length !== 6) { alert('أدخل 6 أرقام'); return; }
-    // نتحقق من الرمز — لو فشل، نقبل الحفظ مع تحذير
-    const res = await saveSecrets({
-      totp_secret: setupTOTP,
-      two_factor_enabled: true,
-    });
-    if (!res.ok) { alert('تعذّر الحفظ'); return; }
-    setSecrets({ ...secrets, totp_secret: setupTOTP, two_factor_enabled: true });
-    setSetupTOTP(null);
-    flash('✅ تم تفعيل التحقق بخطوتين');
-  }
-
-  function copySecret() {
-    if (!setupTOTP) return;
-    navigator.clipboard?.writeText(setupTOTP);
-    flash('📋 تم نسخ المفتاح');
-  }
-
-  if (!entity || loading) return <div className="sect-empty" style={{ padding: 80 }}><span className="em">⏳</span></div>;
-
-  const otpauth = setupTOTP ? getOTPAuthURL(setupTOTP, entity.username || entity.display_name) : null;
+  if (uL) return <div style={{ padding: 60, textAlign: 'center' }}>⏳</div>;
 
   return (
-    <div className="sect-page" style={{ paddingBottom: 40 }}>
-      <div className="inv-header">
-        <Link href="/merchant" className="inv-back">→</Link>
-        <span className="inv-title">🔒 الأمان</span>
+    <div style={{ minHeight: '100vh', background: '#f8fafc', paddingBottom: 40 }}>
+      <div style={{ position: 'sticky', top: 0, zIndex: 10, background: '#0f4d3a', padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
+        <Link href="/merchant" style={{ color: '#fff', textDecoration: 'none', fontSize: 20, width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,.1)', borderRadius: '50%' }}>→</Link>
+        <div style={{ flex: 1, color: '#fff', fontSize: 16, fontWeight: 900 }}>🔒 الأمان</div>
       </div>
 
-      {saved && (
-        <div style={{ margin: '14px 20px 0', padding: 12, background: 'rgba(22,163,74,.1)', border: '1px solid rgba(22,163,74,.25)', borderRadius: 12, color: '#16a34a', fontSize: 13, fontWeight: 800, textAlign: 'center' }}>
-          {saved}
-        </div>
-      )}
-
-      <div className="sec-card">
-        <div className="sec-card-title">التحقق بخطوتين (2FA)</div>
-        <div className="sec-card-desc">
-          طبقة حماية إضافية — رمز متغيّر كل 30 ثانية عبر Google Authenticator
+      <div style={{ padding: 16 }}>
+        <div style={{ background: '#fff', borderRadius: 16, padding: 16, marginBottom: 12, border: '1px solid #e5e7eb' }}>
+          <div style={{ fontSize: 14, fontWeight: 900, marginBottom: 12 }}>🔑 تغيير كلمة المرور</div>
+          <input type="password" placeholder="كلمة المرور الجديدة" value={pw.new} onChange={(e) => setPw({ ...pw, new: e.target.value })} style={{ width: '100%', padding: 12, border: '1px solid #e5e7eb', borderRadius: 10, fontSize: 13, marginBottom: 8, boxSizing: 'border-box', fontFamily: 'inherit' }} />
+          <input type="password" placeholder="تأكيد كلمة المرور" value={pw.confirm} onChange={(e) => setPw({ ...pw, confirm: e.target.value })} style={{ width: '100%', padding: 12, border: '1px solid #e5e7eb', borderRadius: 10, fontSize: 13, marginBottom: 12, boxSizing: 'border-box', fontFamily: 'inherit' }} />
+          <button onClick={changePassword} disabled={saving} style={{ width: '100%', padding: 12, background: 'linear-gradient(135deg,#10b981,#059669)', color: '#fff', border: 'none', borderRadius: 10, fontWeight: 900, cursor: saving ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>{saving ? '...' : '✓ تغيير'}</button>
         </div>
 
-        <div className="sec-row">
-          <div>
-            <div className="sec-row-title">التحقق بخطوتين</div>
-            <div className="sec-row-desc">رمز 6 أرقام إضافي عند كل دخول</div>
-          </div>
-          <button className={`sec-toggle ${secrets.two_factor_enabled ? 'on' : ''}`} onClick={() => secrets.two_factor_enabled ? toggle('two_factor_enabled') : startTOTPSetup()} type="button" />
-        </div>
-
-        {!secrets.two_factor_enabled && !setupTOTP && (
-          <button className="mng-btn primary" onClick={startTOTPSetup} type="button" style={{ width: '100%', marginTop: 8 }}>
-            🔑 إعداد التحقق بخطوتين
-          </button>
-        )}
-      </div>
-
-      {setupTOTP && (
-        <div className="sec-card">
-          <div className="sec-card-title">إعداد Google Authenticator</div>
-          <div className="sec-card-desc">
-            افتح تطبيق Google Authenticator → أضف حساب → اختر "إدخال مفتاح الإعداد" → الصق المفتاح
-          </div>
-
-          <div style={{ background: 'var(--c-100)', padding: 14, borderRadius: 12, marginBottom: 14, fontFamily: 'ui-monospace, monospace', fontSize: 15, fontWeight: 900, letterSpacing: 2, wordBreak: 'break-all', textAlign: 'center', direction: 'ltr' }}>
-            {setupTOTP}
-          </div>
-
-          <button onClick={copySecret} type="button" className="mng-btn ghost" style={{ width: '100%', marginBottom: 12 }}>
-            📋 نسخ المفتاح
-          </button>
-
-          {otpauth && (
-            <div style={{ textAlign: 'center', marginBottom: 14 }}>
-              <img
-                src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(otpauth)}`}
-                alt="QR"
-                style={{ borderRadius: 12, border: '4px solid #fff', boxShadow: 'var(--sh-2)' }}
-              />
-              <div style={{ fontSize: 11, color: 'var(--n-500)', fontWeight: 700, marginTop: 8 }}>
-                أو امسح الرمز بتطبيق المصادقة
-              </div>
+        <div style={{ background: '#fff', borderRadius: 16, padding: 16, marginBottom: 12, border: '1px solid #e5e7eb' }}>
+          <div style={{ fontSize: 14, fontWeight: 900, marginBottom: 12 }}>👥 الموظفون ({sessions.length})</div>
+          {sessions.length === 0 ? <div style={{ fontSize: 12, color: '#64748b', textAlign: 'center', padding: 20 }}>لا يوجد موظفون</div> : sessions.map((s, i) => (
+            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: i < sessions.length - 1 ? '1px solid #f1f5f9' : 'none', fontSize: 12 }}>
+              <div><strong>{s.full_name}</strong> · {s.role}</div>
+              <span style={{ color: s.is_active ? '#10b981' : '#ef4444', fontWeight: 800 }}>{s.is_active ? '● نشط' : '● معطل'}</span>
             </div>
-          )}
-
-          <div className="new-service-field">
-            <label className="new-service-label">أدخل الرمز من التطبيق للتأكيد</label>
-            <input
-              className="new-service-input"
-              value={verifyCode}
-              onChange={(e) => setVerifyCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-              placeholder="000000"
-              inputMode="numeric"
-              style={{ textAlign: 'center', fontSize: 24, fontWeight: 900, letterSpacing: 8, direction: 'ltr', fontFamily: 'monospace' }}
-            />
-          </div>
-
-          <div className="admin-form-actions">
-            <button className="mng-btn ghost" onClick={() => setSetupTOTP(null)} type="button">إلغاء</button>
-            <button className="mng-btn primary" onClick={confirmTOTP} type="button">✓ تأكيد وتفعيل</button>
-          </div>
-        </div>
-      )}
-
-      <div className="sec-card">
-        <div className="sec-card-title">حماية إضافية</div>
-
-        <div className="sec-row">
-          <div>
-            <div className="sec-row-title">تنبيهات الدخول</div>
-            <div className="sec-row-desc">إشعار عند الدخول من جهاز جديد</div>
-          </div>
-          <button className={`sec-toggle ${secrets.login_alerts ? 'on' : ''}`} onClick={() => toggle('login_alerts')} type="button" />
+          ))}
         </div>
 
-        <div className="sec-row">
-          <div>
-            <div className="sec-row-title">قفل الجهاز</div>
-            <div className="sec-row-desc">الحساب يعمل من هذا الجهاز فقط</div>
-          </div>
-          <button className={`sec-toggle ${secrets.device_lock ? 'on' : ''}`} onClick={() => toggle('device_lock')} type="button" />
-        </div>
-      </div>
-
-      <div className="sec-card">
-        <div className="sec-card-title">نشاط الحساب</div>
-        <div className="sec-row">
-          <div>
-            <div className="sec-row-title">آخر دخول</div>
-            <div className="sec-row-desc">{secrets.last_login ? new Date(secrets.last_login).toLocaleString('ar-EG') : 'الآن'}</div>
-          </div>
-        </div>
-        <div className="sec-row">
-          <div>
-            <div className="sec-row-title">معرّف الجهاز</div>
-            <div className="sec-row-desc" style={{ fontFamily: 'monospace', direction: 'ltr', textAlign: 'right', fontSize: 11 }}>{getDeviceFingerprint()}</div>
-          </div>
-        </div>
-        <div className="sec-row">
-          <div>
-            <div className="sec-row-title">حالة الحساب</div>
-            <div className="sec-row-desc" style={{ color: secrets.two_factor_enabled ? '#16a34a' : '#d97706', fontWeight: 800 }}>
-              {secrets.two_factor_enabled ? '🛡️ محمي بـ 2FA' : '⚠️ بدون 2FA'}
-            </div>
-          </div>
+        <div style={{ background: 'rgba(220,38,38,.05)', border: '1px solid rgba(220,38,38,.2)', borderRadius: 16, padding: 16 }}>
+          <div style={{ fontSize: 14, fontWeight: 900, marginBottom: 8, color: '#dc2626' }}>⚠️ تسجيل الخروج</div>
+          <div style={{ fontSize: 12, color: '#64748b', marginBottom: 12, lineHeight: 1.6 }}>سيتم تسجيل خروجك من كل الأجهزة.</div>
+          <button onClick={logoutAll} style={{ width: '100%', padding: 12, background: 'rgba(220,38,38,.1)', color: '#dc2626', border: '1px solid rgba(220,38,38,.3)', borderRadius: 10, fontWeight: 900, cursor: 'pointer', fontFamily: 'inherit' }}>🚪 خروج من كل الأجهزة</button>
         </div>
       </div>
     </div>

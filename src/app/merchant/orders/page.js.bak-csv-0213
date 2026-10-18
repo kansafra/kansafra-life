@@ -1,0 +1,279 @@
+'use client';
+import { useState, useEffect, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+import { supabase } from '@/lib/supabase';
+import { useCurrentUser } from '@/lib/useCurrentUser';
+import { useToast } from '@/components/Toast';
+import { SkeletonList } from '@/components/Skeleton';
+import EmptyState from '@/components/EmptyState';
+
+const STATUS_CONFIG = {
+  new:         { label: 'جديد',         color: '#3b82f6', bg: 'rgba(59,130,246,.12)', icon: '🆕' },
+  preparing:   { label: 'قيد التحضير',  color: '#f59e0b', bg: 'rgba(245,158,11,.12)', icon: '👨‍🍳' },
+  delivering:  { label: 'قيد التوصيل',  color: '#8b5cf6', bg: 'rgba(139,92,246,.12)', icon: '🚚' },
+  done:        { label: 'مكتمل',        color: '#10b981', bg: 'rgba(16,185,129,.12)', icon: '✅' },
+  cancelled:   { label: 'ملغي',         color: '#ef4444', bg: 'rgba(239,68,68,.12)', icon: '❌' },
+};
+
+const STATUS_FLOW = [
+  { from: 'new',        to: 'preparing',  label: 'بدء التحضير',   icon: '👨‍🍳' },
+  { from: 'preparing',  to: 'delivering', label: 'بدء التوصيل',   icon: '🚚' },
+  { from: 'delivering', to: 'done',       label: 'تأكيد الاستلام', icon: '✅' },
+];
+
+export default function OrdersPage() {
+  const router = useRouter();
+  const { user, loading: userLoading, isOwner, isSectionAdmin, hasPermission, dataOwnerName } = useCurrentUser();
+  const { success, error: toastError } = useToast();
+  const [orders, setOrders] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState('all');
+  const [search, setSearch] = useState('');
+  const [selected, setSelected] = useState(null);
+
+  useEffect(() => {
+    if (userLoading) return;
+    if (!user) { router.replace('/login'); return; }
+    load();
+  }, [user, userLoading]);
+
+  async function load() {
+    if (!supabase || !dataOwnerName) { setLoading(false); return; }
+    try {
+      let q = supabase.from('orders').select('*').order('created_at', { ascending: false });
+      if (!isSectionAdmin) q = q.eq('provider_name', dataOwnerName);
+      const { data, error } = await q;
+      if (error) throw error;
+      setOrders(Array.isArray(data) ? data : []);
+    } catch (e) { toastError('تعذّر تحميل الطلبات'); }
+    setLoading(false);
+  }
+
+  const filtered = useMemo(() => {
+    let list = orders;
+    if (filter !== 'all') list = list.filter(o => o.status === filter);
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
+      list = list.filter(o =>
+        (o.order_code || '').toLowerCase().includes(q) ||
+        (o.customer_name || '').toLowerCase().includes(q) ||
+        (o.customer_phone || '').includes(q)
+      );
+    }
+    return list;
+  }, [orders, filter, search]);
+
+  const stats = useMemo(() => {
+    const s = { total: orders.length, new: 0, preparing: 0, delivering: 0, done: 0, cancelled: 0, revenue: 0 };
+    orders.forEach(o => {
+      if (s[o.status] !== undefined) s[o.status]++;
+      if (o.status === 'done') s.revenue += Number(o.total || 0);
+    });
+    return s;
+  }, [orders]);
+
+  async function updateStatus(id, newStatus) {
+    try {
+      const { error } = await supabase.from('orders').update({ status: newStatus }).eq('id', id);
+      if (error) throw error;
+      success(`تم التحديث إلى "${STATUS_CONFIG[newStatus].label}"`);
+      setOrders(prev => prev.map(o => o.id === id ? { ...o, status: newStatus } : o));
+      if (selected?.id === id) setSelected({ ...selected, status: newStatus });
+    } catch (e) { toastError('تعذّر: ' + e.message); }
+  }
+
+  if (!userLoading && user && !isOwner && !isSectionAdmin && !hasPermission('orders')) {
+    return (
+      <div style={{ minHeight: '100vh', background: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+        <div style={{ background: '#fff', borderRadius: 16, padding: 40, textAlign: 'center', maxWidth: 400 }}>
+          <div style={{ fontSize: 56, marginBottom: 16 }}>🔒</div>
+          <div style={{ fontSize: 18, fontWeight: 900, color: '#0f172a', marginBottom: 8 }}>ليس لديك صلاحية</div>
+          <div style={{ fontSize: 13, color: '#64748b', marginBottom: 20 }}>لا يمكنك الوصول لقسم الطلبات</div>
+          <Link href="/merchant" style={{ display: 'inline-block', background: '#0f4d3a', color: '#fff', padding: '10px 20px', borderRadius: 10, textDecoration: 'none', fontWeight: 800 }}>← العودة</Link>
+        </div>
+      </div>
+    );
+  }
+
+  if (userLoading || (user && loading)) {
+    return (
+      <div style={{ minHeight: '100vh', background: '#f8fafc', padding: 16 }}>
+        <SkeletonList count={4} />
+      </div>
+    );
+  }
+
+  if (!user) return null;
+
+  return (
+    <div style={{ minHeight: '100vh', background: '#f8fafc', paddingBottom: 40 }}>
+      <div style={{ position: 'sticky', top: 0, zIndex: 10, background: '#0f4d3a', padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12, boxShadow: '0 2px 8px rgba(15,77,58,.2)' }}>
+        <Link href="/merchant" style={{ color: '#fff', textDecoration: 'none', fontSize: 20, width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,.1)', borderRadius: '50%' }}>→</Link>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 16, fontWeight: 900, color: '#fff' }}>🛍️ الطلبات</div>
+          <div style={{ fontSize: 11, color: 'rgba(255,255,255,.7)', marginTop: 2 }}>{stats.total} طلب</div>
+        </div>
+      </div>
+
+      <div style={{ padding: 16, display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10 }}>
+        <div style={{ background: '#fff', borderRadius: 14, padding: 14, border: '1px solid #e5e7eb' }}>
+          <div style={{ fontSize: 10, color: '#64748b', fontWeight: 700, marginBottom: 6 }}>جديدة</div>
+          <div style={{ fontSize: 20, fontWeight: 900, color: '#3b82f6' }}>{stats.new}</div>
+        </div>
+        <div style={{ background: '#fff', borderRadius: 14, padding: 14, border: '1px solid #e5e7eb' }}>
+          <div style={{ fontSize: 10, color: '#64748b', fontWeight: 700, marginBottom: 6 }}>قيد التنفيذ</div>
+          <div style={{ fontSize: 20, fontWeight: 900, color: '#f59e0b' }}>{stats.preparing + stats.delivering}</div>
+        </div>
+        <div style={{ background: 'linear-gradient(135deg,#10b981,#059669)', borderRadius: 14, padding: 14, gridColumn: 'span 2', color: '#fff' }}>
+          <div style={{ fontSize: 10, opacity: 0.85, fontWeight: 700, marginBottom: 6 }}>إجمالي الإيرادات (مكتمل)</div>
+          <div style={{ fontSize: 22, fontWeight: 900 }}>{stats.revenue.toLocaleString('en-US')} <span style={{ fontSize: 12, opacity: 0.8 }}>SYP</span></div>
+        </div>
+      </div>
+
+      <div style={{ padding: '0 16px 12px' }}>
+        <input type="text" placeholder="🔍 ابحث برقم الطلب / العميل / الهاتف..." value={search} onChange={(e) => setSearch(e.target.value)}
+          style={{ width: '100%', padding: '12px 14px', border: '1px solid #e5e7eb', borderRadius: 12, fontSize: 13, fontFamily: 'inherit', boxSizing: 'border-box', outline: 'none', background: '#fff', marginBottom: 10 }} />
+        <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4 }}>
+          {[
+            { k: 'all', l: 'الكل', n: stats.total },
+            { k: 'new', l: 'جديد', n: stats.new },
+            { k: 'preparing', l: 'تحضير', n: stats.preparing },
+            { k: 'delivering', l: 'توصيل', n: stats.delivering },
+            { k: 'done', l: 'مكتمل', n: stats.done },
+            { k: 'cancelled', l: 'ملغي', n: stats.cancelled },
+          ].map((f) => (
+            <button key={f.k} onClick={() => setFilter(f.k)} style={{
+              padding: '8px 14px',
+              background: filter === f.k ? '#0f4d3a' : '#fff',
+              color: filter === f.k ? '#fff' : '#64748b',
+              border: `1px solid ${filter === f.k ? '#0f4d3a' : '#e5e7eb'}`,
+              borderRadius: 10, fontSize: 11.5, fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'inherit',
+            }}>{f.l} ({f.n})</button>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ padding: '0 16px' }}>
+        {filtered.length === 0 ? (
+          <EmptyState icon="🛍️" title={search ? 'لا توجد نتائج' : 'لا توجد طلبات بعد'} description={search ? 'جرّب البحث بكلمات مختلفة' : 'ستظهر طلباتك هنا عند وصولها'} />
+        ) : (
+          filtered.map((o) => {
+            const cfg = STATUS_CONFIG[o.status] || STATUS_CONFIG.new;
+            return (
+              <div key={o.id} style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 16, padding: 14, marginBottom: 10, cursor: 'pointer' }} onClick={() => setSelected(o)}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 900, color: '#0f172a', fontFamily: 'monospace', marginBottom: 4 }}>#{o.order_code}</div>
+                    <div style={{ fontSize: 12, color: '#64748b' }}>👤 {o.customer_name} · {o.customer_phone}</div>
+                    <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>📅 {new Date(o.created_at).toLocaleDateString('ar-EG')}</div>
+                  </div>
+                  <span style={{ background: cfg.bg, color: cfg.color, padding: '4px 10px', borderRadius: 8, fontSize: 10.5, fontWeight: 900, whiteSpace: 'nowrap' }}>
+                    {cfg.icon} {cfg.label}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: 10, borderTop: '1px solid #f1f5f9' }}>
+                  <div style={{ fontSize: 11, color: '#64748b' }}>{(o.items || []).length} منتج</div>
+                  <div style={{ fontSize: 16, fontWeight: 900, color: '#0f4d3a', direction: 'ltr' }}>{Number(o.total || 0).toLocaleString('en-US')} {o.currency || 'SYP'}</div>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      {selected && <OrderModal order={selected} onClose={() => setSelected(null)} onUpdate={updateStatus} />}
+    </div>
+  );
+}
+
+function OrderModal({ order, onClose, onUpdate }) {
+  const { success } = useToast();
+  const cfg = STATUS_CONFIG[order.status] || STATUS_CONFIG.new;
+  const flow = STATUS_FLOW.find(f => f.from === order.status);
+
+  function sendWhatsApp() {
+    if (!order.customer_phone) return;
+    const clean = String(order.customer_phone).replace(/\D/g, '');
+    const phone = clean.startsWith('0') ? '963' + clean.slice(1) : clean;
+    const lines = [
+      `🛍️ ${order.provider_name || 'متجر'}`,
+      `📋 طلب #${order.order_code}`,
+      `الحالة: ${cfg.label}`,
+      '',
+      'المنتجات:',
+      ...(order.items || []).map(it => `• ${it.qty}× ${it.title} — ${(it.price * it.qty).toLocaleString()}`),
+      '',
+      `💰 المجموع: ${Number(order.total).toLocaleString()} ${order.currency || 'SYP'}`,
+    ];
+    window.open(`https://wa.me/${phone}?text=${encodeURIComponent(lines.join('\n'))}`, '_blank');
+    success('جارٍ فتح WhatsApp');
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 100, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={onClose}>
+      <div style={{ background: '#fff', borderRadius: '24px 24px 0 0', width: '100%', maxWidth: 500, maxHeight: '90vh', overflow: 'auto', padding: '24px 20px 30px' }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ width: 40, height: 4, background: '#cbd5e1', borderRadius: 2, margin: '0 auto 20px' }} />
+        <div style={{ textAlign: 'center', marginBottom: 20 }}>
+          <div style={{ fontSize: 44, marginBottom: 8 }}>{cfg.icon}</div>
+          <div style={{ fontSize: 11, color: '#64748b', fontWeight: 700 }}>طلب</div>
+          <div style={{ fontSize: 18, fontWeight: 900, color: '#0f172a', fontFamily: 'monospace' }}>#{order.order_code}</div>
+          <div style={{ marginTop: 10 }}>
+            <span style={{ background: cfg.bg, color: cfg.color, padding: '6px 14px', borderRadius: 10, fontSize: 12, fontWeight: 900 }}>{cfg.label}</span>
+          </div>
+        </div>
+
+        <div style={{ background: '#f8fafc', borderRadius: 14, padding: 14, marginBottom: 16 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+            <span style={{ fontSize: 12, color: '#64748b' }}>العميل</span>
+            <span style={{ fontSize: 13, fontWeight: 800, color: '#0f172a' }}>{order.customer_name}</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+            <span style={{ fontSize: 12, color: '#64748b' }}>الهاتف</span>
+            <span style={{ fontSize: 13, fontWeight: 800, color: '#0f172a', direction: 'ltr' }}>{order.customer_phone}</span>
+          </div>
+          {order.customer_address && (
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ fontSize: 12, color: '#64748b' }}>العنوان</span>
+              <span style={{ fontSize: 13, fontWeight: 800, color: '#0f172a', textAlign: 'left', maxWidth: '60%' }}>{order.customer_address}</span>
+            </div>
+          )}
+        </div>
+
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ fontSize: 13, fontWeight: 900, color: '#0f172a', marginBottom: 10 }}>🛍️ المنتجات</div>
+          {(order.items || []).map((it, i) => (
+            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #f1f5f9', fontSize: 13 }}>
+              <span style={{ color: '#334155' }}>{it.qty}× {it.title}</span>
+              <span style={{ color: '#0f4d3a', fontWeight: 800 }}>{(it.price * it.qty).toLocaleString()} {it.currency || 'SYP'}</span>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ background: 'linear-gradient(135deg,#10b981,#059669)', borderRadius: 14, padding: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#fff', marginBottom: 20 }}>
+          <span style={{ fontSize: 13, fontWeight: 700 }}>المجموع</span>
+          <span style={{ fontSize: 20, fontWeight: 900 }}>{Number(order.total).toLocaleString()} {order.currency || 'SYP'}</span>
+        </div>
+
+        {flow && (
+          <button onClick={() => { if (confirm(`تأكيد: ${flow.label}؟`)) { onUpdate(order.id, flow.to); onClose(); } }}
+            style={{ width: '100%', padding: 16, background: 'linear-gradient(135deg,#0f4d3a,#075640)', color: '#fff', border: 'none', borderRadius: 12, fontSize: 14, fontWeight: 900, cursor: 'pointer', fontFamily: 'inherit', marginBottom: 10, boxShadow: '0 4px 12px rgba(15,77,58,.3)' }}>
+            {flow.icon} {flow.label}
+          </button>
+        )}
+
+        {order.status !== 'cancelled' && order.status !== 'done' && (
+          <button onClick={() => { if (confirm('إلغاء الطلب؟')) { onUpdate(order.id, 'cancelled'); onClose(); } }}
+            style={{ width: '100%', padding: 14, background: 'rgba(220,38,38,.1)', color: '#dc2626', border: '1px solid rgba(220,38,38,.3)', borderRadius: 12, fontSize: 13, fontWeight: 900, cursor: 'pointer', fontFamily: 'inherit', marginBottom: 10 }}>
+            ✕ إلغاء الطلب
+          </button>
+        )}
+
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button onClick={sendWhatsApp} style={{ flex: 1, padding: 14, background: 'linear-gradient(135deg,#25d366,#128c7e)', color: '#fff', border: 'none', borderRadius: 12, fontSize: 13, fontWeight: 900, cursor: 'pointer', fontFamily: 'inherit' }}>📱 واتساب</button>
+          <button onClick={onClose} style={{ flex: 1, padding: 14, background: '#f1f5f9', color: '#334155', border: 'none', borderRadius: 12, fontSize: 13, fontWeight: 900, cursor: 'pointer', fontFamily: 'inherit' }}>إغلاق</button>
+        </div>
+      </div>
+    </div>
+  );
+}

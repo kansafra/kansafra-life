@@ -1,187 +1,244 @@
 'use client';
-
 import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
+import { useToast } from '@/components/Toast';
 
 const STATUS_FLOW = ['new', 'preparing', 'delivering', 'done'];
-
 const STATUS_INFO = {
-  new:        { label: 'بانتظار موافقة التاجر', icon: '⏳', color: '#f59e0b' },
-  preparing:  { label: 'قيد التحضير',           icon: '👨‍🍳', color: '#0ea5e9' },
-  delivering: { label: 'يوجد التوصيل',            icon: '🚚', color: '#8b5cf6' },
-  done:       { label: 'مكتمل',                 icon: '✅', color: '#22c55e' },
-  cancelled:  { label: 'ملغي',                  icon: '❌', color: '#dc2626' },
+  new: { label: 'جديد', icon: '🆕', color: '#3b82f6' },
+  preparing: { label: 'قيد التحضير', icon: '👨‍🍳', color: '#f59e0b' },
+  delivering: { label: 'قيد التوصيل', icon: '🚚', color: '#8b5cf6' },
+  done: { label: 'مكتمل', icon: '✅', color: '#10b981' },
+  cancelled: { label: 'ملغي', icon: '❌', color: '#ef4444' },
 };
 
-
-function buildWhatsAppLink(order) {
-  if (!order?.provider_phone) return null;
-  const items = Array.isArray(order.items) ? order.items : [];
-  const itemsText = items.map((it) => `• ${it.qty}× ${it.title} = ${(it.price * it.qty).toLocaleString()} ${it.currency || 'SYP'}`).join('\n');
-  const msg = `🛍️ *طلب جديد من سند*\n\n` +
-    `📋 رقم الطلب: ${order.order_code}\n\n` +
-    `👤 العميل: ${order.customer_name}\n` +
-    `📞 الهاتف: ${order.customer_phone}\n` +
-    (order.customer_address ? `📍 العنوان: ${order.customer_address}\n` : '') +
-    `\n*المنتجات:*\n${itemsText}\n\n` +
-    `💰 *المجموع:* ${Number(order.total || 0).toLocaleString()} ${order.currency || 'SYP'}\n` +
-    (order.notes ? `\n📝 ملاحظات: ${order.notes}\n` : '') +
-    `\n🔗 تتبع: ${typeof window !== 'undefined' ? window.location.origin : ''}/order/${order.id}`;
-  return `https://wa.me/${order.provider_phone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(msg)}`;
-}
-
-export default function OrderTrackingPage() {
+export default function OrderTracking() {
   const router = useRouter();
   const params = useParams();
-  const id = params?.id;
-
+  const { success, error: tE } = useToast();
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
-    if (!id) return;
-    load();
-    // تحديث تلقائي كل 10 ثواني
-    const timer = setInterval(load, 10000);
-    return () => clearInterval(timer);
-  }, [id]);
+    if (params?.id) load(params.id);
+    // تحديث تلقائي كل 15 ثانية
+    const interval = setInterval(() => { if (params?.id) load(params.id, true); }, 15000);
+    return () => clearInterval(interval);
+  }, [params?.id]);
 
-  async function load() {
+  async function load(id, silent = false) {
     if (!supabase) { setLoading(false); return; }
-    const { data } = await supabase.from('orders').select('*').eq('id', id).maybeSingle();
-    setOrder(data);
-    setLoading(false);
-    setRefreshing(false);
+    try {
+      const { data } = await supabase.from('orders').select('*').eq('id', id).maybeSingle();
+      if (data) setOrder(data);
+    } catch (e) { if (!silent) tE('تعذّر'); }
+    if (!silent) setLoading(false);
   }
 
-  function manualRefresh() {
-    setRefreshing(true);
-    load();
+  function callProvider() {
+    if (!order?.provider_phone) { tE('لا يوجد رقم'); return; }
+    window.location.href = `tel:${order.provider_phone}`;
   }
 
-  if (loading) return <div className="sect-empty" style={{ padding: 80 }}><span className="em">⏳</span></div>;
-  if (!order) return (
-    <div className="sect-empty" style={{ padding: 80 }}>
-      <span className="em">🔍</span>
-      <p>الطلب غير موجود</p>
-      <Link href="/" className="mng-btn primary" style={{ marginTop: 16 }}>الرئيسية</Link>
-    </div>
-  );
+  function whatsapp() {
+    if (!order?.provider_phone) { tE('لا يوجد رقم'); return; }
+    const clean = String(order.provider_phone).replace(/\D/g, '');
+    const phone = clean.startsWith('0') ? '963' + clean.slice(1) : clean;
+    const msg = `مرحباً، بخصوص طلبي #${order.order_code}`;
+    window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, '_blank');
+  }
 
-  const info = STATUS_INFO[order.status] || STATUS_INFO.new;
-  const currentStep = STATUS_FLOW.indexOf(order.status);
-  const items = Array.isArray(order.items) ? order.items : [];
-  const isDone = order.status === 'done';
+  async function cancelOrder() {
+    if (!confirm('إلغاء الطلب؟')) return;
+    try {
+      const { error } = await supabase.from('orders').update({ status: 'cancelled' }).eq('id', order.id);
+      if (error) throw error;
+      success('تم إلغاء الطلب');
+      setOrder({ ...order, status: 'cancelled' });
+    } catch (e) { tE('تعذّر'); }
+  }
+
+  if (loading) return <div style={{ padding: 80, textAlign: 'center' }}>⏳</div>;
+
+  if (!order) {
+    return (
+      <div style={{ minHeight: '100vh', background: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+        <div style={{ background: '#fff', borderRadius: 16, padding: 40, textAlign: 'center', maxWidth: 400 }}>
+          <div style={{ fontSize: 56, marginBottom: 16 }}>🔍</div>
+          <div style={{ fontSize: 18, fontWeight: 900, marginBottom: 8 }}>الطلب غير موجود</div>
+          <Link href="/" style={{ display: 'inline-block', background: '#0f4d3a', color: '#fff', padding: '10px 20px', borderRadius: 10, textDecoration: 'none', fontWeight: 800, marginTop: 16 }}>← الرئيسية</Link>
+        </div>
+      </div>
+    );
+  }
+
+  const currentIdx = STATUS_FLOW.indexOf(order.status);
   const isCancelled = order.status === 'cancelled';
+  const isDone = order.status === 'done';
+  const info = STATUS_INFO[order.status] || STATUS_INFO.new;
 
   return (
-    <div className="sect-page" style={{ paddingBottom: 40 }}>
-      <div className="inv-header">
-        <Link href="/" className="inv-back">→</Link>
-        <span className="inv-title">📦 تتبع الطلب</span>
-        <button className="icon-btn" onClick={manualRefresh} type="button" aria-label="تحديث">
-          {refreshing ? '⏳' : '🔄'}
-        </button>
-      </div>
-
-      {/* بطاقة الحالة الرئيسية */}
-      <div style={{ margin: 16, padding: 24, background: `linear-gradient(135deg, ${info.color}, ${info.color}cc)`, borderRadius: 20, color: '#fff', textAlign: 'center' }}>
-        <div style={{ fontSize: 56, marginBottom: 12 }}>{info.icon}</div>
-        <div style={{ fontSize: 20, fontWeight: 900, marginBottom: 6 }}>{info.label}</div>
-        <div style={{ fontSize: 12, opacity: .85, fontFamily: 'monospace', direction: 'ltr' }}>
-          {order.order_code}
+    <div style={{ minHeight: '100vh', background: '#f8fafc', paddingBottom: 40 }}>
+      {/* Header */}
+      <div style={{ background: `linear-gradient(135deg, ${info.color}, ${info.color}dd)`, padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
+        <button onClick={() => router.back()} style={{ background: 'rgba(255,255,255,.15)', color: '#fff', border: 'none', width: 40, height: 40, borderRadius: '50%', fontSize: 18, cursor: 'pointer', fontFamily: 'inherit' }}>←</button>
+        <div style={{ flex: 1 }}>
+          <div style={{ color: '#fff', fontSize: 16, fontWeight: 900 }}>تتبع الطلب</div>
+          <div style={{ color: 'rgba(255,255,255,.85)', fontSize: 12, fontFamily: 'monospace', marginTop: 2, direction: 'ltr', textAlign: 'right' }}>#{order.order_code}</div>
         </div>
+        <div style={{ fontSize: 32 }}>{info.icon}</div>
       </div>
 
-      {/* شريط التقدم */}
-      {!isCancelled && (
-        <div style={{ margin: '0 16px 20px', padding: 16, background: 'rgba(255,255,255,.04)', borderRadius: 16 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', position: 'relative' }}>
-            {STATUS_FLOW.map((step, i) => {
-              const done = i <= currentStep;
-              const active = i === currentStep;
-              return (
-                <div key={step} style={{ flex: 1, textAlign: 'center', position: 'relative' }}>
-                  <div style={{
-                    width: 32, height: 32, borderRadius: '50%',
-                    margin: '0 auto 8px',
-                    background: done ? '#22c55e' : 'rgba(255,255,255,.1)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: 14, fontWeight: 900,
-                    border: active ? '3px solid #fff' : 'none',
-                  }}>
-                    {done ? '✓' : i + 1}
-                  </div>
-                  <div style={{ fontSize: 10, fontWeight: 800, color: done ? '#fff' : 'rgba(255,255,255,.4)' }}>
-                    {STATUS_INFO[step].label.split(' ')[0]}
-                  </div>
-                </div>
-              );
-            })}
+      <div style={{ padding: 16 }}>
+        {/* Status Banner */}
+        <div style={{ background: '#fff', borderRadius: 16, padding: 20, marginBottom: 16, border: '1px solid #e5e7eb', textAlign: 'center' }}>
+          <div style={{ fontSize: 44, marginBottom: 8 }}>{info.icon}</div>
+          <div style={{ fontSize: 18, fontWeight: 900, color: info.color, marginBottom: 4 }}>{info.label}</div>
+          <div style={{ fontSize: 12, color: '#64748b' }}>
+            {isDone ? 'تم استلام طلبك بنجاح 🎉' : isCancelled ? 'تم إلغاء هذا الطلب' : 'جارٍ معالجة طلبك'}
           </div>
         </div>
-      )}
 
-      {/* تفاصيل الطلب */}
-      <div style={{ margin: '0 16px 16px', padding: 16, background: 'rgba(255,255,255,.04)', borderRadius: 16 }}>
-        <div style={{ fontSize: 14, fontWeight: 900, marginBottom: 12 }}>📋 تفاصيل الطلب</div>
-        {items.map((it, i) => (
-          <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,.05)', fontSize: 13 }}>
-            <span>{it.qty}× {it.title}</span>
-            <span style={{ color: '#14b8a6', fontWeight: 800 }}>
-              {(it.price * it.qty).toLocaleString()} {it.currency || 'SYP'}
-            </span>
+        {/* Timeline */}
+        {!isCancelled && (
+          <div style={{ background: '#fff', borderRadius: 16, padding: 20, marginBottom: 16, border: '1px solid #e5e7eb' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', position: 'relative', marginBottom: 8 }}>
+              {STATUS_FLOW.map((step, i) => {
+                const done = i <= currentIdx;
+                const active = i === currentIdx;
+                return (
+                  <div key={step} style={{ flex: 1, textAlign: 'center', position: 'relative' }}>
+                    <div style={{ position: 'relative', display: 'flex', justifyContent: 'center' }}>
+                      <div style={{
+                        width: 40, height: 40, borderRadius: '50%', marginBottom: 8,
+                        background: done ? info.color : '#e5e7eb',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontSize: 18, color: done ? '#fff' : '#94a3b8', fontWeight: 900,
+                        boxShadow: active ? `0 0 0 4px ${info.color}20` : 'none',
+                        zIndex: 2,
+                      }}>
+                        {done ? '✓' : STATUS_INFO[step].icon}
+                      </div>
+                    </div>
+                    <div style={{ fontSize: 10.5, fontWeight: 800, color: done ? '#0f172a' : '#94a3b8' }}>
+                      {STATUS_INFO[step].label}
+                    </div>
+                  </div>
+                );
+              })}
+              {/* Line */}
+              <div style={{
+                position: 'absolute', top: 20, left: '12.5%', right: '12.5%',
+                height: 3, background: '#e5e7eb', zIndex: 1,
+              }}>
+                <div style={{
+                  width: `${(currentIdx / (STATUS_FLOW.length - 1)) * 100}%`,
+                  height: '100%', background: info.color, transition: 'width .5s',
+                }} />
+              </div>
+            </div>
           </div>
-        ))}
-        <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0 0', fontSize: 15, fontWeight: 900 }}>
-          <span>المجموع</span>
-          <span style={{ color: '#14b8a6' }}>
-            {Number(order.total || 0).toLocaleString()} {order.currency || 'SYP'}
-          </span>
+        )}
+
+        {/* Products */}
+        <div style={{ background: '#fff', borderRadius: 16, padding: 16, marginBottom: 16, border: '1px solid #e5e7eb' }}>
+          <div style={{ fontSize: 14, fontWeight: 900, marginBottom: 14 }}>🛍️ المنتجات</div>
+          {(order.items || []).map((item, i) => (
+            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: i < order.items.length - 1 ? '1px solid #f1f5f9' : 'none' }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, fontWeight: 900, color: '#0f172a' }}>{item.title}</div>
+                <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>{item.qty} × {Number(item.price).toLocaleString()} {item.currency || 'SYP'}</div>
+              </div>
+              <div style={{ fontSize: 13, fontWeight: 900, color: '#0f4d3a' }}>{(item.price * item.qty).toLocaleString()}</div>
+            </div>
+          ))}
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 16, fontWeight: 900, paddingTop: 14, marginTop: 8, borderTop: '2px solid #e5e7eb' }}>
+            <span>المجموع</span>
+            <span style={{ color: '#0f4d3a' }}>{Number(order.total).toLocaleString()} {order.currency || 'SYP'}</span>
+          </div>
         </div>
+
+        {/* Payment Details */}
+        {order.payment_method_details && (
+          <div style={{ background: '#fff', borderRadius: 16, padding: 16, marginBottom: 16, border: '1px solid #e5e7eb' }}>
+            <div style={{ fontSize: 14, fontWeight: 900, marginBottom: 12 }}>💳 طريقة الدفع</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+              <div style={{ fontSize: 28 }}>{order.payment_method_details.icon || '💳'}</div>
+              <div style={{ fontSize: 14, fontWeight: 900 }}>{order.payment_method_details.name_ar}</div>
+            </div>
+            {order.payment_method_details.details && (
+              <div style={{ padding: 12, background: '#f8fafc', border: '2px dashed #cbd5e1', borderRadius: 10, fontFamily: 'monospace', fontSize: 15, fontWeight: 900, textAlign: 'center', direction: 'ltr', color: '#0f4d3a', marginBottom: 10 }}>
+                {order.payment_method_details.details}
+              </div>
+            )}
+            {order.payment_method_details.barcode_image_url && (
+              <div style={{ textAlign: 'center', marginBottom: 10 }}>
+                <img src={order.payment_method_details.barcode_image_url} alt="barcode" style={{ maxWidth: 200, borderRadius: 10, border: '1px solid #e5e7eb', background: '#fff', padding: 6 }} />
+              </div>
+            )}
+            {order.payment_proof_url && (
+              <div style={{ padding: 10, background: 'rgba(16,185,129,.08)', border: '1px solid rgba(16,185,129,.2)', borderRadius: 8, fontSize: 12, color: '#10b981', textAlign: 'center', fontWeight: 800 }}>
+                ✅ تم إرفاق إيصال التحويل
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Provider Info */}
+        {order.provider_name && (
+          <div style={{ background: '#fff', borderRadius: 16, padding: 16, marginBottom: 16, border: '1px solid #e5e7eb' }}>
+            <div style={{ fontSize: 14, fontWeight: 900, marginBottom: 12 }}>🏪 المتجر</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+              {order.provider_logo ? (
+                <img src={order.provider_logo} alt="" style={{ width: 48, height: 48, borderRadius: 10, objectFit: 'cover' }} />
+              ) : (
+                <div style={{ width: 48, height: 48, borderRadius: 10, background: 'linear-gradient(135deg,#0f4d3a,#075640)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22 }}>🏪</div>
+              )}
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 14, fontWeight: 900 }}>{order.provider_name}</div>
+                {order.provider_phone && <div style={{ fontSize: 11, color: '#64748b', direction: 'ltr', textAlign: 'right', marginTop: 2 }}>📞 {order.provider_phone}</div>}
+              </div>
+            </div>
+            {order.provider_phone && (
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button onClick={callProvider} style={{ flex: 1, padding: 12, background: 'rgba(59,130,246,.1)', color: '#3b82f6', border: '1px solid rgba(59,130,246,.3)', borderRadius: 10, fontSize: 12, fontWeight: 900, cursor: 'pointer', fontFamily: 'inherit' }}>📞 اتصال</button>
+                <button onClick={whatsapp} style={{ flex: 1, padding: 12, background: 'rgba(37,211,102,.1)', color: '#059669', border: '1px solid rgba(37,211,102,.3)', borderRadius: 10, fontSize: 12, fontWeight: 900, cursor: 'pointer', fontFamily: 'inherit' }}>📱 واتساب</button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Customer Info */}
+        <div style={{ background: '#fff', borderRadius: 16, padding: 16, marginBottom: 16, border: '1px solid #e5e7eb' }}>
+          <div style={{ fontSize: 14, fontWeight: 900, marginBottom: 12 }}>📍 عنوان التوصيل</div>
+          <div style={{ fontSize: 13, color: '#0f172a', fontWeight: 800, marginBottom: 4 }}>{order.customer_name}</div>
+          <div style={{ fontSize: 12, color: '#64748b', direction: 'ltr', textAlign: 'right', marginBottom: 4 }}>{order.customer_phone}</div>
+          {order.customer_address && <div style={{ fontSize: 12, color: '#64748b' }}>🏠 {order.customer_address}</div>}
+        </div>
+
+        {/* Actions */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {isDone && (
+            <Link href={`/invoice/${order.id}`} style={{ padding: 14, background: 'linear-gradient(135deg,#10b981,#059669)', color: '#fff', borderRadius: 12, textAlign: 'center', textDecoration: 'none', fontWeight: 900, fontSize: 14 }}>
+              🧾 عرض الفاتورة
+            </Link>
+          )}
+          {!isDone && !isCancelled && currentIdx < 2 && (
+            <button onClick={cancelOrder} style={{ padding: 12, background: 'rgba(220,38,38,.1)', color: '#dc2626', border: '1px solid rgba(220,38,38,.3)', borderRadius: 12, fontSize: 13, fontWeight: 900, cursor: 'pointer', fontFamily: 'inherit' }}>
+              ✕ إلغاء الطلب
+            </button>
+          )}
+        </div>
+
+        {/* Auto refresh indicator */}
+        {!isDone && !isCancelled && (
+          <div style={{ textAlign: 'center', fontSize: 11, color: '#94a3b8', marginTop: 16 }}>
+            🔄 الصفحة تتحدث تلقائياً كل 15 ثانية
+          </div>
+        )}
       </div>
-
-      {/* معلومات التاجر */}
-      {order.provider_name && (
-        <div style={{ margin: '0 16px 16px', padding: 16, background: 'rgba(15,77,58,.08)', borderRadius: 16 }}>
-          <div style={{ fontSize: 12, color: 'var(--n-500)', marginBottom: 4 }}>التاجر</div>
-          <div style={{ fontSize: 14, fontWeight: 900 }}>🏪 {order.provider_name}</div>
-        </div>
-      )}
-
-      {/* أزرار الفاتورة */}
-      {isDone && (
-        <div style={{ padding: '0 16px' }}>
-          <Link
-            href={`/invoice/${order.id}`}
-            style={{
-              display: 'block', width: '100%', padding: 16,
-              background: 'linear-gradient(135deg, #22c55e, #16a34a)',
-              color: '#fff', border: 'none', borderRadius: 14,
-              fontSize: 15, fontWeight: 900,
-              textDecoration: 'none', textAlign: 'center',
-            }}
-          >
-            🧾 عرض الفاتورة
-          </Link>
-        </div>
-      )}
-
-      {!isDone && !isCancelled && (
-        <div style={{ padding: '0 16px', fontSize: 12, color: 'var(--n-500)', textAlign: 'center', lineHeight: 1.7 }}>
-          ⏳ الصفحة تتحدث تلقائياً كل 10 ثواني<br />
-          لا حاجة لتحديث يدوي
-        </div>
-      )}
-
-      {isCancelled && (
-        <div style={{ margin: '0 16px', padding: 16, background: 'rgba(220,38,38,.1)', border: '1px solid rgba(220,38,38,.3)', borderRadius: 14, color: '#f87171', fontSize: 13, textAlign: 'center' }}>
-          ❌ تم إلغاء هذا الطلب. للاستفسار تواصل مع التاجر.
-        </div>
-      )}
     </div>
   );
 }

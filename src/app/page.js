@@ -1,609 +1,224 @@
 'use client';
-
-// Safe date for hydration
-const __safeDate = (d) => (typeof window !== 'undefined' ? __safeDate(d) : __safeDate(0));
-
-import { useEffect, useMemo, useState } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { useT } from '@/lib/useT';
-import CommunityPicker from '@/components/CommunityPicker';
-import HeroCarousel from '@/components/HeroCarousel';
-import PrayerBar from '@/components/PrayerBar';
-import HijriDate from '@/components/HijriDate';
-import NewsTicker from '@/components/NewsTicker';
-import { cacheSet, cacheGet, fetchWithCache } from '@/lib/offline';
+import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
+import HijriDate from '@/components/HijriDate';
+import PrayerBar from '@/components/PrayerBar';
+import NewsTicker from '@/components/NewsTicker';
+import { SkeletonList } from '@/components/Skeleton';
 
-const FALLBACK_CATEGORIES = [
-  { id: 'all',      name: 'الكل',                 slug: 'all',        icon: '✦'  },
-  { id: 'shops',    name: 'المتاجر والتسوق',      slug: 'shops',      icon: '🛍️' },
-  { id: 'health',   name: 'الصحة والعيادات',      slug: 'health',     icon: '❤️' },
-  { id: 'mosque',   name: 'المساجد',              slug: 'mosque',     icon: '🕌' },
-  { id: 'edu',      name: 'التعليم',              slug: 'education',  icon: '🎓' },
-  { id: 'trans',    name: 'المواصلات',            slug: 'transport',  icon: '🚗' },
-  { id: 'charity',  name: 'الجمعيات الخيرية',     slug: 'charity',    icon: '🎁' },
-  { id: 'public',   name: 'الخدمات العامة',       slug: 'public',     icon: '🏢' },
-  { id: 'food',     name: 'المطاعم',              slug: 'food',       icon: '🍽️' },
-  { id: 'sports',   name: 'الرياضة',              slug: 'sports',     icon: '⚽' },
-  { id: 'sos',      name: 'الطوارئ',              slug: 'sos',        icon: '🚨' },
-  { id: 'news',     name: 'الأخبار والإعلانات',   slug: 'news',       icon: '📰' },
-  { id: 'jobs',     name: 'التوظيف',              slug: 'jobs',       icon: '💼' },
-  { id: 'library',  name: 'المكتبة',              slug: 'library',    icon: '📚' },
-  { id: 'memory',   name: 'ذاكرة كنصفرة',         slug: 'memory',     icon: '📷' },
-  { id: 'realestate', name: 'العقارات',           slug: 'realestate', icon: '🏠' },
-  { id: 'auctions', name: 'المزادات',             slug: 'auctions',   icon: '🏆' },
-  { id: 'lostfound', name: 'المفقودات',           slug: 'lostfound',  icon: '🔍' },
-  { id: 'exchange', name: 'الصرافة والحوالات',    slug: 'exchange',   icon: '💱' },
-  { id: 'crafts',   name: 'الحرفيون',             slug: 'crafts',     icon: '🛠️' },
-  { id: 'workshops', name: 'ورشات التصنيع',       slug: 'workshops',  icon: '🏭' },
-  { id: 'internet', name: 'مزودو الإنترنت',       slug: 'internet',   icon: '📡' },
-];
-
-const iconFor = (v = '') => {
-  const s = String(v).toLowerCase();
-  if (/food|restaurant|مطعم|طعام|مأكول/.test(s))         return '🍽️';
-  if (/shop|store|market|متجر|سوق|تسوق/.test(s))          return '🏪';
-  if (/health|clinic|medical|صحة|طبي|عياد|صيدل|أسنان/.test(s)) return '❤️';
-  if (/edu|school|تعليم|مدرس|مدرسة|جامع(?!ة)|معهد/.test(s))  return '🎓';
-  if (/transport|car|نقل|سيار|توصيل/.test(s))             return '🚚';
-  if (/home|house|منزل|كهرب|سباك|صيانة/.test(s))           return '🏠';
-  if (/craft|service|حرف|مهن|نجار|باطون|لياسة|سنكري/.test(s)) return '🛠️';
-  if (/mosque|جامع|مسجد|صلاة/.test(s))                    return '🕌';
-  if (/charity|خير|تبرع|جمعية/.test(s))                   return '🎁';
-  if (/gov|بلدية|مجلس|شهادات|تصاريح/.test(s))              return '🏢';
-  if (/خياط|حرفي|حرفي|خياطة|نجار|حداد|كهربائي|سباك|سنكري|باطون|لياسة|صيانة|حرف|مهن/.test(s)) return '🛠️';
-  if (/ورشة|مصنع|تصنيع|معمل|إنتاج|فرز|تعبئة/.test(s)) return '🏭';
-  if (/إنترنت|انترنت|شبكة|واي|wifi|internet|مزود|ISP/.test(s)) return '📡';
-  if (/ذهب|صرافة|حوالات|تحويل|دولار/.test(s)) return '💱';
-  if (/رياضة|ملعب|كرة|نادي|فريق/.test(s)) return '⚽';
-  if (/طوارئ|إسعاف|SOS|إنقاذ/.test(s)) return '🚨';
-  if (/أخبار|إعلان|جريدة|خبر/.test(s)) return '📰';
-  if (/ذاكرة|تراث|صور قديمة/.test(s)) return '📷';
-
-  return '✦';
+const ICON_MAP = {
+  "shopping-bag": "🛍️", "heart-pulse": "❤️", "graduation-cap": "🎓",
+  "landmark": "🕌", "building-2": "🏢", "hand-heart": "🎁",
+  "newspaper": "📰", "shield-alert": "🚨", "store": "🏪",
+  "utensils": "🍽️", "car": "🚗", "home": "🏠", "wrench": "🛠️",
+  "dumbbell": "⚽", "camera": "📷", "book-open": "📚",
+  "map": "🗺️", "briefcase": "💼", "search": "🔍",
+  "users": "👴", "globe": "🌍", "trophy": "🏆",
+  "banknote": "💱", "factory": "🏭", "wifi": "📡",
+  "heart": "❤️", "graduation": "🎓", "shopping": "🛍️"
 };
 
-const LUCIDE_TO_EMOJI = {
-  "landmark":"🕌","graduation-cap":"🎓","heart-pulse":"❤️",
-  "shopping-bag":"🛍️","store":"🏪","shield-alert":"🚨",
-  "siren":"🚨","newspaper":"📰","hand-heart":"🎁",
-  "building-2":"🏢","building":"🏢","utensils":"🍽️",
-  "utensils-crossed":"🍽️","car":"🚚","truck":"🚚",
-  "home":"🏠","wrench":"🛠️","hammer":"🛠️",
-  "heart":"❤️","stethoscope":"🩺","pill":"💊",
-  "school":"🎓","book-open":"📚","book":"📚",
-  "users":"👥","user":"👤","phone":"📞",
-  "map-pin":"📍","star":"⭐","tag":"🏷️",
-  "gift":"🎁","award":"🏆","briefcase":"💼",
-  "shopping-cart":"🛒","receipt":"🧾",
-  "banknote":"💱","coins":"💰","dollar-sign":"💵","wallet":"👛",
-  "piggy-bank":"🐷","credit-card":"💳","calculator":"🧮",
-  "moon":"🌙","sunrise":"🌅","sunset":"🌇","clock":"🕐",
-  "calendar":"📅","alarm-clock":"⏰","timer":"⏱️",
-  "shield":"🛡️","lock":"🔒","key":"🔑","fingerprint":"🔒",
-  "wifi":"📶","smartphone":"📱","laptop":"💻",
-  "shirt":"👕","glasses":"👓","watch":"⌚",
-  "church":"⛪","warehouse":"🏭","factory":"🏭",
-  "wheat":"🌾","grape":"🍇","apple":"🍎","fish":"🐟",
-  "hand-heart":"🤝","heart-handshake":"🤝",
-  "party-popper":"🎉","cake":"🎂","pizza":"🍕","coffee":"☕",
-  "alert-circle":"⚠️","alert-triangle":"⚠️","info":"ℹ️",
-  "check-circle":"✅","x-circle":"❌",
-  "arrow-right":"→","arrow-left":"←","chevron-right":"›",
-};
+function resolveIcon(icon) {
+  if (!icon) return '📦';
+  const k = String(icon).toLowerCase().trim();
+  if (ICON_MAP[k]) return ICON_MAP[k];
+  if (k.length <= 4) return icon; // If it's already an emoji
+  return '📦';
+}
 
-const resolveIcon = (iconOrName, name) => {
-  const k = String(iconOrName || '').toLowerCase().trim();
-  if (LUCIDE_TO_EMOJI[k]) return LUCIDE_TO_EMOJI[k];
-  if (typeof iconOrName === 'string' && iconOrName.length > 0 && iconOrName.length <= 4) {
-    return iconOrName;
-  }
-  return iconFor(name);
-};
-
-export default function Home() {
+export default function HomePage() {
   const router = useRouter();
-  const { t } = useT();
-  const [categories, setCategories]         = useState(FALLBACK_CATEGORIES);
-  const [services, setServices]             = useState([]);
-  const [featured, setFeatured]             = useState([]);
-  const [announcements, setAnnouncements]   = useState([]);
-  const [search, setSearch]                 = useState('');
-  const [activeCategory, setActiveCategory] = useState('all');
-  const [activeTab, setActiveTab]           = useState('home');
-  const [selected, setSelected]             = useState(null);
-  const [loading, setLoading]               = useState(true);
-  const [dbNotice, setDbNotice]             = useState(false);
+  const [categories, setCategories] = useState([]);
+  const [products, setProducts] = useState([]);
+  const [stores, setStores] = useState([]);
+  const [announcement, setAnnouncement] = useState(null);
+  const [search, setSearch] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState(null);
 
   useEffect(() => {
-    let alive = true;
-
-    async function load() {
-      if (!supabase) {
-        if (alive) { setLoading(false); setDbNotice(true); }
-        return;
-      }
-
-      // أولاً: حمّل من الكاش
-      const cached = {
-        cats: cacheGet('cats'),
-        services: cacheGet('services'),
-        featured: cacheGet('featured'),
-        announcements: cacheGet('announcements'),
-      };
-      if (cached.cats) setCategories([
-      FALLBACK_CATEGORIES[0],
-      ...cached.cats,
-      ...FALLBACK_CATEGORIES.slice(1).filter(
-        (fc) => !cached.cats.some((cc) => cc.id === fc.id || cc.slug === fc.slug)
-      ),
-    ]);
-      if (cached.services) setServices(cached.services);
-      if (cached.featured) setFeatured(cached.featured);
-      if (cached.announcements) setAnnouncements(cached.announcements);
-      if (cached.cats) setLoading(false);
-
-      try {
-        const [c, s, f, a, p] = await Promise.all([
-          supabase.from('service_categories').select('*')
-            .eq('is_active', true).eq('is_visible', true).order('sort_order', { ascending: true }),
-          supabase.from('services').select('*')
-            .order('created_at', { ascending: false }).limit(60),
-          supabase.from('services').select('*')
-            .eq('is_featured', true).limit(8),
-          supabase.from('announcements').select('*')
-            .order('created_at', { ascending: false }).limit(5),
-          supabase.from('products').select('*')
-            .eq('moderation_status', 'approved')
-            .order('created_at', { ascending: false })
-            .limit(20),
-        ]);
-        if (!alive) return;
-        if (c.data?.length) {
-          const fromDB = c.data.map((x) => ({ ...x, icon: resolveIcon(x.icon, x.name) }));
-          setCategories([FALLBACK_CATEGORIES[0], ...fromDB]);
-        }
-        if (Array.isArray(s.data)) setServices(s.data);
-        // نضيف المنتجات كـ items إضافية
-        if (Array.isArray(p?.data)) {
-          const productItems = p.data.map((pr) => ({
-            id: pr.id,
-            title: pr.title,
-            description: pr.description,
-            provider_name: pr.provider_name,
-            phone: null,
-            image_url: pr.image_url,
-            price: pr.price,
-            currency: pr.currency,
-            category_id: 'products',
-            __type: 'product',
-          }));
-          setFeatured((prev) => [...productItems.slice(0, 8), ...prev]);
-          setServices((prev) => [...productItems, ...prev]);
-        }
-        if (Array.isArray(f.data)) setFeatured(f.data);
-        if (Array.isArray(a.data)) setAnnouncements(a.data);
-        setDbNotice(Boolean(c.error || s.error || f.error || a.error));
-      } catch (e) {
-        console.error('خطأ يوجد التحميل:', e);
-        if (alive) setDbNotice(true);
-      } finally {
-        if (alive) setLoading(false);
-      }
-    }
-
+    try {
+      const c = JSON.parse(localStorage.getItem('sanad_customer') || 'null');
+      setUser(c);
+    } catch {}
     load();
-    return () => { alive = false; };
   }, []);
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return services.filter((x) => {
-      const cat = categories.find((c) => c.id === x.category_id || c.slug === x.category_id);
-      const inCat = activeCategory === 'all'
-        || x.category_id === activeCategory
-        || cat?.slug === activeCategory;
-      if (!inCat) return false;
-      if (!q) return true;
-      const hay = [x.title, x.description, x.provider_name, x.address, cat?.name]
-        .filter(Boolean).join(' ').toLowerCase();
-      return hay.includes(q);
-    });
-  }, [services, categories, search, activeCategory]);
+  async function load() {
+    if (!supabase) { setLoading(false); return; }
+    try {
+      const [cats, prods, ents, ann] = await Promise.all([
+        supabase.from('service_categories').select('*').eq('is_active', true).eq('is_visible', true).order('sort_order'),
+        supabase.from('products').select('*').eq('is_active', true).order('created_at', { ascending: false }).limit(10),
+        supabase.from('entities').select('id, display_name, entity_type, logo_url, city, is_verified').eq('is_active', true).eq('approval_status', 'approved').in('entity_type', ['merchant', 'restaurant', 'craftsman']).limit(8),
+        supabase.from('announcements').select('*').eq('is_active', true).order('created_at', { ascending: false }).limit(1).maybeSingle(),
+      ]);
+      setCategories(cats.data || []);
+      setProducts(prods.data || []);
+      setStores(ents.data || []);
+      setAnnouncement(ann.data);
+    } catch (e) { console.error(e); }
+    setLoading(false);
+  }
 
-  const deals = featured.length ? featured : services.slice(0, 6);
-  const topAnnouncement = announcements[0];
-  const catName = (id) =>
-    categories.find((c) => c.id === id || c.slug === id)?.name || 'خدمة محلية';
+  function handleSearch(e) {
+    e.preventDefault();
+    if (search.trim()) router.push(`/search?q=${encodeURIComponent(search.trim())}`);
+  }
 
-  const goTo = (id) => {
-    setActiveTab(id);
-    const target = document.getElementById(id === 'home' ? 'top' : id);
-    target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  };
+  const topCategories = categories.slice(0, 8);
+
+  if (loading) {
+    return (
+      <div style={{ minHeight: '100vh', background: '#f8fafc' }}>
+        <div style={{ background: 'linear-gradient(135deg,#0f4d3a,#075640)', padding: '40px 20px', borderBottomLeftRadius: 28, borderBottomRightRadius: 28 }}>
+          <div style={{ height: 60, background: 'rgba(255,255,255,.1)', borderRadius: 12 }} />
+        </div>
+        <div style={{ padding: 16 }}><SkeletonList count={3} /></div>
+      </div>
+    );
+  }
 
   return (
-    <div className="app" id="top">
+    <div style={{ minHeight: '100vh', background: '#f8fafc', paddingBottom: 80 }}>
+      {/* ═══ Hero Header ═══ */}
+      <div style={{ background: 'linear-gradient(135deg,#0f4d3a,#075640)', borderBottomLeftRadius: 28, borderBottomRightRadius: 28, padding: '20px 20px 32px', color: '#fff', position: 'relative', overflow: 'hidden' }}>
+        <div style={{ position: 'absolute', top: -60, left: -40, width: 180, height: 180, background: 'rgba(251,191,36,.1)', borderRadius: '50%', filter: 'blur(40px)' }} />
+        
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, position: 'relative', zIndex: 1 }}>
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 900, letterSpacing: 3, color: '#fbbf24', marginBottom: 4 }}>S A N A D</div>
+            <div style={{ fontSize: 22, fontWeight: 900 }}>سند</div>
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <Link href="/notifications" style={{ width: 40, height: 40, background: 'rgba(255,255,255,.15)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, textDecoration: 'none', position: 'relative' }}>🔔</Link>
+            {user ? (
+              <Link href="/customer" style={{ background: 'rgba(255,255,255,.15)', color: '#fff', padding: '10px 16px', borderRadius: 20, fontSize: 12, fontWeight: 900, textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 6 }}>👤 حسابي</Link>
+            ) : (
+              <Link href="/login" style={{ background: '#fbbf24', color: '#0f4d3a', padding: '10px 16px', borderRadius: 20, fontSize: 12, fontWeight: 900, textDecoration: 'none' }}>دخول</Link>
+            )}
+            {/* زر الإدارة المخفي - يظهر كأيقونة ترس صغيرة */}
+            <Link href="/admin/login" title="دخول الإدارة" style={{ width: 40, height: 40, background: 'rgba(255,255,255,.1)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, textDecoration: 'none', color: 'rgba(255,255,255,.6)' }}>⚙️</Link>
+          </div>
+        </div>
 
-      {topAnnouncement && (
-        <div className="alert-bar">
-          📢 {topAnnouncement.title || 'قيد التطوير — نراكم قريباً'}
+        <div style={{ position: 'relative', zIndex: 1, marginBottom: 20 }}>
+          <h1 style={{ fontSize: 26, fontWeight: 900, marginBottom: 6, lineHeight: 1.3 }}>أهلاً بك في <span style={{ color: '#fbbf24' }}>كنصفرة</span></h1>
+          <p style={{ fontSize: 13, opacity: 0.85 }}>كل خدمات مجتمعك بين يديك</p>
+        </div>
+
+        <div style={{ marginBottom: 20, position: 'relative', zIndex: 1 }}>
+          <HijriDate compact style={{ color: 'rgba(255,255,255,.9)', fontSize: 12 }} />
+        </div>
+
+        <form onSubmit={handleSearch} style={{ display: 'flex', alignItems: 'center', background: '#fff', borderRadius: 14, padding: '6px 6px 6px 16px', position: 'relative', zIndex: 1, boxShadow: '0 10px 30px rgba(0,0,0,.15)' }}>
+          <span style={{ fontSize: 18, color: '#94a3b8', marginLeft: 8 }}>⌕</span>
+          <input type="text" placeholder="ابحث عن منتج، خدمة، متجر..." value={search} onChange={(e) => setSearch(e.target.value)} style={{ flex: 1, padding: 12, border: 'none', outline: 'none', fontSize: 14, fontFamily: 'inherit', color: '#0f172a', textAlign: 'right' }} />
+          <button type="submit" style={{ padding: '12px 20px', background: 'linear-gradient(135deg,#10b981,#059669)', color: '#fff', border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 900, cursor: 'pointer', fontFamily: 'inherit' }}>بحث</button>
+        </form>
+      </div>
+
+      {/* Prayer Times */}
+      <div style={{ marginTop: -16, position: 'relative', zIndex: 2, padding: '0 16px' }}>
+        <PrayerBar />
+      </div>
+
+      {/* Announcement */}
+      {announcement && (
+        <div style={{ padding: '16px 16px 0' }}>
+          <div style={{ background: 'linear-gradient(135deg, rgba(251,191,36,.15), rgba(245,158,11,.1))', border: '1px solid rgba(251,191,36,.3)', borderRadius: 14, padding: 14, display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+            <div style={{ fontSize: 20 }}>📢</div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 13, fontWeight: 900, color: '#92400e', marginBottom: 2 }}>{announcement.title}</div>
+              <div style={{ fontSize: 11.5, color: '#78350f', lineHeight: 1.6 }}>{announcement.content?.slice(0, 100)}...</div>
+            </div>
+          </div>
         </div>
       )}
 
-      <header className="hero">
-        <div className="hero-inner">
+      <div style={{ marginTop: 12 }}><NewsTicker /></div>
 
-          <div className="geo-path" style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            fontSize: 11.5,
-            fontWeight: 800,
-            color: 'rgba(255,255,255,.9)',
-            padding: '6px 12px',
-            background: 'rgba(0,0,0,.2)',
-            borderRadius: 999,
-            backdropFilter: 'blur(10px)',
-            width: 'fit-content',
-            margin: '0 auto 12px',
-          }}>
-            <span>🇸🇾</span>
-            <span>سوريا</span>
-            <span style={{ opacity: .6 }}>›</span>
-            <span>إدلب</span>
-            <span style={{ opacity: .6 }}>›</span>
-            <span style={{ color: '#fbbf24', fontWeight: 900 }}>كنصفرة</span>
-          </div>
-
-          <div className="hero-top">
-            <CommunityPicker />
-            <div className="hero-top-actions">
-              
-              <button className="icon-btn" type="button" aria-label="الإشعارات">
-                🔔
-                {topAnnouncement && <span className="dot-badge" />}
-              </button>
-            </div>
-            </div>
-          </div>
-
-          <div className="hero-brand">
-            <span className="brand-eyebrow">S A N A D</span>
-            <h1 className="brand-title">سند</h1>
-            <p className="brand-tagline">
-              كل خدمات مجتمعك <strong>بين يديك</strong>
-            </p>
-          </div>
-
-          <div style={{ padding: '0 16px 12px' }}>
-            <HijriDate />
-          </div>
-
-          <div className="hero-actions">
-            <button className="btn btn-primary" type="button" onClick={() => goTo('cats')}>
-              🧭 تصفّح الأقسام
-            </button>
-            <button
-              className="btn btn-sos"
-              type="button"
-              onClick={() => router.push('/sos')}
-            >
-              🚨 طوارئ
-            </button>
-          </div>
-      </header>
-
-      <NewsTicker />
-      <HeroCarousel />
-      <PrayerBar />
-
-      <div className="ticker-bar">
-        <div className="ticker-row">
-          <span className="ticker-item ticker-urgent">
-            <span className="dot" /> عاجل
-          </span>
-          <span className="ticker-item ticker-service">
-            <span className="dot" /> خدمي
-          </span>
-          <span className="ticker-item ticker-price">
-            <span className="dot" /> أسعار
-          </span>
-          {topAnnouncement && (
-            <span className="ticker-item ticker-service">
-              <span className="dot" /> {topAnnouncement.title}
-            </span>
-          )}
+      {/* Quick Actions */}
+      <div style={{ padding: '16px 16px 0' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
+          {[
+            { href: '/sos', icon: '🚨', label: 'طوارئ', color: '#ef4444', bg: 'rgba(239,68,68,.1)' },
+            { href: '/stores', icon: '🛍️', label: 'متاجر', color: '#10b981', bg: 'rgba(16,185,129,.1)' },
+            { href: '/doctor', icon: '🩺', label: 'أطباء', color: '#dc2626', bg: 'rgba(220,38,38,.1)' },
+            { href: '/jobs', icon: '💼', label: 'وظائف', color: '#059669', bg: 'rgba(5,150,105,.1)' },
+          ].map(a => (
+            <Link key={a.href} href={a.href} style={{ background: a.bg, border: 'none', borderRadius: 14, padding: '14px 8px', textAlign: 'center', textDecoration: 'none', color: 'inherit', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+              <div style={{ fontSize: 26 }}>{a.icon}</div>
+              <div style={{ fontSize: 10.5, fontWeight: 900, color: a.color }}>{a.label}</div>
+            </Link>
+          ))}
         </div>
       </div>
 
-      <div className="cats-grid stagger" id="cats">
-        {categories.filter((c) => c.id !== 'all' && c.is_visible !== false).slice(0, 24).map((c) => (
-          <button
-            key={c.id}
-            className="cat-tile"
-            type="button"
-            onClick={() => {
-              setActiveCategory(c.id);
-              setActiveTab('services');
-              document.getElementById('services')?.scrollIntoView({ behavior: 'smooth' });
-            }}
-          >
-            <span className="cat-tile-icon">{c.icon || '📦'}</span>
-            <span className="cat-tile-label">{c.name}</span>
-          </button>
-        ))}
-      </div>
-
-      <div className="search-panel">
-        <div className="search-box">
-          <span className="ico">⌕</span>
-          <input
-            type="text"
-            placeholder="ابحث..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-          <button className="submit" type="button" onClick={() => { if (search.trim()) router.push('/search?q=' + encodeURIComponent(search.trim())); }}>بحث</button>
-        </div>
-      </div>
-
-      <div className="chips-scroll">
-        <button
-          className={`chip ${activeCategory === 'all' ? 'active' : ''}`}
-          onClick={() => setActiveCategory('all')}
-          type="button"
-        >
-          الكل
-        </button>
-        {categories.filter((c) => c.id !== 'all' && c.is_visible !== false).map((c) => (
-          <button
-            key={c.id}
-            className={`chip ${activeCategory === c.id ? 'active' : ''}`}
-            onClick={() => setActiveCategory(c.id)}
-            type="button"
-          >
-            {c.icon} {c.name}
-          </button>
-        ))}
-      </div>
-
-      <section className="section">
-        <div className="stats">
-          <div className="stat">
-            <div className="stat-val">{services.length}</div>
-            <div className="stat-lab">{t("app.stats.services")}</div>
+      {/* Categories */}
+      {topCategories.length > 0 && (
+        <div style={{ padding: 16 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+            <h2 style={{ fontSize: 16, fontWeight: 900, color: '#0f172a' }}>الأقسام</h2>
+            <Link href="/categories" style={{ fontSize: 11.5, fontWeight: 800, color: '#0f4d3a', textDecoration: 'none' }}>عرض الكل ←</Link>
           </div>
-          <div className="stat">
-            <div className="stat-val">{categories.length - 1}</div>
-            <div className="stat-lab">{t("app.stats.sections")}</div>
-          </div>
-          <div className="stat">
-            <div className="stat-val">{announcements.length}</div>
-            <div className="stat-lab">{t("app.stats.announcements")}</div>
-          </div>
-        </div>
-      </section>
-
-      {deals.length > 0 && (
-        <>
-          <section className="section" id="deals">
-            <div className="section-head">
-              <div className="section-head-col">
-                <span className="section-eyebrow">عروض مميزة</span>
-                <h2 className="section-title">
-                  <span className="bar" /> {t("app.deals")}
-                </h2>
-              </div>
-              <button className="section-action" type="button" onClick={() => goTo('services')}>
-                عرض الكل ←
-              </button>
-            </div>
-          </section>
-          <div className="deals-scroll">
-            {deals.map((d) => (
-              <button key={d.id} className="deal" type="button" onClick={() => router.push((d.__type === 'product' ? '/product/' : '/service/') + d.id)}>
-                <span className="deal-tag">🏷️ عرض خاص</span>
-                <div className="deal-title">{d.title}</div>
-                <div className="deal-meta">{d.provider_name || catName(d.category_id)}</div>
-              </button>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
+            {topCategories.map(c => (
+              <Link key={c.id} href={`/search?q=${encodeURIComponent(c.name)}`} style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 14, padding: '12px 6px', textAlign: 'center', textDecoration: 'none', color: 'inherit', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+                <div style={{ fontSize: 24 }}>{resolveIcon(c.icon)}</div>
+                <div style={{ fontSize: 10, fontWeight: 800, color: '#334155', lineHeight: 1.3, textAlign: 'center' }}>{c.name}</div>
+              </Link>
             ))}
           </div>
-        </>
+        </div>
       )}
 
-      <section className="section" id="services">
-        <div className="section-head">
-          <div className="section-head-col">
-            <span className="section-eyebrow">{search ? 'نتائج البحث' : 'قريب منك'}</span>
-            <h2 className="section-title">
-              <span className="bar" /> {search ? 'النتائج' : t("app.services")}
-            </h2>
+      {/* Featured Stores */}
+      {stores.length > 0 && (
+        <div style={{ padding: '0 16px 16px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+            <h2 style={{ fontSize: 16, fontWeight: 900, color: '#0f172a' }}>🏪 متاجر مميزة</h2>
+            <Link href="/stores" style={{ fontSize: 11.5, fontWeight: 800, color: '#0f4d3a', textDecoration: 'none' }}>المزيد ←</Link>
           </div>
-          <span className="section-action" style={{ pointerEvents: 'none' }}>
-            {filtered.length} نتيجة
-          </span>
-        </div>
-
-        {loading ? (
-          <>
-            {[1, 2, 3].map((n) => (
-              <div className="sk-card" key={n}>
-                <div className="sk-logo sk" />
-                <div className="sk-body">
-                  <div className="sk-line short sk" />
-                  <div className="sk-line sk" />
-                </div>
-              </div>
-            ))}
-          </>
-        ) : filtered.length > 0 ? (
-          <div className="entity-list stagger">
-            {filtered.map((x) => (
-              <button key={x.id} className="entity" type="button" onClick={() => router.push((x.__type === 'product' ? '/product/' : '/service/') + x.id)}>
-                <div className="entity-logo">
-                  {x.image_url ? (
-                    <img src={x.image_url} alt={x.title || ''} loading="lazy" />
-                  ) : (
-                    <span>{iconFor(x.title || x.category || '')}</span>
-                  )}
-                </div>
-                <div className="entity-info">
-                  <div className="entity-name">
-                    <span className="txt">{x.title}</span>
-                    <span className="verified-badge">✓</span>
-                  </div>
-                  <div className="entity-desc">
-                    {x.description || x.address || catName(x.category_id)}
-                  </div>
-                  <div className="entity-meta">
-                    {x.is_featured && <span className="badge-feat">⭐ مميز</span>}
-                    {x.category_id && <span className="badge-cat">{catName(x.category_id)}</span>}
-                  </div>
-                </div>
-              </button>
+          <div style={{ display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 4 }}>
+            {stores.map(s => (
+              <Link key={s.id} href={`/store/${encodeURIComponent(s.display_name)}`} style={{ flexShrink: 0, width: 140, background: '#fff', border: '1px solid #e5e7eb', borderRadius: 14, padding: 12, textDecoration: 'none', color: 'inherit', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 8 }}>
+                {s.logo_url ? <img src={s.logo_url} alt="" style={{ width: 56, height: 56, borderRadius: 14, objectFit: 'cover' }} /> : <div style={{ width: 56, height: 56, borderRadius: 14, background: 'linear-gradient(135deg,#0f4d3a,#075640)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24 }}>🏪</div>}
+                <div style={{ fontSize: 12, fontWeight: 900, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>{s.display_name}</div>
+                {s.is_verified && <div style={{ fontSize: 9.5, color: '#10b981', fontWeight: 800 }}>✅ موثق</div>}
+              </Link>
             ))}
           </div>
-        ) : (
-          <div className="empty">
-            <span className="em">{search ? '⌕' : '✦'}</span>
-            {search ? 'لا توجد نتائج مطابقة' : 'الخدمات قيد الإضافة — تابعنا قريباً'}
-            {search && (
-              <div style={{ marginTop: 18 }}>
-                <button
-                  className="chip active"
-                  type="button"
-                  onClick={() => { setSearch(''); setActiveCategory('all'); }}
-                >
-                  إعادة تعيين البحث
-                </button>
-              </div>
-            )}
-          </div>
-        )}
-      </section>
-
-      {topAnnouncement && (
-        <section className="section" id="news">
-          <div className="section-head">
-            <div className="section-head-col">
-              <span className="section-eyebrow">آخر الأخبار</span>
-              <h2 className="section-title">
-                <span className="bar" /> {t("app.news")}
-              </h2>
-            </div>
-          </div>
-          <article className="news-box">
-            <span className="news-eyebrow">📰 {t("app.stats.announcements")} رسمي</span>
-            <h3 className="news-title">{topAnnouncement.title}</h3>
-            <p className="news-body">
-              {topAnnouncement.body
-                || topAnnouncement.content
-                || topAnnouncement.description
-                || 'لا يوجد تفاصيل إضافية.'}
-            </p>
-          </article>
-        </section>
+        </div>
       )}
 
-      <section className="section">
-        <div className="cta">
-          <div className="cta-icon">✦</div>
-          <div className="cta-body">
-            <h4>سند — عون لكل بيت</h4>
-            <p>ذاكرة لكل بلدة، ومستقبل لكل جيل</p>
+      {/* Latest Products */}
+      {products.length > 0 && (
+        <div style={{ padding: '0 16px 20px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+            <h2 style={{ fontSize: 16, fontWeight: 900, color: '#0f172a' }}>🛍️ أحدث المنتجات</h2>
+            <Link href="/stores" style={{ fontSize: 11.5, fontWeight: 800, color: '#0f4d3a', textDecoration: 'none' }}>المزيد ←</Link>
           </div>
-        </div>
-      </section>
-
-      {dbNotice && (
-        <section className="section">
-          <div className="empty" style={{ padding: '10px 0' }}>
-            ⚠️ بعض البيانات قد تكون غير متاحة مؤقتاً
-          </div>
-        </section>
-      )}
-
-      
-      <footer className="footer">
-        <div className="footer-brand">
-          <span className="footer-mark">س</span>
-          <strong>سند</strong>
-        </div>
-        <p>نقرّب المسافات، ونصل الناس بالخدمات</p>
-        <div className="copy">© 2026 سند — جميع الحقوق محفوظة</div>
-        <div style={{ display: 'flex', gap: 10, justifyContent: 'center', marginTop: 16, flexWrap: 'wrap' }}>
-          <a href="/login" style={{ fontSize: 11.5, color: 'var(--f-700)', fontWeight: 800, padding: '8px 16px', background: 'rgba(14,138,102,.08)', border: '1px solid rgba(14,138,102,.15)', borderRadius: 999, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-            👤 {t("auth.login")}
-          </a>
-          <a href="/admin/login" style={{ fontSize: 11.5, color: 'var(--n-600)', fontWeight: 800, padding: '8px 16px', background: 'rgba(115,139,128,.08)', border: '1px solid rgba(115,139,128,.15)', borderRadius: 999, textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-            ⚙️ {t("admin.title")}
-          </a>
-          <a href="/legal/terms" style={{ fontSize: 11.5, color: 'var(--n-500)', fontWeight: 700, padding: '8px 16px', borderRadius: 999, textDecoration: 'none' }}>
-            الشروط
-          </a>
-          <a href="/legal/privacy" style={{ fontSize: 11.5, color: 'var(--n-500)', fontWeight: 700, padding: '8px 16px', borderRadius: 999, textDecoration: 'none' }}>
-            الخصوصية
-          </a>
-        </div></footer>
-<nav className="nav bottom-nav">
-        <button className={`nav-btn ${activeTab === 'home' ? 'active' : ''}`} onClick={() => goTo('home')} type="button">
-          <span className="nav-icon">🏠</span><span>الرئيسية</span>
-        </button>
-        <button className={`nav-btn ${activeTab === 'cats' ? 'active' : ''}`} onClick={() => goTo('cats')} type="button">
-          <span className="nav-icon">▦</span><span>الأقسام</span>
-        </button>
-        <button className={`nav-btn ${activeTab === 'cart' ? 'active' : ''}`} onClick={() => router.push('/cart')} type="button">
-          <span className="nav-icon">🛒</span><span>السلة</span>
-        </button>
-        <button className={`nav-btn ${activeTab === 'calc' ? 'active' : ''}`} onClick={() => router.push('/exchange')} type="button">
-          <span className="nav-icon">💱</span><span>الحاسبة</span>
-        </button>
-        <button className={`nav-btn ${activeTab === 'account' ? 'active' : ''}`} onClick={() => {
-          let entity = null, customer = null;
-          try { entity = JSON.parse(localStorage.getItem('sanad_entity') || 'null'); } catch (e) {}
-          try { customer = JSON.parse(localStorage.getItem('sanad_customer') || 'null'); } catch (e) {}
-          if (entity) router.push('/merchant');
-          else if (customer) router.push('/customer');
-          else router.push('/login');
-        }} type="button">
-          <span className="nav-icon">👤</span><span>حسابي</span>
-        </button>
-      </nav>
-
-      {selected && (
-        <div className="sheet-bg" onClick={() => setSelected(null)}>
-          <div className="sheet" onClick={(e) => e.stopPropagation()}>
-            <div className="sheet-handle" />
-
-            <div className="sheet-symbol">
-              {iconFor(selected.title || selected.category || '')}
-            </div>
-            <div className="sheet-eyebrow">تفاصيل الخدمة</div>
-            <h2 className="sheet-title">{selected.title}</h2>
-            {selected.provider_name && (
-              <div className="sheet-provider">
-                <span>✓</span> {selected.provider_name}
-              </div>
-            )}
-            <p className="sheet-desc">
-              {selected.description || 'لا يوجد وصف إضافي لهذه الخدمة حالياً.'}
-            </p>
-            {selected.address && (
-              <div className="sheet-meta">
-                <span className="i">📍</span> {selected.address}
-              </div>
-            )}
-            {selected.category_id && (
-              <div className="sheet-meta">
-                <span className="i">🏷️</span> {catName(selected.category_id)}
-              </div>
-            )}
-            {selected.phone && (
-              <a className="sheet-cta" href={`tel:${selected.phone}`}>
-                📞 اتصل بمقدم الخدمة
-              </a>
-            )}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 10 }}>
+            {products.map(p => {
+              const price = Number(p.price) || 0;
+              const disc = Number(p.discount_percent) || 0;
+              const finalPrice = Math.round(price - (price * disc / 100));
+              return (
+                <Link key={p.id} href={`/product/${p.id}`} style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 14, overflow: 'hidden', textDecoration: 'none', color: 'inherit' }}>
+                  {p.image_url ? <img src={p.image_url} alt={p.title} loading="lazy" style={{ width: '100%', height: 110, objectFit: 'cover' }} /> : <div style={{ height: 110, background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 32 }}>📦</div>}
+                  <div style={{ padding: 10 }}>
+                    <div style={{ fontSize: 12, fontWeight: 900, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: 4 }}>{p.title}</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <div style={{ fontSize: 13, fontWeight: 900, color: '#0f4d3a' }}>{finalPrice.toLocaleString()}</div>
+                      <div style={{ fontSize: 9, color: '#64748b' }}>{p.currency || 'SYP'}</div>
+                    </div>
+                  </div>
+                </Link>
+              );
+            })}
           </div>
         </div>
       )}

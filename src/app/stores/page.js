@@ -1,273 +1,150 @@
 'use client';
-
 import { useState, useEffect, useMemo } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
-import { addToCart as addToCartLib } from '@/lib/cart';
-
-const SORTS = [
-  { key: 'newest',   label: '🆕 الأحدث' },
-  { key: 'rating',   label: '⭐ الأعلى تقييماً' },
-  { key: 'price_asc', label: '💵 السعر: الأقل أولاً' },
-  { key: 'price_desc', label: '💰 السعر: الأعلى أولاً' },
-  { key: 'name',     label: '🔤 الاسم' },
-];
+import { SkeletonList } from '@/components/Skeleton';
+import EmptyState from '@/components/EmptyState';
+import ReviewsSummary from '@/components/ReviewsSummary';
 
 export default function StoresPage() {
   const router = useRouter();
-  const [products, setProducts] = useState([]);
-  const [entities, setEntities] = useState([]);
+  const [stores, setStores] = useState([]);
+  const [ratings, setRatings] = useState({});
   const [loading, setLoading] = useState(true);
-  const [sort, setSort] = useState('newest');
-  const [category, setCategory] = useState('all');
   const [search, setSearch] = useState('');
-  const [viewMode, setViewMode] = useState('products'); // products | stores
+  const [sort, setSort] = useState('newest');
 
   useEffect(() => {
     load();
   }, []);
 
   async function load() {
-    if (!supabase) { setLoading(false); return; }
-    const [prodRes, entRes] = await Promise.all([
-      supabase.from('products').select('*').eq('is_active', true),
-      supabase.from('entities').select('*').eq('is_active', true).eq('entity_type', 'merchant'),
-    ]);
-    setProducts(Array.isArray(prodRes.data) ? prodRes.data : []);
-    setEntities(Array.isArray(entRes.data) ? entRes.data : []);
+    if (!supabase) { // جلب متوسطات التقييمات
+      const entityIds = (withCounts || []).map(e => e.id);
+      if (entityIds.length > 0) {
+        const { data: revs } = await supabase.from('reviews')
+          .select('target_id, rating')
+          .eq('target_type', 'store')
+          .in('target_id', entityIds);
+        if (revs) {
+          const map = {};
+          revs.forEach(r => {
+            if (!map[r.target_id]) map[r.target_id] = { total: 0, sum: 0 };
+            map[r.target_id].total++;
+            map[r.target_id].sum += Number(r.rating || 0);
+          });
+          const avgMap = {};
+          Object.keys(map).forEach(id => {
+            avgMap[id] = { avg: map[id].sum / map[id].total, total: map[id].total };
+          });
+          setRatings(avgMap);
+        }
+      }
+      setLoading(false); return; }
+    try {
+      // جلب المزودين النشطين
+      const { data: entities } = await supabase
+        .from('entities')
+        .select('id, display_name, entity_type, logo_url, cover_url, bio, phone, is_verified, is_trusted, city, address')
+        .eq('is_active', true)
+        .eq('approval_status', 'approved')
+        .in('entity_type', ['merchant', 'restaurant', 'pharmacy', 'school', 'hotel', 'office', 'craftsman', 'workshop', 'isp']);
+
+      // جلب عدد المنتجات لكل متجر
+      const { data: products } = await supabase.from('products').select('provider_name').eq('is_active', true);
+
+      const productCounts = {};
+      (products || []).forEach(p => { productCounts[p.provider_name] = (productCounts[p.provider_name] || 0) + 1; });
+
+      const withCounts = (entities || []).map(e => ({ ...e, products_count: productCounts[e.display_name] || 0 }));
+      setStores(withCounts);
+    } catch (e) { console.error(e); }
     setLoading(false);
   }
 
-  const categories = useMemo(() => {
-    const set = new Set(products.map((p) => p.category).filter(Boolean));
-    return ['all', ...Array.from(set)];
-  }, [products]);
-
   const filtered = useMemo(() => {
-    let list = products.filter((p) => {
-      if (category !== 'all' && p.category !== category) return false;
-      if (search.trim()) {
-        const q = search.trim().toLowerCase();
-        const hay = [p.title, p.description, p.provider_name, p.category].filter(Boolean).join(' ').toLowerCase();
-        if (!hay.includes(q)) return false;
-      }
-      return true;
-    });
-
-    // ترتيب
-    switch (sort) {
-      case 'rating':
-        list.sort((a, b) => (b.rating || 0) - (a.rating || 0));
-        break;
-      case 'price_asc':
-        list.sort((a, b) => (a.price || 0) - (b.price || 0));
-        break;
-      case 'price_desc':
-        list.sort((a, b) => (b.price || 0) - (a.price || 0));
-        break;
-      case 'name':
-        list.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
-        break;
-      case 'newest':
-      default:
-        list.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    let list = stores;
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
+      list = list.filter(s =>
+        (s.display_name || '').toLowerCase().includes(q) ||
+        (s.bio || '').toLowerCase().includes(q) ||
+        (s.city || '').toLowerCase().includes(q)
+      );
     }
+    const sorted = [...list];
+    if (sort === 'products') sorted.sort((a, b) => b.products_count - a.products_count);
+    else if (sort === 'verified') sorted.sort((a, b) => (b.is_verified ? 1 : 0) - (a.is_verified ? 1 : 0));
+    else if (sort === 'rating') sorted.sort((a, b) => (ratings[b.id]?.avg || 0) - (ratings[a.id]?.avg || 0));
+    return sorted;
+  }, [stores, search, sort]);
 
-    return list;
-  }, [products, category, search, sort]);
-
-  const addToCart = (product) => {
-    try {
-      addToCartLib({
-        id: product.id,
-        title: product.title,
-        price: product.price,
-        currency: product.currency,
-        image: product.image_url,
-        provider_name: product.provider_name,
-        qty: 1,
-      });
-      alert('✅ تمت الإضافة للسلة');
-    } catch (e) {
-      alert('تعذّر: ' + e.message);
-    }
-  };
+  if (loading) {
+    return (
+      <div style={{ minHeight: '100vh', background: '#f8fafc', padding: 16 }}>
+        <div style={{ background: '#0f4d3a', margin: -16, padding: 20, marginBottom: 16 }}>
+          <div style={{ width: 100, height: 20, background: 'rgba(255,255,255,.2)', borderRadius: 6 }} />
+        </div>
+        <SkeletonList count={4} />
+      </div>
+    );
+  }
 
   return (
-    <div className="sect-page" style={{ paddingBottom: 100 }}>
-      {/* الهيدر */}
-      <div className="inv-header">
-        <button className="inv-back" onClick={() => router.back()} type="button">→</button>
-        <span className="inv-title">🛍️ المتاجر والتسوق</span>
-        <button
-          className="icon-btn"
-          onClick={() => router.push('/cart')}
-          type="button"
-          aria-label="السلة"
-        >
-          🛒
-        </button>
-      </div>
-
-      {/* البحث */}
-      <div style={{ padding: '12px 16px' }}>
-        <div className="search-box">
-          <span className="ico">⌕</span>
-          <input
-            type="text"
-            placeholder="ابحث عن منتج أو متجر..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
+    <div style={{ minHeight: '100vh', background: '#f8fafc', paddingBottom: 40 }}>
+      <div style={{ position: 'sticky', top: 0, zIndex: 10, background: '#0f4d3a', padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
+        <Link href="/" style={{ color: '#fff', textDecoration: 'none', fontSize: 20, width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,.1)', borderRadius: '50%' }}>→</Link>
+        <div style={{ flex: 1 }}>
+          <div style={{ color: '#fff', fontSize: 16, fontWeight: 900 }}>🏪 المتاجر</div>
+          <div style={{ color: 'rgba(255,255,255,.7)', fontSize: 11, marginTop: 2 }}>{filtered.length} متجر</div>
         </div>
       </div>
 
-      {/* التابات */}
-      <div className="chips-scroll" style={{ padding: '0 16px 8px' }}>
-        <button
-          className={`chip ${viewMode === 'products' ? 'active' : ''}`}
-          onClick={() => setViewMode('products')}
-          type="button"
-        >
-          📦 المنتجات ({products.length})
-        </button>
-        <button
-          className={`chip ${viewMode === 'stores' ? 'active' : ''}`}
-          onClick={() => setViewMode('stores')}
-          type="button"
-        >
-          🏪 المتاجر ({entities.length})
-        </button>
+      <div style={{ padding: 16 }}>
+        <input type="text" placeholder="🔍 ابحث بالاسم أو الوصف..." value={search} onChange={(e) => setSearch(e.target.value)}
+          style={{ width: '100%', padding: '12px 14px', border: '1px solid #e5e7eb', borderRadius: 12, fontSize: 13, fontFamily: 'inherit', boxSizing: 'border-box', outline: 'none', background: '#fff', marginBottom: 10 }} />
+        <div style={{ display: 'flex', gap: 6, overflowX: 'auto' }}>
+          {[['newest','🆕 الأحدث'],['products','📦 الأكثر منتجات'],['verified','✓ الموثقون']].map(([k, l]) => (
+            <button key={k} onClick={() => setSort(k)} style={{ padding: '8px 14px', background: sort === k ? '#0f4d3a' : '#fff', color: sort === k ? '#fff' : '#64748b', border: `1px solid ${sort === k ? '#0f4d3a' : '#e5e7eb'}`, borderRadius: 10, fontSize: 11.5, fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'inherit' }}>{l}</button>
+          ))}
+        </div>
       </div>
 
-      {viewMode === 'products' && (
-        <>
-          {/* فلتر الفئات */}
-          <div className="chips-scroll" style={{ padding: '8px 16px' }}>
-            {categories.map((c) => (
-              <button
-                key={c}
-                className={`chip ${category === c ? 'active' : ''}`}
-                onClick={() => setCategory(c)}
-                type="button"
-              >
-                {c === 'all' ? 'الكل' : c}
-              </button>
-            ))}
-          </div>
-
-          {/* الترتيب */}
-          <div className="chips-scroll" style={{ padding: '8px 16px 12px' }}>
-            {SORTS.map((s) => (
-              <button
-                key={s.key}
-                className={`chip ${sort === s.key ? 'active' : ''}`}
-                onClick={() => setSort(s.key)}
-                type="button"
-              >
-                {s.label}
-              </button>
-            ))}
-          </div>
-
-          {/* المنتجات */}
-          {loading ? (
-            <div className="sect-empty"><span className="em">⏳</span></div>
-          ) : filtered.length === 0 ? (
-            <div className="sect-empty">
-              <span className="em">📦</span>
-              <p>لا توجد منتجات مطابقة</p>
-            </div>
-          ) : (
-            <div style={{ padding: 16, display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12 }}>
-              {filtered.map((p) => (
-                <div
-                  key={p.id}
-                  className="debt-card"
-                  style={{ borderRightColor: '#0f4d3a', padding: 10, margin: 0 }}
-                >
-                  <div
-                    onClick={() => router.push('/service/' + p.id)}
-                    style={{ cursor: 'pointer' }}
-                  >
-                    {p.image_url ? (
-                      <img
-                        src={p.image_url}
-                        alt={p.title}
-                        style={{ width: '100%', height: 100, objectFit: 'cover', borderRadius: 8 }}
-                        loading="lazy"
-                      />
-                    ) : (
-                      <div style={{
-                        width: '100%', height: 100, borderRadius: 8,
-                        background: 'rgba(15,77,58,.15)',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        fontSize: 32
-                      }}>
-                        🛍️
-                      </div>
-                    )}
-                    <div style={{ fontSize: 12, fontWeight: 800, marginTop: 8, lineHeight: 1.3, height: 32, overflow: 'hidden' }}>
-                      {p.title}
+      <div style={{ padding: '0 16px' }}>
+        {filtered.length === 0 ? (
+          <EmptyState icon="🏪" title={search ? 'لا توجد نتائج' : 'لا توجد متاجر بعد'} description={search ? 'جرّب البحث بكلمات مختلفة' : 'قريباً ستظهر المتاجر هنا'} actionLabel="← الرئيسية" actionHref="/" />
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 12 }}>
+            {filtered.map(s => (
+              <Link key={s.id} href={`/store/${encodeURIComponent(s.display_name)}`} style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 16, overflow: 'hidden', textDecoration: 'none', color: 'inherit', display: 'flex', flexDirection: 'column' }}>
+                <div style={{ height: 80, background: s.cover_url ? `url(${s.cover_url}) center/cover` : 'linear-gradient(135deg,#0f4d3a,#075640)', position: 'relative' }}>
+                  {s.logo_url ? (
+                    <img src={s.logo_url} alt="" style={{ width: 48, height: 48, borderRadius: 12, objectFit: 'cover', position: 'absolute', bottom: -24, right: 12, border: '3px solid #fff', background: '#fff' }} />
+                  ) : (
+                    <div style={{ width: 48, height: 48, borderRadius: 12, background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, position: 'absolute', bottom: -24, right: 12, border: '3px solid #fff' }}>🏪</div>
+                  )}
+                </div>
+                <div style={{ padding: '28px 12px 12px', flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                  <div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 4 }}>
+                      <div style={{ fontSize: 13, fontWeight: 900, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>{s.display_name}</div>
+                      <ReviewsSummary targetType="store" targetId={s.id} variant="compact" />
+                      {s.is_verified && <span style={{ fontSize: 12 }} title="موثق">✅</span>}
                     </div>
-                    <div style={{ fontSize: 10, color: 'var(--n-500)', marginTop: 3 }}>
-                      🏪 {p.provider_name || 'متجر'}
-                    </div>
-                    <div style={{ fontSize: 14, fontWeight: 900, color: '#14b8a6', marginTop: 6, direction: 'ltr', textAlign: 'right' }}>
-                      {Number(p.price || 0).toLocaleString()} {p.currency || 'SYP'}
-                    </div>
+                    {s.bio && <div style={{ fontSize: 10.5, color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: 6 }}>{s.bio}</div>}
+                    {s.city && <div style={{ fontSize: 10, color: '#94a3b8' }}>📍 {s.city}</div>}
                   </div>
-                  <button
-                    className="mng-btn primary"
-                    onClick={() => addToCart(p)}
-                    type="button"
-                    style={{ width: '100%', marginTop: 8, padding: 8, fontSize: 12 }}
-                  >
-                    🛒 أضف للسلة
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </>
-      )}
-
-      {/* قائمة المتاجر */}
-      {viewMode === 'stores' && (
-        <div style={{ padding: 16 }}>
-          {entities.length === 0 ? (
-            <div className="sect-empty">
-              <span className="em">🏪</span>
-              <p>لا توجد متاجر بعد</p>
-            </div>
-          ) : (
-            entities.map((e) => (
-              <button
-                key={e.id}
-                className="debt-card"
-                onClick={() => router.push('/store/' + e.username)}
-                style={{
-                  borderRightColor: '#0f4d3a', marginBottom: 10,
-                  width: '100%', textAlign: 'right', cursor: 'pointer',
-                  display: 'flex', alignItems: 'center', gap: 12
-                }}
-                type="button"
-              >
-                <div style={{ width: 50, height: 50, borderRadius: 12, background: 'rgba(15,77,58,.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, flexShrink: 0 }}>
-                  {e.logo_url ? <img src={e.logo_url} style={{ width: '100%', height: '100%', borderRadius: 12, objectFit: 'cover' }} /> : '🏪'}
-                </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 14, fontWeight: 900 }}>{e.display_name}</div>
-                  <div style={{ fontSize: 11, color: 'var(--n-500)', marginTop: 3 }}>
-                    {e.bio || e.phone || 'متجر'}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8, paddingTop: 8, borderTop: '1px solid #f1f5f9' }}>
+                    <span style={{ fontSize: 10.5, color: '#64748b', fontWeight: 700 }}>📦 {s.products_count} منتج</span>
+                    <span style={{ fontSize: 10, color: '#10b981', fontWeight: 900 }}>عرض ←</span>
                   </div>
                 </div>
-                <span style={{ fontSize: 20, color: 'var(--n-500)' }}>›</span>
-              </button>
-            ))
-          )}
-        </div>
-      )}
+              </Link>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

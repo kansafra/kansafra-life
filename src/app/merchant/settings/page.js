@@ -1,310 +1,188 @@
 'use client';
-
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
-import { getSession, updateSession, logout } from '@/lib/auth';
-import NotificationToggle from '@/components/NotificationToggle';
-import PaymentMethodsSettings from '@/components/PaymentMethodsSettings';
+import { useCurrentUser } from '@/lib/useCurrentUser';
+import { useToast } from '@/components/Toast';
+import ImageUploader from '@/components/ImageUploader';
 
-const IMAGE_BUCKETS = {
-  logo: 'sanad-files',
-  cover: 'sanad-files',
-};
-
-export default function MerchantSettings() {
+export default function SettingsPage() {
   const router = useRouter();
-  const [session, setSession] = useState(null);
-  const [entity, setEntity] = useState(null);
+  const { user, loading: userLoading, isOwner, isSectionAdmin, dataOwnerName } = useCurrentUser();
+  const { success, error: toastError } = useToast();
   const [form, setForm] = useState({});
-  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [uploading, setUploading] = useState({ logo: false, cover: false });
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const s = getSession();
-    if (!s) { router.replace('/login'); return; }
-    setSession(s);
-    loadEntity(s);
-  }, [router]);
-
-  async function loadEntity(s) {
-    if (!supabase) { setLoading(false); return; }
-    const { data } = await supabase.from('entities').select('*').eq('id', s.id).single();
-    if (data) {
-      setEntity(data);
-      setForm({
-        display_name: data.display_name || '',
-        bio: data.bio || '',
-        phone: data.phone || '',
-        whatsapp: data.whatsapp || '',
-        email: data.email || '',
-        address: data.address || '',
-        city: data.city || 'كنصفرة',
-        governorate: data.governorate || 'إدلب',
-        opening_hours: data.opening_hours || '',
-        facebook_url: data.facebook_url || '',
-        instagram_url: data.instagram_url || '',
-      });
+    if (userLoading) return;
+    if (!user) { router.replace('/login'); return; }
+    if (!isOwner && !isSectionAdmin) {
+      // موظف — لا يصل
+      router.replace('/merchant');
+      return;
     }
+    load();
+  }, [user, userLoading, isOwner, isSectionAdmin]);
+
+  async function load() {
+    if (!supabase || !user?.id) { setLoading(false); return; }
+    try {
+      const { data } = await supabase.from('entities').select('*').eq('id', user.id).maybeSingle();
+      if (data) {
+        setForm({
+          display_name: data.display_name || '',
+          phone: data.phone || '',
+          whatsapp: data.whatsapp || '',
+          email: data.email || '',
+          address: data.address || '',
+          city: data.city || '',
+          governorate: data.governorate || '',
+          bio: data.bio || '',
+          logo_url: data.logo_url || '',
+          cover_url: data.cover_url || '',
+          opening_hours: data.opening_hours || '',
+          facebook_url: data.facebook_url || '',
+          instagram_url: data.instagram_url || '',
+        });
+      }
+    } catch (e) { toastError('تعذّر التحميل'); }
     setLoading(false);
   }
 
-  function update(field, value) {
-    setForm((f) => ({ ...f, [field]: value }));
-    setError('');
-    setSuccess('');
-  }
-
-  async function uploadImage(file, type) {
-    if (!file || !supabase || !entity) return;
-
-    // التحقق من النوع
-    if (!file.type.startsWith('image/')) {
-      setError('يرجى اختيار ملف صورة');
-      return;
-    }
-    if (file.size > 5 * 1024 * 1024) {
-      setError('حجم الصورة يجب أن يكون أقل من 5 ميجابايت');
-      return;
-    }
-
-    setUploading((u) => ({ ...u, [type]: true }));
-    setError('');
-
-    try {
-      const bucket = IMAGE_BUCKETS[type];
-      const ext = file.name.split('.').pop() || 'jpg';
-      const fileName = `${entity.id}/${type}-${Date.now()}.${ext}`;
-
-      // رفع الملف
-      const { error: upErr } = await supabase.storage
-        .from(bucket)
-        .upload(fileName, file, { cacheControl: '3600', upsert: true });
-
-      if (upErr) throw upErr;
-
-      // الرابط العام
-      const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(fileName);
-      const publicUrl = urlData.publicUrl;
-
-      // تحديث السجل
-      const field = type === 'logo' ? 'logo_url' : 'cover_url';
-      const { error: dbErr } = await supabase
-        .from('entities')
-        .update({ [field]: publicUrl, updated_at: new Date().toISOString() })
-        .eq('id', entity.id);
-
-      if (dbErr) throw dbErr;
-
-      setEntity((e) => ({ ...e, [field]: publicUrl }));
-      setSuccess(`✅ تم رفع ${type === 'logo' ? 'الشعار' : 'الغلاف'} بنجاح`);
-      setTimeout(() => setSuccess(''), 3000);
-    } catch (err) {
-      setError('تعذّر رفع الصورة: ' + (err.message || 'خطأ غير معروف'));
-    } finally {
-      setUploading((u) => ({ ...u, [type]: false }));
-    }
-  }
+  function update(k, v) { setForm(f => ({ ...f, [k]: v })); }
 
   async function save() {
-    if (!form.display_name?.trim()) { setError('اسم النشاط مطلوب'); return; }
+    if (!form.display_name?.trim()) { toastError('اسم المتجر مطلوب'); return; }
+    if (!form.phone?.trim()) { toastError('رقم الهاتف مطلوب'); return; }
+    
     setSaving(true);
-    setError('');
-    setSuccess('');
-
     try {
-      const { error: updErr } = await supabase
-        .from('entities')
-        .update({
-          display_name: form.display_name.trim(),
-          bio: form.bio?.trim() || null,
-          phone: form.phone?.trim() || null,
-          whatsapp: form.whatsapp?.trim() || null,
-          email: form.email?.trim() || null,
-          address: form.address?.trim() || null,
-          city: form.city?.trim() || null,
-          governorate: form.governorate?.trim() || null,
-          opening_hours: form.opening_hours?.trim() || null,
-          facebook_url: form.facebook_url?.trim() || null,
-          instagram_url: form.instagram_url?.trim() || null,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', entity.id);
-
-      if (updErr) throw updErr;
-      updateSession({ display_name: form.display_name.trim() });
-      setSuccess('✅ تم حفظ التغييرات');
-      setTimeout(() => setSuccess(''), 3000);
-    } catch (err) {
-      setError('تعذّر الحفظ: ' + (err.message || 'خطأ'));
-    } finally {
-      setSaving(false);
-    }
+      const { error } = await supabase.from('entities').update({
+        display_name: form.display_name.trim(),
+        phone: form.phone.trim(),
+        whatsapp: form.whatsapp?.trim() || null,
+        email: form.email?.trim() || null,
+        address: form.address?.trim() || null,
+        city: form.city?.trim() || null,
+        governorate: form.governorate?.trim() || null,
+        bio: form.bio?.trim() || null,
+        logo_url: form.logo_url || null,
+        cover_url: form.cover_url || null,
+        opening_hours: form.opening_hours?.trim() || null,
+        facebook_url: form.facebook_url?.trim() || null,
+        instagram_url: form.instagram_url?.trim() || null,
+        updated_at: new Date().toISOString(),
+      }).eq('id', user.id);
+      
+      if (error) throw error;
+      success('✅ تم الحفظ');
+    } catch (e) { toastError('تعذّر: ' + e.message); }
+    setSaving(false);
   }
 
-  if (loading) return <div className="sect-empty" style={{ padding: 80 }}><span className="em">⏳</span></div>;
-  if (!entity) return <div className="sect-empty" style={{ padding: 80 }}><span className="em">❌</span><p>لم يتم العثور على الحساب</p></div>;
+  if (userLoading || loading) {
+    return <div style={{ padding: 60, textAlign: 'center' }}>⏳</div>;
+  }
 
-  return (
-    <div className="sect-page" style={{ paddingBottom: 100 }}>
-      <div className="inv-header">
-        <Link href="/merchant" className="inv-back">→</Link>
-        <span className="inv-title">⚙️ إعدادات حسابي</span>
-        <span style={{ width: 40 }} />
-      </div>
-
-      {/* ═══ الغلاف والشعار ═══ */}
-      <div style={{ position: 'relative', marginBottom: 60 }}>
-        {/* الغلاف */}
-        <label
-          style={{
-            display: 'block',
-            height: 180,
-            background: entity.cover_url
-              ? `url(${entity.cover_url}) center/cover`
-              : 'linear-gradient(135deg, #0f4d3a, #0a6b50)',
-            position: 'relative',
-            cursor: 'pointer',
-          }}
-        >
-          <input
-            type="file"
-            accept="image/*"
-            style={{ display: 'none' }}
-            onChange={(e) => uploadImage(e.target.files?.[0], 'cover')}
-          />
-          <div style={{
-            position: 'absolute', bottom: 12, left: 12,
-            background: 'rgba(0,0,0,.6)', color: '#fff',
-            padding: '6px 14px', borderRadius: 999,
-            fontSize: 11.5, fontWeight: 900,
-          }}>
-            {uploading.cover ? '⏳ جارٍ الرفع...' : '📸 تغيير الغلاف'}
-          </div>
-        </label>
-
-        {/* الشعار */}
-        <label style={{
-          position: 'absolute', bottom: -50, right: 20,
-          width: 100, height: 100, borderRadius: '50%',
-          background: '#0f4d3a',
-          border: '4px solid #061410',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          overflow: 'hidden', cursor: 'pointer',
-          boxShadow: '0 4px 12px rgba(0,0,0,.4)',
-        }}>
-          <input
-            type="file"
-            accept="image/*"
-            style={{ display: 'none' }}
-            onChange={(e) => uploadImage(e.target.files?.[0], 'logo')}
-          />
-          {uploading.logo ? (
-            <span style={{ color: '#fff', fontSize: 12 }}>⏳</span>
-          ) : entity.logo_url ? (
-            <img src={entity.logo_url} alt="logo" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-          ) : (
-            <span style={{ fontSize: 40 }}>🏪</span>
-          )}
-        </label>
-      </div>
-
-      {/* ═══ زر الإشعارات ═══ */}
-      <div style={{ padding: '0 16px 16px' }}>
-        <NotificationToggle userKey={session?.display_name} userType="entity" />
-      </div>
-
-      {/* ═══ الحقول ═══ */}
-      <div style={{ marginTop: 24, marginBottom: 24, paddingTop: 24, borderTop: '2px solid var(--ink-100)' }}>
-        <PaymentMethodsSettings />
-      </div>
-
-      <div style={{ padding: '0 16px' }}>
-        <Field label="اسم النشاط *" value={form.display_name} onChange={(v) => update('display_name', v)} />
-        <Field label="نبذة عنك" value={form.bio} onChange={(v) => update('bio', v)} multiline />
-        <Field label="رقم الهاتف" value={form.phone} onChange={(v) => update('phone', v)} ltr />
-        <Field label="رقم الواتساب" value={form.whatsapp} onChange={(v) => update('whatsapp', v)} ltr />
-        <Field label="البريد الإلكتروني" value={form.email} onChange={(v) => update('email', v)} ltr />
-        <Field label="العنوان" value={form.address} onChange={(v) => update('address', v)} />
-        <Field label="البلدة" value={form.city} onChange={(v) => update('city', v)} />
-        <Field label="المحافظة" value={form.governorate} onChange={(v) => update('governorate', v)} />
-        <Field label="ساعات العمل" value={form.opening_hours} onChange={(v) => update('opening_hours', v)} placeholder="مثال: 9ص - 9م" />
-        <Field label="رابط فيسبوك" value={form.facebook_url} onChange={(v) => update('facebook_url', v)} ltr />
-        <Field label="رابط إنستغرام" value={form.instagram_url} onChange={(v) => update('instagram_url', v)} ltr />
-
-        {error && (
-          <div style={{ padding: 12, background: 'rgba(220,38,38,.1)', border: '1px solid rgba(220,38,38,.3)', borderRadius: 12, color: '#f87171', fontSize: 12.5, marginBottom: 12, textAlign: 'center' }}>
-            ⚠️ {error}
-          </div>
-        )}
-        {success && (
-          <div style={{ padding: 12, background: 'rgba(34,197,94,.1)', border: '1px solid rgba(34,197,94,.3)', borderRadius: 12, color: '#4ade80', fontSize: 12.5, marginBottom: 12, textAlign: 'center' }}>
-            {success}
-          </div>
-        )}
-
-        <button
-          onClick={save}
-          disabled={saving}
-          style={{
-            width: '100%', padding: 16, marginTop: 12,
-            background: saving ? '#555' : 'linear-gradient(135deg, #22c55e, #16a34a)',
-            color: '#fff', border: 'none', borderRadius: 14,
-            fontSize: 15, fontWeight: 900,
-            cursor: saving ? 'wait' : 'pointer',
-          }}
-        >
-          {saving ? '... جارٍ الحفظ' : '✓ حفظ التغييرات'}
-        </button>
-      </div>
+  const F = ({ label, value, onChange, type = 'text', placeholder = '', required = false }) => (
+    <div style={{ marginBottom: 14 }}>
+      <label style={{ display: 'block', fontSize: 12, fontWeight: 800, color: '#334155', marginBottom: 6 }}>
+        {label} {required && <span style={{ color: '#ef4444' }}>*</span>}
+      </label>
+      <input
+        type={type}
+        value={value || ''}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        style={{
+          width: '100%', padding: 12, border: '1px solid #e5e7eb', borderRadius: 10,
+          fontSize: 13, fontFamily: 'inherit', boxSizing: 'border-box', outline: 'none',
+          background: '#fff',
+        }}
+      />
     </div>
   );
-}
-        <button
-          onClick={() => { if (confirm('تسجيل الخروج؟')) { logout(); router.push('/'); } }}
-          style={{
-            width: '100%', padding: 14, marginTop: 24,
-            background: 'rgba(220,38,38,.1)',
-            color: '#f87171',
-            border: '1px solid rgba(220,38,38,.3)',
-            borderRadius: 14,
-            fontSize: 14, fontWeight: 900,
-            cursor: 'pointer',
-          }}
-          type="button"
-        >
-          🚪 تسجيل الخروج
-        </button>
 
-
-function Field({ label, value, onChange, placeholder, multiline, ltr }) {
   return (
-    <div style={{ marginBottom: 12 }}>
-      <label style={{ display: 'block', fontSize: 12, fontWeight: 800, color: 'var(--n-300)', marginBottom: 6 }}>
-        {label}
-      </label>
-      {multiline ? (
-        <textarea
-          value={value || ''}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder={placeholder}
-          className="new-service-input"
-          style={{ minHeight: 80, fontFamily: 'inherit' }}
-        />
-      ) : (
-        <input
-          type="text"
-          value={value || ''}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder={placeholder}
-          className="new-service-input"
-          style={ltr ? { direction: 'ltr', textAlign: 'right' } : {}}
-        />
-      )}
+    <div style={{ minHeight: '100vh', background: '#f8fafc', paddingBottom: 100 }}>
+      <div style={{ position: 'sticky', top: 0, zIndex: 10, background: '#0f4d3a', padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
+        <Link href="/merchant" style={{ color: '#fff', textDecoration: 'none', fontSize: 20, width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,.1)', borderRadius: '50%' }}>→</Link>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 16, fontWeight: 900, color: '#fff' }}>⚙️ إعدادات المتجر</div>
+        </div>
+      </div>
+
+      <div style={{ padding: 16 }}>
+        {/* Logo & Cover */}
+        <div style={{ background: '#fff', borderRadius: 16, padding: 16, marginBottom: 12, border: '1px solid #e5e7eb' }}>
+          <div style={{ fontSize: 14, fontWeight: 900, marginBottom: 12, color: '#0f172a' }}>🎨 الهوية البصرية</div>
+          <div style={{ marginBottom: 12 }}>
+            <label style={{ display: 'block', fontSize: 12, fontWeight: 800, color: '#334155', marginBottom: 6 }}>شعار المتجر</label>
+            <ImageUploader
+              label="ارفع شعار المتجر"
+              folder="logos"
+              value={form.logo_url}
+              onUpload={(url) => update('logo_url', url)}
+              aspect="1/1"
+            />
+          </div>
+          <div>
+            <label style={{ display: 'block', fontSize: 12, fontWeight: 800, color: '#334155', marginBottom: 6 }}>صورة الغلاف</label>
+            <ImageUploader
+              label="ارفع صورة الغلاف"
+              folder="covers"
+              value={form.cover_url}
+              onUpload={(url) => update('cover_url', url)}
+              aspect="16/9"
+            />
+          </div>
+        </div>
+
+        {/* Basic Info */}
+        <div style={{ background: '#fff', borderRadius: 16, padding: 16, marginBottom: 12, border: '1px solid #e5e7eb' }}>
+          <div style={{ fontSize: 14, fontWeight: 900, marginBottom: 12, color: '#0f172a' }}>📝 معلومات أساسية</div>
+          <F label="اسم المتجر" value={form.display_name} onChange={(v) => update('display_name', v)} required placeholder="اسم متجرك" />
+          <F label="نبذة عن المتجر" value={form.bio} onChange={(v) => update('bio', v)} placeholder="وصف قصير عن متجرك" />
+          <F label="ساعات العمل" value={form.opening_hours} onChange={(v) => update('opening_hours', v)} placeholder="مثال: 9 صباحاً - 10 مساءً" />
+        </div>
+
+        {/* Contact */}
+        <div style={{ background: '#fff', borderRadius: 16, padding: 16, marginBottom: 12, border: '1px solid #e5e7eb' }}>
+          <div style={{ fontSize: 14, fontWeight: 900, marginBottom: 12, color: '#0f172a' }}>📞 معلومات التواصل</div>
+          <F label="رقم الهاتف" value={form.phone} onChange={(v) => update('phone', v)} type="tel" required placeholder="09XXXXXXXX" />
+          <F label="WhatsApp" value={form.whatsapp} onChange={(v) => update('whatsapp', v)} type="tel" placeholder="09XXXXXXXX" />
+          <F label="البريد الإلكتروني" value={form.email} onChange={(v) => update('email', v)} type="email" placeholder="email@example.com" />
+        </div>
+
+        {/* Location */}
+        <div style={{ background: '#fff', borderRadius: 16, padding: 16, marginBottom: 12, border: '1px solid #e5e7eb' }}>
+          <div style={{ fontSize: 14, fontWeight: 900, marginBottom: 12, color: '#0f172a' }}>📍 الموقع</div>
+          <F label="المحافظة" value={form.governorate} onChange={(v) => update('governorate', v)} placeholder="إدلب" />
+          <F label="المدينة" value={form.city} onChange={(v) => update('city', v)} placeholder="كنصفرة" />
+          <F label="العنوان" value={form.address} onChange={(v) => update('address', v)} placeholder="الحي / الشارع" />
+        </div>
+
+        {/* Social */}
+        <div style={{ background: '#fff', borderRadius: 16, padding: 16, marginBottom: 12, border: '1px solid #e5e7eb' }}>
+          <div style={{ fontSize: 14, fontWeight: 900, marginBottom: 12, color: '#0f172a' }}>📱 حسابات التواصل</div>
+          <F label="Facebook" value={form.facebook_url} onChange={(v) => update('facebook_url', v)} placeholder="https://facebook.com/..." />
+          <F label="Instagram" value={form.instagram_url} onChange={(v) => update('instagram_url', v)} placeholder="https://instagram.com/..." />
+        </div>
+      </div>
+
+      {/* Save Button */}
+      <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, padding: 16, background: '#fff', borderTop: '1px solid #e5e7eb', boxShadow: '0 -4px 12px rgba(0,0,0,.05)' }}>
+        <button onClick={save} disabled={saving} style={{
+          width: '100%', padding: 16, background: saving ? '#94a3b8' : 'linear-gradient(135deg,#10b981,#059669)',
+          color: '#fff', border: 'none', borderRadius: 12, fontSize: 15, fontWeight: 900,
+          cursor: saving ? 'not-allowed' : 'pointer', fontFamily: 'inherit',
+          boxShadow: '0 4px 12px rgba(16,185,129,.3)',
+        }}>
+          {saving ? '... جارٍ الحفظ' : '✓ حفظ الإعدادات'}
+        </button>
+      </div>
     </div>
   );
 }

@@ -1,122 +1,114 @@
 'use client';
-
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
-import { getSession } from '@/lib/auth';
+import { useCurrentUser } from '@/lib/useCurrentUser';
+import { useToast } from '@/components/Toast';
+import { SkeletonList } from '@/components/Skeleton';
+import EmptyState from '@/components/EmptyState';
 
-const STATUS_MAP = {
-  pending:  { label: 'قيد المراجعة', badge: 'warn',   icon: '⏳' },
-  approved: { label: 'منشور',        badge: 'active', icon: '✅' },
-  auto:     { label: 'منشور تلقائي',  badge: 'active', icon: '🚀' },
-  rejected: { label: 'مرفوض',        badge: 'danger', icon: '❌' },
-};
-
-export default function MerchantModeration() {
+export default function ModerationPage() {
   const router = useRouter();
-  const [entity, setEntity] = useState(null);
+  const { user, loading: userLoading, isOwner, isSectionAdmin, dataOwnerName } = useCurrentUser();
+  const { error: toastError } = useToast();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState('pending');
+  const [tab, setTab] = useState('products');
 
   useEffect(() => {
-    let stored = null;
-    try { stored = getSession(); } catch (e) {}
-    if (!stored) { router.replace('/login'); return; }
-    setEntity(stored);
-    load(stored);
-  }, [router]);
+    if (userLoading) return;
+    if (!user) { router.replace('/login'); return; }
+    load();
+  }, [user, userLoading, tab]);
 
-  async function load(ent) {
-    if (!supabase) { setLoading(false); return; }
-    const { data } = await supabase
-      .from('services')
-      .select('*')
-      .eq('provider_name', ent.display_name)
-      .order('created_at', { ascending: false });
-    setItems(Array.isArray(data) ? data : []);
+  async function load() {
+    if (!supabase || !dataOwnerName) { setLoading(false); return; }
+    setLoading(true);
+    try {
+      const table = tab === 'products' ? 'products' : tab === 'services' ? 'services' : 'announcements';
+      let q = supabase.from(table).select('*').order('created_at', { ascending: false });
+      
+      // جلب العناصر المعلقة
+      q = q.or('moderation_status.eq.pending,moderation_status.eq.draft');
+      
+      if (!isSectionAdmin) {
+        if (tab === 'announcements') {
+          q = q.eq('provider_name', dataOwnerName);
+        } else {
+          q = q.eq('provider_name', dataOwnerName);
+        }
+      }
+      
+      const { data, error } = await q;
+      if (error) throw error;
+      setItems(Array.isArray(data) ? data : []);
+    } catch (e) { 
+      toastError('تعذّر التحميل');
+      setItems([]);
+    }
     setLoading(false);
   }
 
-  const counts = {
-    pending:  items.filter((i) => i.moderation_status === 'pending').length,
-    approved: items.filter((i) => i.moderation_status === 'approved' || !i.moderation_status).length,
-    rejected: items.filter((i) => i.moderation_status === 'rejected').length,
-  };
-
-  const filtered = tab === 'all' ? items : items.filter((i) => {
-    if (tab === 'pending') return i.moderation_status === 'pending';
-    if (tab === 'approved') return i.moderation_status === 'approved' || !i.moderation_status;
-    if (tab === 'rejected') return i.moderation_status === 'rejected';
-    return true;
-  });
+  if (userLoading || loading) {
+    return <div style={{ padding: 16, background: '#f8fafc', minHeight: '100vh' }}><SkeletonList count={3} /></div>;
+  }
 
   return (
-    <div className="sect-page" style={{ paddingBottom: 100 }}>
-      <div className="inv-header">
-        <Link href="/merchant" className="inv-back">→</Link>
-        <span className="inv-title">⏳ قيد المراجعة</span>
-        <span className="inv-count">{items.length}</span>
-      </div>
-
-      <div className="chips-scroll" style={{ padding: '12px 16px' }}>
-        <button className={`chip ${tab === 'pending' ? 'active' : ''}`} onClick={() => setTab('pending')} type="button">
-          ⏳ قيد المراجعة ({counts.pending})
-        </button>
-        <button className={`chip ${tab === 'approved' ? 'active' : ''}`} onClick={() => setTab('approved')} type="button">
-          ✅ منشور ({counts.approved})
-        </button>
-        <button className={`chip ${tab === 'rejected' ? 'active' : ''}`} onClick={() => setTab('rejected')} type="button">
-          ❌ مرفوض ({counts.rejected})
-        </button>
-        <button className={`chip ${tab === 'all' ? 'active' : ''}`} onClick={() => setTab('all')} type="button">
-          الكل ({items.length})
-        </button>
-      </div>
-
-      {loading ? (
-        <div className="sect-empty"><span className="em">⏳</span><p>جارٍ التحميل...</p></div>
-      ) : filtered.length === 0 ? (
-        <div className="sect-empty">
-          <span className="em">📋</span>
-          <p>{tab === 'pending' ? 'لا يوجد محتوى قيد المراجعة' : 'لا يوجد محتوى'}</p>
+    <div style={{ minHeight: '100vh', background: '#f8fafc', paddingBottom: 40 }}>
+      <div style={{ position: 'sticky', top: 0, zIndex: 10, background: '#0f4d3a', padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
+        <Link href="/merchant" style={{ color: '#fff', textDecoration: 'none', fontSize: 20, width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,.1)', borderRadius: '50%' }}>→</Link>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 16, fontWeight: 900, color: '#fff' }}>⏳ قيد المراجعة</div>
+          <div style={{ fontSize: 11, color: 'rgba(255,255,255,.7)', marginTop: 2 }}>{items.length} عنصر</div>
         </div>
-      ) : (
-        <div style={{ padding: 16 }}>
-          {filtered.map((item) => {
-            const status = STATUS_MAP[item.moderation_status] || STATUS_MAP.approved;
-            return (
-              <div key={item.id} className="debt-card" style={{ borderRightColor: '#0f4d3a', marginBottom: 10 }}>
-                <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 14, fontWeight: 900, marginBottom: 4 }}>{item.title}</div>
-                    {item.description && (
-                      <div style={{ fontSize: 11.5, color: 'var(--n-500)', lineHeight: 1.6, marginBottom: 6 }}>
-                        {item.description}
-                      </div>
-                    )}
-                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-                      <span className={`admin-badge ${status.badge}`} style={{ fontSize: 10.5 }}>
-                        {status.icon} {status.label}
-                      </span>
-                      <span style={{ fontSize: 10, color: 'var(--n-400)' }}>
-                        {new Date(item.created_at).toLocaleDateString('ar-EG', { month: 'short', day: 'numeric' })}
-                      </span>
-                    </div>
-                  </div>
-                </div>
+      </div>
 
-                {item.moderation_status === 'rejected' && item.moderation_notes && (
-                  <div style={{ marginTop: 10, padding: 10, background: 'rgba(220,38,38,.1)', borderRadius: 8, fontSize: 11.5 }}>
-                    ❌ سبب الرفض: {item.moderation_notes}
+      <div style={{ padding: 16 }}>
+        <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+          {[
+            { k: 'products', l: '📦 منتجات' },
+            { k: 'services', l: '🛠️ خدمات' },
+            { k: 'announcements', l: '📢 إعلانات' },
+          ].map(t => (
+            <button key={t.k} onClick={() => setTab(t.k)} style={{
+              flex: 1, padding: 12, background: tab === t.k ? '#0f4d3a' : '#fff',
+              color: tab === t.k ? '#fff' : '#64748b',
+              border: `1px solid ${tab === t.k ? '#0f4d3a' : '#e5e7eb'}`,
+              borderRadius: 10, fontSize: 12, fontWeight: 900, cursor: 'pointer', fontFamily: 'inherit',
+            }}>{t.l}</button>
+          ))}
+        </div>
+
+        <div style={{ background: 'rgba(251,191,36,.1)', border: '1px solid rgba(251,191,36,.3)', borderRadius: 12, padding: 12, marginBottom: 16, fontSize: 12, color: '#92400e', fontWeight: 700, textAlign: 'center' }}>
+          ⏳ هذه العناصر بانتظار موافقة الإدارة قبل نشرها
+        </div>
+      </div>
+
+      <div style={{ padding: '0 16px' }}>
+        {items.length === 0 ? (
+          <EmptyState icon="✅" title="لا يوجد قيد المراجعة" description="كل عناصرك منشورة" />
+        ) : items.map((it) => (
+          <div key={it.id} style={{ background: '#fff', border: '1px solid #fbbf24', borderRadius: 14, padding: 14, marginBottom: 10 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 14, fontWeight: 900, color: '#0f172a', marginBottom: 4 }}>{it.title || it.name || '—'}</div>
+                {it.description && (
+                  <div style={{ fontSize: 11.5, color: '#64748b', lineHeight: 1.6, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                    {it.description}
                   </div>
                 )}
               </div>
-            );
-          })}
-        </div>
-      )}
+              <div style={{ background: 'rgba(251,191,36,.15)', color: '#92400e', padding: '4px 10px', borderRadius: 8, fontSize: 10.5, fontWeight: 900 }}>
+                ⏳ معلّق
+              </div>
+            </div>
+            <div style={{ fontSize: 10.5, color: '#94a3b8', marginTop: 8 }}>
+              📅 {new Date(it.created_at).toLocaleString('ar-EG')}
+            </div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

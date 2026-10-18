@@ -121,18 +121,32 @@ export async function registerEntity({ phone, password, display_name, entity_typ
 }
 
 // ═══ تسجيل الدخول ═══
-export async function loginEntity({ phone, password }) {
+export async function loginEntity({ phone, username, password }) {
   if (!supabase) throw new Error('قاعدة البيانات غير متصلة');
 
-  const cleanPhone = phone.replace(/[^0-9]/g, '');
-  if (!cleanPhone) throw new Error('رقم الهاتف مطلوب');
   if (!password) throw new Error('كلمة المرور مطلوبة');
+  if (!phone && !username) throw new Error('اسم المستخدم أو رقم الهاتف مطلوب');
 
-  const { data: entity, error } = await supabase
-    .from('entities')
-    .select('*')
-    .eq('phone', cleanPhone)
-    .maybeSingle();
+  let query = supabase.from('entities').select('*');
+  let searchValue = null;
+  let searchField = null;
+
+  // 1) لو أدخل username (يبدأ بحرف أو abode)
+  if (username && username.trim()) {
+    query = query.eq('username', username.trim());
+    searchValue = username.trim();
+    searchField = 'username';
+  }
+  // 2) لو أدخل phone (أرقام فقط)
+  else if (phone) {
+    const cleanPhone = phone.replace(/[^0-9]/g, '');
+    if (!cleanPhone) throw new Error('رقم الهاتف غير صالح');
+    query = query.eq('phone', cleanPhone);
+    searchValue = cleanPhone;
+    searchField = 'phone';
+  }
+
+  const { data: entity, error } = await query.maybeSingle();
 
   if (error || !entity) throw new Error('رقم الهاتف أو كلمة المرور غير صحيحة');
   if (!entity.is_active) {
@@ -156,6 +170,7 @@ function saveSession(entity) {
   if (typeof window === 'undefined') return;
   
   const session = {
+    type: 'owner',
     id: entity.id,
     username: entity.username,
     display_name: entity.display_name,
@@ -163,6 +178,7 @@ function saveSession(entity) {
     phone: entity.phone,
     is_trusted: entity.is_trusted,
     is_verified: entity.is_verified,
+    is_section_admin: entity.is_section_admin === true,
     logo_url: entity.logo_url,
     cover_url: entity.cover_url,
     bio: entity.bio,
@@ -206,4 +222,59 @@ export function updateSession(patch) {
   localStorage.setItem(STORAGE_KEY, json);
   localStorage.setItem(LEGACY_KEY, json);
   window.dispatchEvent(new Event('sanad-auth-change'));
+}
+
+
+// ═══ تسجيل دخول الموظف ═══
+export async function loginEmployee({ phone, password }) {
+  if (!supabase) throw new Error('قاعدة البيانات غير متصلة');
+  if (!phone || !password) throw new Error('الهاتف وكلمة المرور مطلوبان');
+
+  const cleanPhone = phone.replace(/[^0-9]/g, '');
+
+  const { data: employee, error } = await supabase
+    .from('employees')
+    .select('*')
+    .eq('phone', cleanPhone)
+    .maybeSingle();
+
+  if (error || !employee) throw new Error('رقم الهاتف أو كلمة المرور غير صحيحة');
+  if (!employee.is_active) throw new Error('الحساب موقوف — تواصل مع صاحب المتجر');
+  if (!employee.password_hash) throw new Error('لم يتم تعيين كلمة مرور لهذا الحساب');
+
+  const password_hash = await hashPassword(password);
+  if (employee.password_hash !== password_hash) {
+    throw new Error('رقم الهاتف أو كلمة المرور غير صحيحة');
+  }
+
+  const { data: entity } = await supabase
+    .from('entities')
+    .select('*')
+    .eq('display_name', employee.entity_name)
+    .maybeSingle();
+
+  if (!entity) throw new Error('المتجر غير موجود');
+  if (!entity.is_active) throw new Error('المتجر موقوف');
+
+  const session = {
+    type: 'employee',
+    id: employee.id,
+    full_name: employee.full_name,
+    phone: employee.phone,
+    role: employee.role,
+    permissions: Array.isArray(employee.permissions) ? employee.permissions : [],
+    entity_id: entity.id,
+    entity_name: entity.display_name,
+    entity_type: entity.entity_type,
+    is_trusted: entity.is_trusted,
+    logged_at: new Date().toISOString(),
+    persistent: true,
+  };
+
+  const json = JSON.stringify(session);
+  localStorage.setItem(STORAGE_KEY, json);
+  localStorage.setItem(LEGACY_KEY, json);
+  window.dispatchEvent(new Event('sanad-auth-change'));
+
+  return { employee, entity };
 }

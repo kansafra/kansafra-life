@@ -1,0 +1,213 @@
+'use client';
+import { useState, useEffect, useMemo, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import Link from 'next/link';
+import { supabase } from '@/lib/supabase';
+import { SkeletonList } from '@/components/Skeleton';
+import EmptyState from '@/components/EmptyState';
+
+function SearchContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const initialQuery = searchParams.get('q') || '';
+
+  const [query, setQuery] = useState(initialQuery);
+  const [results, setResults] = useState({ products: [], services: [], entities: [] });
+  const [loading, setLoading] = useState(false);
+  const [tab, setTab] = useState('all');
+  const [sort, setSort] = useState('relevance');
+
+  useEffect(() => {
+    if (initialQuery) doSearch(initialQuery);
+  }, [initialQuery]);
+
+  async function doSearch(q) {
+    if (!q.trim() || !supabase) { setResults({ products: [], services: [], entities: [] }); return; }
+    setLoading(true);
+    const term = q.trim().toLowerCase();
+    
+    try {
+      // بحث في 3 جداول بالتوازي
+      const [prods, servs, ents] = await Promise.all([
+        supabase.from('products').select('*').eq('is_active', true).or(`title.ilike.%${term}%,description.ilike.%${term}%,category.ilike.%${term}%`).limit(30),
+        supabase.from('services').select('*').eq('status', 'published').or(`title.ilike.%${term}%,description.ilike.%${term}%`).limit(30),
+        supabase.from('entities').select('id, display_name, entity_type, logo_url, bio, city, is_verified').eq('is_active', true).or(`display_name.ilike.%${term}%,bio.ilike.%${term}%,city.ilike.%${term}%`).limit(30),
+      ]);
+      
+      setResults({
+        products: prods.data || [],
+        services: servs.data || [],
+        entities: ents.data || [],
+      });
+    } catch (e) { console.error(e); }
+    setLoading(false);
+  }
+
+  function handleSubmit(e) {
+    e.preventDefault();
+    if (!query.trim()) return;
+    router.push(`/search?q=${encodeURIComponent(query.trim())}`);
+    doSearch(query);
+  }
+
+  const totals = {
+    all: results.products.length + results.services.length + results.entities.length,
+    products: results.products.length,
+    services: results.services.length,
+    entities: results.entities.length,
+  };
+
+  const filteredProducts = useMemo(() => {
+    const list = [...results.products];
+    if (sort === 'price_low') list.sort((a, b) => Number(a.price) - Number(b.price));
+    else if (sort === 'price_high') list.sort((a, b) => Number(b.price) - Number(a.price));
+    return list;
+  }, [results.products, sort]);
+
+  return (
+    <div style={{ minHeight: '100vh', background: '#f8fafc', paddingBottom: 40 }}>
+      {/* Header */}
+      <div style={{ position: 'sticky', top: 0, zIndex: 10, background: '#0f4d3a', padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
+        <Link href="/" style={{ color: '#fff', textDecoration: 'none', fontSize: 20, width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,.1)', borderRadius: '50%' }}>→</Link>
+        <div style={{ flex: 1, color: '#fff', fontSize: 16, fontWeight: 900 }}>🔍 البحث</div>
+      </div>
+
+      {/* Search Box */}
+      <div style={{ padding: 16, background: '#fff', borderBottom: '1px solid #e5e7eb' }}>
+        <form onSubmit={handleSubmit} style={{ display: 'flex', gap: 8 }}>
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', background: '#f8fafc', border: '1px solid #e5e7eb', borderRadius: 12, padding: '4px 4px 4px 14px' }}>
+            <span style={{ fontSize: 18, color: '#94a3b8' }}>⌕</span>
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="ابحث عن منتج، خدمة، متجر..."
+              autoFocus
+              style={{ flex: 1, padding: 12, background: 'none', border: 'none', outline: 'none', fontSize: 14, fontFamily: 'inherit', textAlign: 'right' }}
+            />
+          </div>
+          <button type="submit" style={{ padding: '0 20px', background: 'linear-gradient(135deg,#10b981,#059669)', color: '#fff', border: 'none', borderRadius: 12, fontWeight: 900, cursor: 'pointer', fontFamily: 'inherit', fontSize: 14 }}>بحث</button>
+        </form>
+      </div>
+
+      {/* Loading */}
+      {loading && (
+        <div style={{ padding: 16 }}>
+          <SkeletonList count={4} />
+        </div>
+      )}
+
+      {/* Results */}
+      {!loading && initialQuery && totals.all === 0 && (
+        <div style={{ padding: 16, marginTop: 20 }}>
+          <EmptyState icon="🔍" title="لا توجد نتائج" description={`لم نجد نتائج لـ "${initialQuery}"`} actionLabel="← الرئيسية" actionHref="/" />
+        </div>
+      )}
+
+      {!loading && totals.all > 0 && (
+        <>
+          {/* Tabs */}
+          <div style={{ padding: '0 16px 12px', background: '#fff', borderBottom: '1px solid #e5e7eb' }}>
+            <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 4 }}>
+              {[
+                ['all', `الكل (${totals.all})`],
+                ['products', `📦 منتجات (${totals.products})`],
+                ['services', `🛠️ خدمات (${totals.services})`],
+                ['entities', `🏪 متاجر (${totals.entities})`],
+              ].map(([k, l]) => (
+                <button key={k} onClick={() => setTab(k)} style={{
+                  padding: '8px 14px', background: tab === k ? '#0f4d3a' : '#f1f5f9',
+                  color: tab === k ? '#fff' : '#64748b',
+                  border: 'none', borderRadius: 10, fontSize: 11.5, fontWeight: 800,
+                  cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'inherit',
+                }}>{l}</button>
+              ))}
+            </div>
+          </div>
+
+          <div style={{ padding: 16 }}>
+            {/* Products */}
+            {(tab === 'all' || tab === 'products') && results.products.length > 0 && (
+              <div style={{ marginBottom: 24 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                  <h2 style={{ fontSize: 16, fontWeight: 900, color: '#0f172a' }}>📦 منتجات</h2>
+                  {tab === 'products' && (
+                    <select value={sort} onChange={(e) => setSort(e.target.value)} style={{ padding: '6px 10px', border: '1px solid #e5e7eb', borderRadius: 8, fontSize: 11, fontFamily: 'inherit', background: '#fff' }}>
+                      <option value="relevance">الأكثر صلة</option>
+                      <option value="price_low">السعر: الأقل</option>
+                      <option value="price_high">السعر: الأعلى</option>
+                    </select>
+                  )}
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 10 }}>
+                  {(tab === 'all' ? results.products.slice(0, 6) : filteredProducts).map(p => {
+                    const price = Number(p.price) || 0;
+                    const disc = Number(p.discount_percent) || 0;
+                    const finalPrice = Math.round(price - (price * disc / 100));
+                    return (
+                      <Link key={p.id} href={`/product/${p.id}`} style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, overflow: 'hidden', textDecoration: 'none', color: 'inherit' }}>
+                        {p.image_url ? <img src={p.image_url} alt="" loading="lazy" style={{ width: '100%', height: 100, objectFit: 'cover' }} /> : <div style={{ height: 100, background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28 }}>📦</div>}
+                        <div style={{ padding: 10 }}>
+                          <div style={{ fontSize: 12, fontWeight: 900, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: 4 }}>{p.title}</div>
+                          <div style={{ fontSize: 13, fontWeight: 900, color: '#0f4d3a' }}>{finalPrice.toLocaleString()} <span style={{ fontSize: 9, color: '#64748b' }}>{p.currency || 'SYP'}</span></div>
+                        </div>
+                      </Link>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Services */}
+            {(tab === 'all' || tab === 'services') && results.services.length > 0 && (
+              <div style={{ marginBottom: 24 }}>
+                <h2 style={{ fontSize: 16, fontWeight: 900, color: '#0f172a', marginBottom: 12 }}>🛠️ خدمات</h2>
+                {(tab === 'all' ? results.services.slice(0, 5) : results.services).map(s => (
+                  <Link key={s.id} href={`/service/${s.id}`} style={{ display: 'flex', gap: 12, background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 12, marginBottom: 8, textDecoration: 'none', color: 'inherit' }}>
+                    {s.image_url ? <img src={s.image_url} alt="" style={{ width: 60, height: 60, borderRadius: 10, objectFit: 'cover', flexShrink: 0 }} /> : <div style={{ width: 60, height: 60, borderRadius: 10, background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 26, flexShrink: 0 }}>🛠️</div>}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 900, color: '#0f172a', marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.title}</div>
+                      <div style={{ fontSize: 11, color: '#64748b' }}>🏪 {s.provider_name}</div>
+                      {s.phone && <div style={{ fontSize: 10.5, color: '#94a3b8', direction: 'ltr', textAlign: 'right', marginTop: 2 }}>{s.phone}</div>}
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            )}
+
+            {/* Entities / Stores */}
+            {(tab === 'all' || tab === 'entities') && results.entities.length > 0 && (
+              <div>
+                <h2 style={{ fontSize: 16, fontWeight: 900, color: '#0f172a', marginBottom: 12 }}>🏪 متاجر</h2>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 10 }}>
+                  {(tab === 'all' ? results.entities.slice(0, 6) : results.entities).map(e => (
+                    <Link key={e.id} href={`/store/${encodeURIComponent(e.display_name)}`} style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 12, textDecoration: 'none', color: 'inherit', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 6 }}>
+                      {e.logo_url ? <img src={e.logo_url} alt="" style={{ width: 48, height: 48, borderRadius: 12, objectFit: 'cover' }} /> : <div style={{ width: 48, height: 48, borderRadius: 12, background: 'linear-gradient(135deg,#0f4d3a,#075640)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22 }}>🏪</div>}
+                      <div style={{ fontSize: 12, fontWeight: 900, color: '#0f172a', textAlign: 'center' }}>{e.is_verified && '✅ '}{e.display_name}</div>
+                      {e.city && <div style={{ fontSize: 10, color: '#64748b' }}>📍 {e.city}</div>}
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      {!loading && !initialQuery && (
+        <div style={{ padding: 60, textAlign: 'center' }}>
+          <div style={{ fontSize: 64, marginBottom: 16, opacity: 0.3 }}>🔍</div>
+          <div style={{ fontSize: 14, color: '#64748b', fontWeight: 700 }}>اكتب كلمة للبحث</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function SearchPage() {
+  return (
+    <Suspense fallback={<div style={{ padding: 80, textAlign: 'center' }}>⏳</div>}>
+      <SearchContent />
+    </Suspense>
+  );
+}

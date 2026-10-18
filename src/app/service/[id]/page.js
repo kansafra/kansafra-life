@@ -1,269 +1,171 @@
 'use client';
-
-
-import { useEffect, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useState, useEffect } from 'react';
+import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
+import { useToast } from '@/components/Toast';
+import Reviews from '@/components/Reviews';
 
-const iconFor = (v = '') => {
-  const s = String(v).toLowerCase();
-  if (/food|restaurant|مطعم|طعام/.test(s)) return '🍽️';
-  if (/shop|store|market|متجر|سوق/.test(s)) return '🏪';
-  if (/health|clinic|صحة|طبي|عياد|صيدل|أسنان/.test(s)) return '❤️';
-  if (/edu|school|تعليم|مدرس|مدرسة/.test(s)) return '🎓';
-  if (/transport|car|نقل|سيار|توصيل/.test(s)) return '🚚';
-  if (/home|house|منزل|كهرب|سباك|صيانة/.test(s)) return '🏠';
-  if (/craft|service|حرف|مهن|نجار|باطون|لياسة/.test(s)) return '🛠️';
-  if (/mosque|جامع|مسجد/.test(s)) return '🕌';
-  if (/charity|خير|تبرع|جمعية/.test(s)) return '🎁';
-  if (/gov|بلدية|مجلس/.test(s)) return '🏢';
-  return '✦';
-};
-
-export default function ServiceDetail() {
-  const params = useParams();
+export default function ServiceDetailPage() {
   const router = useRouter();
-  const id = params?.id;
-
+  const params = useParams();
+  const { success, error: tE } = useToast();
   const [service, setService] = useState(null);
-  const [category, setCategory] = useState(null);
+  const [store, setStore] = useState(null);
   const [similar, setSimilar] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    let alive = true;
-    async function load() {
-      if (!supabase || !id) { if (alive) setLoading(false); return; }
-      try {
-        const { data } = await supabase.from('services').select('*').eq('id', id).single();
-        if (!alive) return;
-        if (!data) { setLoading(false); return; }
-        setService(data);
-        if (data.category_id) {
-          const [catRes, simRes] = await Promise.all([
-            supabase.from('service_categories').select('*').eq('id', data.category_id).single(),
-            supabase.from('services').select('*').eq('category_id', data.category_id).neq('id', id).limit(6),
-          ]);
-          if (!alive) return;
-          if (catRes.data) setCategory(catRes.data);
-          if (Array.isArray(simRes.data)) setSimilar(simRes.data);
-        }
-      } catch (e) {
-        console.error('Detail load error:', e);
-      } finally {
-        if (alive) setLoading(false);
-      }
-    }
-    load();
-    return () => { alive = false; };
-  }, [id]);
+    if (params?.id) load(params.id);
+  }, [params?.id]);
 
-  if (loading) {
-    return (
-      <div className="detail-page">
-        <div className="detail-cover">
-          <div className="sk" style={{ height: '100%', borderRadius: 0 }} />
-        </div>
-        <div className="detail-body">
-          <div className="sk detail-sk-line" style={{ width: '60%' }} />
-          <div className="sk detail-sk-line" style={{ width: '40%' }} />
-          <div className="sk detail-sk-line" style={{ width: '80%' }} />
-        </div>
-      </div>
-    );
+  async function load(id) {
+    if (!supabase) { setLoading(false); return; }
+    try {
+      const { data } = await supabase.from('services').select('*').eq('id', id).maybeSingle();
+      if (!data) { setLoading(false); return; }
+      setService(data);
+
+      const { data: ent } = await supabase.from('entities').select('id, display_name, logo_url, phone, whatsapp, city, is_verified, bio').eq('display_name', data.provider_name).maybeSingle();
+      setStore(ent);
+
+      if (data.category_id) {
+        const { data: sim } = await supabase.from('services').select('*').eq('category_id', data.category_id).eq('status', 'published').neq('id', id).limit(6);
+        setSimilar(sim || []);
+      }
+    } catch (e) { console.error(e); }
+    setLoading(false);
   }
+
+  function call() {
+    if (!service?.phone) return;
+    window.location.href = `tel:${service.phone}`;
+  }
+
+  function whatsapp() {
+    if (!service?.phone) return;
+    const clean = String(service.phone).replace(/\D/g, '');
+    const phone = clean.startsWith('0') ? '963' + clean.slice(1) : clean;
+    const msg = `مرحباً، أستفسر عن خدمة "${service.title}"`;
+    window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, '_blank');
+    success('جارٍ فتح واتساب');
+  }
+
+  if (loading) return <div style={{ padding: 80, textAlign: 'center' }}>⏳</div>;
 
   if (!service) {
     return (
-      <div className="detail-notfound">
-        <span className="em">🔍</span>
-        <h2>الخدمة غير موجودة</h2>
-        <p>ربما تم حذفها أو الرابط غير صحيح</p>
-        <Link href="/" className="back-btn">العودة للرئيسية</Link>
+      <div style={{ minHeight: '100vh', background: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+        <div style={{ background: '#fff', borderRadius: 16, padding: 40, textAlign: 'center', maxWidth: 400 }}>
+          <div style={{ fontSize: 56, marginBottom: 16 }}>🔍</div>
+          <div style={{ fontSize: 18, fontWeight: 900, marginBottom: 8 }}>الخدمة غير موجودة</div>
+          <Link href="/" style={{ display: 'inline-block', background: '#0f4d3a', color: '#fff', padding: '10px 20px', borderRadius: 10, textDecoration: 'none', fontWeight: 800, marginTop: 16 }}>← الرئيسية</Link>
+        </div>
       </div>
     );
   }
 
-  const catName = category?.name || 'خدمة محلية';
-  const telLink = service.phone ? `tel:${service.phone}` : null;
-  const waLink = service.phone
-    ? `https://wa.me/${String(service.phone).replace(/[^0-9]/g, '')}?text=${encodeURIComponent('مرحباً، أتواصل معكم عبر تطبيق سند بخصوص: ' + service.title)}`
-    : null;
-
-  const handleShare = async () => {
-    const shareData = {
-      title: service.title,
-      text: service.description || service.title,
-      url: typeof window !== 'undefined' ? window.location.href : '',
-    };
-    if (typeof navigator !== 'undefined' && navigator.share) {
-      try { await navigator.share(shareData); } catch {}
-    } else if (typeof navigator !== 'undefined' && navigator.clipboard) {
-      try {
-        await navigator.clipboard.writeText(shareData.url);
-        alert('تم نسخ الرابط');
-      } catch { alert('تعذّر النسخ'); }
-    }
-  };
-
   return (
-    <div className="detail-page">
-
-      <div className="detail-cover">
-        {service.image_url && <img src={service.image_url} alt={service.title} />}
-        <div className="detail-topbar">
-          <button className="detail-topbar-btn" onClick={() => router.back()} aria-label="رجوع">→</button>
-          <button className="detail-topbar-btn" onClick={handleShare} aria-label="مشاركة">↗</button>
-        </div>
+    <div style={{ minHeight: '100vh', background: '#f8fafc', paddingBottom: 100 }}>
+      {/* Header */}
+      <div style={{ position: 'sticky', top: 0, zIndex: 10, background: '#fff', borderBottom: '1px solid #e5e7eb', padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
+        <button onClick={() => router.back()} style={{ background: '#f1f5f9', border: 'none', width: 40, height: 40, borderRadius: '50%', fontSize: 18, cursor: 'pointer', fontFamily: 'inherit' }}>→</button>
+        <div style={{ flex: 1, fontSize: 15, fontWeight: 900, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{service.title}</div>
       </div>
 
-      <div className="detail-body">
+      {/* Image */}
+      {service.image_url ? (
+        <img src={service.image_url} alt={service.title} style={{ width: '100%', maxHeight: 280, objectFit: 'cover', background: '#f1f5f9' }} />
+      ) : (
+        <div style={{ height: 200, background: 'linear-gradient(135deg,#0f4d3a,#075640)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 72 }}>🛠️</div>
+      )}
 
-        <div className="detail-provider-row">
-          <div className="detail-provider-logo">
-            {service.image_url ? (
-              <img src={service.image_url} alt={service.title} />
-            ) : (
-              <span>{iconFor(service.title)}</span>
-            )}
-          </div>
-          <div className="detail-provider-meta">
-            <h1 className="detail-title">
-              <span>{service.title}</span>
-              <span className="verified-badge">✓</span>
-            </h1>
-            <div className="detail-cat-row">
-              <span className="badge-cat">{catName}</span>
-              {service.is_featured && <span className="badge-feat">⭐ مميز</span>}
-            </div>
-          </div>
-        </div>
+      {/* Info */}
+      <div style={{ background: '#fff', padding: 16, marginBottom: 8 }}>
+        <h1 style={{ fontSize: 20, fontWeight: 900, color: '#0f172a', marginBottom: 12, lineHeight: 1.4 }}>{service.title}</h1>
 
-        <div className="detail-actions">
-          {telLink ? (
-            <a href={telLink} className="detail-action-btn primary">
-              <span className="ico">📞</span>
-              <span>اتصال</span>
-            </a>
-          ) : (
-            <div className="detail-action-btn" style={{ opacity: .4 }}>
-              <span className="ico">📞</span>
-              <span>اتصال</span>
-            </div>
-          )}
-
-          {waLink ? (
-            <a href={waLink} target="_blank" rel="noopener noreferrer" className="detail-action-btn">
-              <span className="ico">💬</span>
-              <span>واتساب</span>
-            </a>
-          ) : (
-            <div className="detail-action-btn" style={{ opacity: .4 }}>
-              <span className="ico">💬</span>
-              <span>واتساب</span>
-            </div>
-          )}
-
-          <button className="detail-action-btn" onClick={handleShare} type="button">
-            <span className="ico">↗</span>
-            <span>مشاركة</span>
-          </button>
-
-          <a
-            href={service.address ? `https://maps.google.com/?q=${encodeURIComponent(service.address)}` : '#'}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="detail-action-btn"
-            style={{ opacity: service.address ? 1 : .4, pointerEvents: service.address ? 'auto' : 'none' }}
-          >
-            <span className="ico">📍</span>
-            <span>الاتجاهات</span>
-          </a>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+          {service.is_featured && <span style={{ background: 'rgba(251,191,36,.15)', color: '#92400e', padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 900 }}>⭐ مميزة</span>}
+          <span style={{ background: 'rgba(16,185,129,.15)', color: '#10b981', padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 800 }}>✓ منشورة</span>
         </div>
 
         {service.description && (
-          <div className="detail-section">
-            <h3 className="detail-section-title">الوصف</h3>
-            <div className="detail-card">
-              <p className="detail-description">{service.description}</p>
-            </div>
+          <div style={{ padding: 12, background: '#f8fafc', borderRadius: 10, marginBottom: 12 }}>
+            <div style={{ fontSize: 13, fontWeight: 900, color: '#0f172a', marginBottom: 6 }}>📝 التفاصيل</div>
+            <p style={{ fontSize: 13, color: '#334155', lineHeight: 1.7, margin: 0 }}>{service.description}</p>
           </div>
         )}
 
-        <div className="detail-section">
-          <h3 className="detail-section-title">معلومات التواصل</h3>
-          <div className="detail-info-grid">
-            {service.provider_name && (
-              <div className="detail-info-item">
-                <div className="detail-info-icon">👤</div>
-                <div className="detail-info-body">
-                  <div className="detail-info-label">مقدم الخدمة</div>
-                  <div className="detail-info-value">{service.provider_name}</div>
-                </div>
-              </div>
-            )}
-            {service.phone && (
-              <a href={`tel:${service.phone}`} className="detail-info-item">
-                <div className="detail-info-icon">📞</div>
-                <div className="detail-info-body">
-                  <div className="detail-info-label">الهاتف</div>
-                  <div className="detail-info-value" style={{ direction: 'ltr', textAlign: 'right' }}>
-                    {service.phone}
-                  </div>
-                </div>
-              </a>
-            )}
-            {service.address && (
-              <a
-                href={`https://maps.google.com/?q=${encodeURIComponent(service.address)}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="detail-info-item"
-              >
-                <div className="detail-info-icon">📍</div>
-                <div className="detail-info-body">
-                  <div className="detail-info-label">العنوان</div>
-                  <div className="detail-info-value">{service.address}</div>
-                </div>
-              </a>
-            )}
-          </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {service.phone && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 10, background: '#f8fafc', borderRadius: 10 }}>
+              <span style={{ fontSize: 18 }}>📞</span>
+              <span style={{ fontSize: 13, fontWeight: 800, direction: 'ltr', color: '#0f172a' }}>{service.phone}</span>
+            </div>
+          )}
+          {service.address && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 10, background: '#f8fafc', borderRadius: 10 }}>
+              <span style={{ fontSize: 18 }}>📍</span>
+              <span style={{ fontSize: 13, color: '#334155' }}>{service.address}</span>
+            </div>
+          )}
+          {service.file_url && (
+            <a href={service.file_url} target="_blank" rel="noopener" style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 10, background: 'rgba(59,130,246,.1)', borderRadius: 10, textDecoration: 'none', color: '#3b82f6' }}>
+              <span style={{ fontSize: 18 }}>📎</span>
+              <span style={{ fontSize: 13, fontWeight: 800 }}>تحميل الملف المرفق</span>
+            </a>
+          )}
         </div>
-
-        {similar.length > 0 && (
-          <div className="detail-section">
-            <h3 className="detail-section-title">خدمات مشابهة</h3>
-            <div className="similar-scroll">
-              {similar.map((s) => (
-                <Link key={s.id} href={`/service/${s.id}`} className="similar-card">
-                  <div className="similar-logo">{iconFor(s.title)}</div>
-                  <div className="similar-title">{s.title}</div>
-                  <div className="similar-desc">{s.description || s.address || catName}</div>
-                </Link>
-              ))}
-            </div>
-          </div>
-        )}
       </div>
 
-      <div className="detail-sticky">
-        {telLink && (
-          <a href={telLink} className="detail-sticky-btn outline" aria-label="اتصال">📞</a>
-        )}
-        {waLink ? (
-          <a href={waLink} target="_blank" rel="noopener noreferrer" className="detail-sticky-btn solid">
-            💬 تواصل عبر واتساب
-          </a>
-        ) : telLink ? (
-          <a href={telLink} className="detail-sticky-btn solid">
-            📞 اتصل الآن
-          </a>
-        ) : (
-          <div className="detail-sticky-btn solid" style={{ opacity: .5, pointerEvents: 'none' }}>
-            لا يوجد رقم تواصل
+      {/* Store Card */}
+      {store && (
+        <Link href={`/store/${encodeURIComponent(store.display_name)}`} style={{ display: 'block', background: '#fff', padding: 16, marginBottom: 8, textDecoration: 'none', color: 'inherit' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            {store.logo_url ? (
+              <img src={store.logo_url} alt="" style={{ width: 56, height: 56, borderRadius: 12, objectFit: 'cover' }} />
+            ) : (
+              <div style={{ width: 56, height: 56, borderRadius: 12, background: 'linear-gradient(135deg,#0f4d3a,#075640)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 26 }}>🏪</div>
+            )}
+            <div style={{ flex: 1 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <span style={{ fontSize: 14, fontWeight: 900 }}>{store.display_name}</span>
+                {store.is_verified && <span style={{ fontSize: 12 }}>✅</span>}
+              </div>
+              {store.city && <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>📍 {store.city}</div>}
+            </div>
+            <div style={{ fontSize: 12, color: '#10b981', fontWeight: 900 }}>زيارة ←</div>
           </div>
-        )}
+        </Link>
+      )}
+
+      {/* Reviews */}
+      <div style={{ background: '#fff', padding: 16, marginBottom: 8 }}>
+        <Reviews targetType="service" targetId={service.id} targetName={service.title} />
+      </div>
+
+      {/* Similar Services */}
+      {similar.length > 0 && (
+        <div style={{ background: '#fff', padding: 16 }}>
+          <div style={{ fontSize: 15, fontWeight: 900, marginBottom: 12 }}>🛠️ خدمات مشابهة</div>
+          <div style={{ display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 4 }}>
+            {similar.map(s => (
+              <Link key={s.id} href={`/service/${s.id}`} style={{ flexShrink: 0, width: 160, background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, overflow: 'hidden', textDecoration: 'none', color: 'inherit' }}>
+                {s.image_url ? <img src={s.image_url} alt="" style={{ width: '100%', height: 100, objectFit: 'cover' }} /> : <div style={{ height: 100, background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 32 }}>🛠️</div>}
+                <div style={{ padding: 8 }}>
+                  <div style={{ fontSize: 12, fontWeight: 900, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: 4 }}>{s.title}</div>
+                  <div style={{ fontSize: 10, color: '#64748b' }}>🏪 {s.provider_name}</div>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Actions */}
+      <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, background: '#fff', borderTop: '1px solid #e5e7eb', padding: 12, display: 'flex', gap: 10, boxShadow: '0 -4px 12px rgba(0,0,0,.05)' }}>
+        <button onClick={call} disabled={!service.phone} style={{ flex: 1, padding: 14, background: 'rgba(59,130,246,.1)', color: '#3b82f6', border: '1px solid rgba(59,130,246,.3)', borderRadius: 12, fontSize: 13, fontWeight: 900, cursor: service.phone ? 'pointer' : 'not-allowed', fontFamily: 'inherit', opacity: service.phone ? 1 : 0.4 }}>📞 اتصال</button>
+        <button onClick={whatsapp} disabled={!service.phone} style={{ flex: 1, padding: 14, background: 'linear-gradient(135deg,#25d366,#128c7e)', color: '#fff', border: 'none', borderRadius: 12, fontSize: 13, fontWeight: 900, cursor: service.phone ? 'pointer' : 'not-allowed', fontFamily: 'inherit', opacity: service.phone ? 1 : 0.4 }}>📱 واتساب</button>
       </div>
     </div>
   );

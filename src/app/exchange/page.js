@@ -1,259 +1,118 @@
 'use client';
-
-import { useState, useEffect, useMemo } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
-
-const CURRENCIES = {
-  USD: { name: 'دولار أمريكي', flag: '🇺🇸' },
-  EUR: { name: 'يورو', flag: '🇪🇺' },
-  TRY: { name: 'ليرة تركية', flag: '🇹🇷' },
-  SAR: { name: 'ريال سعودي', flag: '🇸🇦' },
-  AED: { name: 'درهم إماراتي', flag: '🇦🇪' },
-  SYP: { name: 'ليرة سورية', flag: '🇸🇾' },
-};
+import { SkeletonList } from '@/components/Skeleton';
+import EmptyState from '@/components/EmptyState';
 
 export default function ExchangePage() {
-  const router = useRouter();
   const [rates, setRates] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [offices, setOffices] = useState([]);
-  const [selectedOffice, setSelectedOffice] = useState('all');
-  const [tab, setTab] = useState('compare'); // compare | calculator
-  const [calc, setCalc] = useState({ amount: 1, from: 'USD', to: 'SYP', office: '' });
-  const [converted, setConverted] = useState(null);
+  const [amount, setAmount] = useState(100);
+  const [fromCurrency, setFromCurrency] = useState('USD');
+  const [toCurrency, setToCurrency] = useState('SYP');
 
-  useEffect(() => {
-    load();
-  }, []);
+  useEffect(() => { load(); }, []);
 
   async function load() {
     if (!supabase) { setLoading(false); return; }
-    const { data } = await supabase
-      .from('exchange_rates')
-      .select('*')
-      .eq('is_active', true)
-      .order('office_name');
-    const list = Array.isArray(data) ? data : [];
-    setRates(list);
-    setOffices([...new Set(list.map((r) => r.office_name))]);
+    try {
+      const { data } = await supabase.from('currency_rates').select('*').eq('is_active', true).order('code');
+      setRates(data || []);
+    } catch (e) { console.error(e); }
     setLoading(false);
   }
 
-  // مقارنة: تجميع حسب العملة
-  const byCurrency = useMemo(() => {
-    const groups = {};
-    rates.forEach((r) => {
-      if (selectedOffice !== 'all' && r.office_name !== selectedOffice) return;
-      if (!groups[r.currency]) groups[r.currency] = [];
-      groups[r.currency].push(r);
-    });
-    return groups;
-  }, [rates, selectedOffice]);
+  function getRate(code, field = 'sell_price') {
+    const r = rates.find(x => x.code === code);
+    return r ? Number(r[field]) || 0 : 0;
+  }
 
-  // حاسبة
-  const computeConversion = () => {
-    const amt = parseFloat(calc.amount) || 0;
-    const sourceRates = rates.filter((r) => r.currency === calc.from);
-    if (!sourceRates.length) { setConverted({ error: 'لا يوجد سعر للعملة المحددة' }); return; }
+  function convert() {
+    if (fromCurrency === toCurrency) return Number(amount);
+    const fromRate = getRate(fromCurrency);
+    const toRate = getRate(toCurrency);
+    if (!fromRate || !toRate) return 0;
+    // تحويل بسيط عبر SYP
+    return (Number(amount) * fromRate) / toRate;
+  }
 
-    let pickedRate;
-    if (calc.office) {
-      pickedRate = sourceRates.find((r) => r.office_name === calc.office);
-    } else {
-      // خد أرخص سعر بيع (أفضل للعميل)
-      pickedRate = sourceRates.reduce((min, r) => (r.sell_price < min.sell_price ? r : min), sourceRates[0]);
-    }
-    if (!pickedRate) { setConverted({ error: 'لم يُوجد سعر' }); return; }
+  const converted = convert();
+  const currencies = rates.length > 0 ? rates : [{ code: 'SYP', name_ar: 'ليرة سورية' }, { code: 'USD', name_ar: 'دولار' }];
 
-    const result = amt * pickedRate.sell_price;
-    setConverted({
-      result,
-      office: pickedRate.office_name,
-      rate: pickedRate.sell_price,
-      from: calc.from,
-      to: 'SYP',
-      amount: amt,
-    });
-  };
+  if (loading) return <div style={{ padding: 16, background: '#f8fafc', minHeight: '100vh' }}><SkeletonList count={3} /></div>;
 
   return (
-    <div className="sect-page" style={{ paddingBottom: 40 }}>
-      <div className="inv-header">
-        <button className="inv-back" onClick={() => router.back()} type="button">→</button>
-        <span className="inv-title">💱 الصرافة والحوالات</span>
-        <span style={{ width: 40 }} />
-      </div>
-
-      {/* ═══ التابات ═══ */}
-      <div className="chips-scroll" style={{ padding: '12px 16px' }}>
-        <button className={`chip ${tab === 'compare' ? 'active' : ''}`} onClick={() => setTab('compare')} type="button">
-          📊 مقارنة الأسعار
-        </button>
-        <button className={`chip ${tab === 'calculator' ? 'active' : ''}`} onClick={() => setTab('calculator')} type="button">
-          🧮 الحاسبة
-        </button>
-      </div>
-
-      {loading ? (
-        <div className="sect-empty"><span className="em">⏳</span></div>
-      ) : tab === 'compare' ? (
-        <>
-          {/* فلتر المكاتب */}
-          <div className="chips-scroll" style={{ padding: '0 16px 12px' }}>
-            <button
-              className={`chip ${selectedOffice === 'all' ? 'active' : ''}`}
-              onClick={() => setSelectedOffice('all')}
-              type="button"
-            >
-              كل المكاتب
-            </button>
-            {offices.map((o) => (
-              <button
-                key={o}
-                className={`chip ${selectedOffice === o ? 'active' : ''}`}
-                onClick={() => setSelectedOffice(o)}
-                type="button"
-              >
-                {o}
-              </button>
-            ))}
+    <div style={{ minHeight: '100vh', background: '#f8fafc', paddingBottom: 80 }}>
+      <div style={{ background: 'linear-gradient(135deg,#ca8a04,#854d0e)', padding: '20px 16px', color: '#fff' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <Link href="/" style={{ color: '#fff', textDecoration: 'none', fontSize: 20, width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,.15)', borderRadius: '50%' }}>→</Link>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 20, fontWeight: 900 }}>💱 الصرافة والحوالات</div>
+            <div style={{ fontSize: 12, opacity: 0.85, marginTop: 2 }}>أسعار العملات اليوم</div>
           </div>
+          <div style={{ fontSize: 40 }}>💱</div>
+        </div>
+      </div>
 
-          {Object.keys(byCurrency).length === 0 ? (
-            <div className="sect-empty">
-              <span className="em">💱</span>
-              <p>لا توجد أسعار صرف متاحة حالياً</p>
+      {/* Calculator */}
+      <div style={{ padding: 16 }}>
+        <div style={{ background: '#fff', borderRadius: 16, padding: 16, border: '1px solid #e5e7eb', marginBottom: 16 }}>
+          <div style={{ fontSize: 14, fontWeight: 900, marginBottom: 12 }}>🧮 حاسبة التحويل</div>
+          <div style={{ marginBottom: 10 }}>
+            <label style={{ display: 'block', fontSize: 11, fontWeight: 800, color: '#334155', marginBottom: 4 }}>المبلغ</label>
+            <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} style={{ width: '100%', padding: 12, border: '1px solid #e5e7eb', borderRadius: 10, fontSize: 16, fontFamily: 'inherit', boxSizing: 'border-box', outline: 'none', fontWeight: 900 }} />
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', gap: 8, alignItems: 'center', marginBottom: 12 }}>
+            <select value={fromCurrency} onChange={(e) => setFromCurrency(e.target.value)} style={{ padding: 12, border: '1px solid #e5e7eb', borderRadius: 10, fontSize: 13, fontFamily: 'inherit', boxSizing: 'border-box', outline: 'none', fontWeight: 800 }}>
+              {currencies.map(c => <option key={c.code} value={c.code}>{c.code} - {c.name_ar}</option>)}
+            </select>
+            <div style={{ fontSize: 20 }}>→</div>
+            <select value={toCurrency} onChange={(e) => setToCurrency(e.target.value)} style={{ padding: 12, border: '1px solid #e5e7eb', borderRadius: 10, fontSize: 13, fontFamily: 'inherit', boxSizing: 'border-box', outline: 'none', fontWeight: 800 }}>
+              {currencies.map(c => <option key={c.code} value={c.code}>{c.code} - {c.name_ar}</option>)}
+            </select>
+          </div>
+          <div style={{ background: 'linear-gradient(135deg,#fef3c7,#fde68a)', borderRadius: 10, padding: 16, textAlign: 'center' }}>
+            <div style={{ fontSize: 11, color: '#92400e', fontWeight: 700, marginBottom: 4 }}>النتيجة</div>
+            <div style={{ fontSize: 24, fontWeight: 900, color: '#ca8a04', direction: 'ltr' }}>
+              {converted.toLocaleString('en-US', { maximumFractionDigits: 2 })} <span style={{ fontSize: 14, color: '#92400e' }}>{toCurrency}</span>
             </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Rates Table */}
+      <div style={{ padding: '0 16px' }}>
+        <div style={{ background: '#fff', borderRadius: 16, border: '1px solid #e5e7eb', overflow: 'hidden' }}>
+          <div style={{ padding: 14, borderBottom: '1px solid #e5e7eb', background: '#f8fafc' }}>
+            <div style={{ fontSize: 14, fontWeight: 900 }}>📊 أسعار الصرف الحالية</div>
+          </div>
+          {rates.length === 0 ? (
+            <EmptyState icon="💱" title="لا توجد أسعار" description="سيتم تحديث الأسعار قريباً" />
           ) : (
-            <div style={{ padding: 16 }}>
-              {Object.entries(byCurrency).map(([code, list]) => {
-                const cur = CURRENCIES[code] || { name: code, flag: '💵' };
-                return (
-                  <div key={code} className="debt-card" style={{ borderRightColor: '#14b8a6', marginBottom: 12 }}>
-                    <div className="debt-customer" style={{ fontSize: 16 }}>
-                      {cur.flag} {cur.name}
-                      <span style={{ fontSize: 11, color: 'var(--n-500)', fontWeight: 700, marginInlineStart: 8 }}>
-                        ({code})
-                      </span>
-                    </div>
-
-                    <div style={{ marginTop: 12 }}>
-                      {list.map((r) => (
-                        <div
-                          key={r.id}
-                          style={{
-                            display: 'flex', alignItems: 'center', gap: 12,
-                            padding: '8px 0', borderTop: '1px solid rgba(255,255,255,.06)'
-                          }}
-                        >
-                          <div style={{ flex: 1 }}>
-                            <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--n-200)' }}>
-                              🏢 {r.office_name}
-                            </div>
-                            <div style={{ fontSize: 10, color: 'var(--n-500)', marginTop: 2 }}>
-                              {new Date(r.updated_at).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}
-                            </div>
-                          </div>
-                          <div style={{ textAlign: 'center' }}>
-                            <div style={{ fontSize: 9, color: 'var(--n-500)', fontWeight: 700 }}>شراء</div>
-                            <div style={{ fontSize: 13, fontWeight: 900, color: '#14b8a6', direction: 'ltr' }}>
-                              {Number(r.buy_price || 0).toLocaleString()}
-                            </div>
-                          </div>
-                          <div style={{ textAlign: 'center' }}>
-                            <div style={{ fontSize: 9, color: 'var(--n-500)', fontWeight: 700 }}>بيع</div>
-                            <div style={{ fontSize: 13, fontWeight: 900, color: '#dc2626', direction: 'ltr' }}>
-                              {Number(r.sell_price || 0).toLocaleString()}
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
+            <div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', padding: 12, fontSize: 11, fontWeight: 900, color: '#64748b', background: '#f8fafc', borderBottom: '1px solid #e5e7eb' }}>
+                <span>العملة</span>
+                <span style={{ textAlign: 'center' }}>شراء</span>
+                <span style={{ textAlign: 'left' }}>بيع</span>
+              </div>
+              {rates.map(r => (
+                <div key={r.id} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', padding: 14, borderBottom: '1px solid #f1f5f9', alignItems: 'center' }}>
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 900, color: '#0f4d3a', direction: 'ltr', textAlign: 'right' }}>{r.code}</div>
+                    <div style={{ fontSize: 10.5, color: '#64748b' }}>{r.name_ar}</div>
                   </div>
-                );
-              })}
-            </div>
-          )}
-        </>
-      ) : (
-        /* ═══ الحاسبة ═══ */
-        <div style={{ padding: 16 }}>
-          <div className="debt-card" style={{ borderRightColor: '#14b8a6', padding: 20 }}>
-            <div className="new-service-field">
-              <label className="new-service-label">المبلغ</label>
-              <input
-                className="new-service-input"
-                type="number"
-                step="any"
-                value={calc.amount}
-                onChange={(e) => setCalc({ ...calc, amount: e.target.value })}
-                style={{ fontSize: 20, fontWeight: 900, textAlign: 'center' }}
-              />
-            </div>
-
-            <div className="new-service-field">
-              <label className="new-service-label">من عملة</label>
-              <select className="new-service-select" value={calc.from} onChange={(e) => setCalc({ ...calc, from: e.target.value })}>
-                {Object.entries(CURRENCIES).map(([code, c]) => (
-                  <option key={code} value={code}>{c.flag} {c.name}</option>
-                ))}
-              </select>
-            </div>
-
-            <div className="new-service-field">
-              <label className="new-service-label">من مكتب (اختياري)</label>
-              <select className="new-service-select" value={calc.office} onChange={(e) => setCalc({ ...calc, office: e.target.value })}>
-                <option value="">🏆 الأفضل سعراً (تلقائي)</option>
-                {offices.map((o) => (<option key={o} value={o}>{o}</option>))}
-              </select>
-            </div>
-
-            <button
-              className="mng-btn primary"
-              onClick={computeConversion}
-              type="button"
-              style={{ width: '100%', marginTop: 12, padding: 14, fontSize: 15 }}
-            >
-              🧮 احسب
-            </button>
-          </div>
-
-          {converted && (
-            <div
-              className="debt-card"
-              style={{
-                borderRightColor: converted.error ? '#dc2626' : '#14b8a6',
-                marginTop: 16, background: converted.error ? 'rgba(220,38,38,.08)' : 'rgba(20,184,166,.08)'
-              }}
-            >
-              {converted.error ? (
-                <div style={{ color: '#dc2626', fontWeight: 800, textAlign: 'center', padding: 20 }}>
-                  ⚠️ {converted.error}
+                  <div style={{ textAlign: 'center', fontSize: 13, fontWeight: 900, color: '#10b981' }}>{Number(r.buy_price || 0).toLocaleString()}</div>
+                  <div style={{ textAlign: 'left', fontSize: 13, fontWeight: 900, color: '#ef4444' }}>{Number(r.sell_price || 0).toLocaleString()}</div>
                 </div>
-              ) : (
-                <div style={{ padding: 20, textAlign: 'center' }}>
-                  <div style={{ fontSize: 12, color: 'var(--n-500)', fontWeight: 700 }}>النتيجة</div>
-                  <div style={{ fontSize: 32, fontWeight: 900, color: '#14b8a6', direction: 'ltr', margin: '8px 0' }}>
-                    {Number(converted.result).toLocaleString()}
-                  </div>
-                  <div style={{ fontSize: 14, color: 'var(--n-300)', fontWeight: 800 }}>
-                    ليرة سورية
-                  </div>
-                  <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px dashed rgba(255,255,255,.1)', fontSize: 11, color: 'var(--n-500)' }}>
-                    <div>🏢 {converted.office}</div>
-                    <div style={{ marginTop: 4 }}>
-                      سعر الصرف: <span style={{ direction: 'ltr', display: 'inline-block', fontWeight: 900 }}>
-                        1 {converted.from} = {converted.rate} SYP
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              )}
+              ))}
             </div>
           )}
         </div>
-      )}
+        <div style={{ marginTop: 12, padding: 12, background: 'rgba(251,191,36,.1)', border: '1px solid rgba(251,191,36,.3)', borderRadius: 10, fontSize: 11, color: '#92400e', fontWeight: 700, lineHeight: 1.7, textAlign: 'center' }}>
+          ⚠️ الأسعار تقريبية وقد تتغير. تحقق من مكتب الصرافة قبل التحويل.
+        </div>
+      </div>
     </div>
   );
 }

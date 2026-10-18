@@ -1,117 +1,139 @@
 'use client';
-
 import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
+import { SkeletonList } from '@/components/Skeleton';
+import EmptyState from '@/components/EmptyState';
 
-export default function MosqueListPage() {
+export default function MosquePage() {
   const router = useRouter();
   const [mosques, setMosques] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [prayerTimes, setPrayerTimes] = useState(null);
 
-  useEffect(() => { load(); loadPrayerTimes(); }, []);
+  useEffect(() => {
+    load();
+    loadPrayerTimes();
+  }, []);
 
   async function load() {
     if (!supabase) { setLoading(false); return; }
-    const { data } = await supabase
-      .from('entities')
-      .select('*')
-      .eq('entity_type', 'mosque')
-      .eq('is_active', true)
-      .order('display_name');
-    setMosques(Array.isArray(data) ? data : []);
+    try {
+      const { data } = await supabase.from('entities')
+        .select('*')
+        .eq('is_active', true)
+        .eq('entity_type', 'mosque')
+        .order('display_name');
+      setMosques(data || []);
+    } catch (e) { console.error(e); }
     setLoading(false);
   }
 
-  function loadPrayerTimes() {
-    // حساب أوقات الصلاة من الصفحة (fallback) — يمكن تحسينه لاحقاً
-    const now = new Date();
-    const hours = now.getHours();
-    setPrayerTimes({
-      fajr: '05:30',
-      dhuhr: '12:30',
-      asr: '15:45',
-      maghrib: '18:15',
-      isha: '19:45',
-    });
+  async function loadPrayerTimes() {
+    try {
+      const res = await fetch('https://api.aladhan.com/v1/timingsByCity?city=Idlib&country=Syria&method=3');
+      const json = await res.json();
+      if (json?.data?.timings) setPrayerTimes(json.data.timings);
+    } catch (e) { console.error(e); }
   }
 
   const filtered = useMemo(() => {
-    return mosques.filter((m) => {
-      if (!search.trim()) return true;
-      const q = search.trim().toLowerCase();
-      const hay = [m.display_name, m.bio, m.phone].filter(Boolean).join(' ').toLowerCase();
-      return hay.includes(q);
-    });
+    if (!search.trim()) return mosques;
+    const q = search.trim().toLowerCase();
+    return mosques.filter(m => (m.display_name || '').toLowerCase().includes(q) || (m.city || '').toLowerCase().includes(q));
   }, [mosques, search]);
 
+  const prayers = prayerTimes ? [
+    { key: 'Fajr', label: 'الفجر', icon: '🌅' },
+    { key: 'Dhuhr', label: 'الظهر', icon: '☀️' },
+    { key: 'Asr', label: 'العصر', icon: '🌤️' },
+    { key: 'Maghrib', label: 'المغرب', icon: '🌇' },
+    { key: 'Isha', label: 'العشاء', icon: '🌙' },
+  ] : [];
+
   return (
-    <div className="sect-page" style={{ paddingBottom: 100 }}>
-      <div className="inv-header">
-        <button className="inv-back" onClick={() => router.back()} type="button">→</button>
-        <span className="inv-title">🕌 المساجد</span>
-        <span className="inv-count">{filtered.length}</span>
-      </div>
-
-      {prayerTimes && (
-        <div style={{ margin: '12px 16px', padding: 16, background: 'linear-gradient(135deg, #0f4d3a, #0a6b50)', borderRadius: 16, color: '#fff' }}>
-          <div style={{ fontSize: 11, opacity: .7, fontWeight: 700, marginBottom: 8 }}>🕌 مواقيت الصلاة</div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8 }}>
-            {[
-              { k: 'fajr', name: 'الفجر' },
-              { k: 'dhuhr', name: 'الظهر' },
-              { k: 'asr', name: 'العصر' },
-              { k: 'maghrib', name: 'المغرب' },
-              { k: 'isha', name: 'العشاء' },
-            ].map((p) => (
-              <div key={p.k} style={{ textAlign: 'center', padding: '8px 4px', background: 'rgba(255,255,255,.08)', borderRadius: 10 }}>
-                <div style={{ fontSize: 10, opacity: .8, marginBottom: 4 }}>{p.name}</div>
-                <div style={{ fontSize: 13, fontWeight: 900, direction: 'ltr' }}>{prayerTimes[p.k]}</div>
-              </div>
-            ))}
+    <div style={{ minHeight: '100vh', background: '#f8fafc', paddingBottom: 80 }}>
+      {/* Header */}
+      <div style={{ background: 'linear-gradient(135deg,#0f4d3a,#075640)', padding: '20px 16px', color: '#fff' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+          <Link href="/" style={{ color: '#fff', textDecoration: 'none', fontSize: 20, width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,.15)', borderRadius: '50%' }}>→</Link>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 20, fontWeight: 900 }}>🕌 المساجد</div>
+            <div style={{ fontSize: 12, opacity: 0.85, marginTop: 2 }}>{filtered.length} مسجد</div>
           </div>
+          <div style={{ fontSize: 40 }}>🕌</div>
         </div>
-      )}
 
-      <div style={{ padding: '0 16px 12px' }}>
-        <div className="search-box">
-          <span className="ico">⌕</span>
-          <input type="text" placeholder="ابحث عن مسجد..." value={search} onChange={(e) => setSearch(e.target.value)} />
-        </div>
+        {/* Prayer Times */}
+        {prayers.length > 0 && (
+          <div style={{ background: 'rgba(255,255,255,.1)', backdropFilter: 'blur(10px)', borderRadius: 14, padding: 12 }}>
+            <div style={{ fontSize: 11, opacity: 0.85, fontWeight: 700, marginBottom: 8, textAlign: 'center' }}>مواقيت الصلاة اليوم — إدلب</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 4 }}>
+              {prayers.map(p => (
+                <div key={p.key} style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: 16 }}>{p.icon}</div>
+                  <div style={{ fontSize: 9, opacity: 0.85, marginTop: 2 }}>{p.label}</div>
+                  <div style={{ fontSize: 11, fontWeight: 900, marginTop: 2, direction: 'ltr' }}>{prayerTimes[p.key]?.slice(0, 5)}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
+      {/* Search */}
+      <div style={{ padding: 16 }}>
+        <input type="text" placeholder="🔍 ابحث باسم المسجد..." value={search} onChange={(e) => setSearch(e.target.value)}
+          style={{ width: '100%', padding: '12px 14px', border: '1px solid #e5e7eb', borderRadius: 12, fontSize: 13, fontFamily: 'inherit', boxSizing: 'border-box', outline: 'none', background: '#fff' }} />
+      </div>
+
+      {/* List */}
       {loading ? (
-        <div className="sect-empty"><span className="em">⏳</span><p>جارٍ التحميل...</p></div>
-      ) : filtered.length === 0 ? (
-        <div className="sect-empty">
-          <span className="em">🕌</span>
-          <p>{search ? 'لا توجد نتائج' : 'لا يوجد مساجد بعد'}</p>
-        </div>
+        <div style={{ padding: 16 }}><SkeletonList count={3} /></div>
       ) : (
-        <div style={{ padding: 16 }}>
-          {filtered.map((m) => (
-            <button
-              key={m.id}
-              onClick={() => router.push('/mosque/' + encodeURIComponent(m.username || m.display_name))}
-              type="button"
-              className="debt-card"
-              style={{ borderRightColor: '#0f4d3a', marginBottom: 10, width: '100%', textAlign: 'right', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 12 }}
-            >
-              <div style={{ width: 54, height: 54, borderRadius: 14, background: 'rgba(15,77,58,.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 26, flexShrink: 0 }}>
-                {m.logo_url ? <img src={m.logo_url} alt="" style={{ width: '100%', height: '100%', borderRadius: 14, objectFit: 'cover' }} /> : '🕌'}
+        <div style={{ padding: '0 16px' }}>
+          {filtered.length === 0 ? (
+            <EmptyState icon="🕌" title={search ? 'لا توجد نتائج' : 'لا توجد مساجد'} description={search ? 'جرّب البحث بكلمات مختلفة' : 'ستظهر المساجد هنا'} actionLabel="← الرئيسية" actionHref="/" />
+          ) : filtered.map(m => (
+            <div key={m.id} style={{ background: '#fff', borderRadius: 16, padding: 16, marginBottom: 10, border: '1px solid #e5e7eb' }}>
+              <div style={{ display: 'flex', gap: 12, marginBottom: 10 }}>
+                {m.logo_url ? (
+                  <img src={m.logo_url} alt="" style={{ width: 60, height: 60, borderRadius: 12, objectFit: 'cover', flexShrink: 0 }} />
+                ) : (
+                  <div style={{ width: 60, height: 60, borderRadius: 12, background: 'linear-gradient(135deg,#0f4d3a,#075640)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28, flexShrink: 0 }}>🕌</div>
+                )}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 4 }}>
+                    <div style={{ fontSize: 15, fontWeight: 900, color: '#0f172a' }}>{m.display_name}</div>
+                    {m.is_verified && <span style={{ fontSize: 12 }}>✅</span>}
+                  </div>
+                  {m.bio && <div style={{ fontSize: 11.5, color: '#64748b', lineHeight: 1.5, marginBottom: 4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{m.bio}</div>}
+                </div>
               </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 14, fontWeight: 900 }}>{m.display_name}</div>
-                {m.bio && <div style={{ fontSize: 11.5, color: 'var(--n-500)', marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.bio}</div>}
-                {m.phone && <div style={{ fontSize: 11, color: 'var(--n-400)', marginTop: 4, direction: 'ltr', textAlign: 'right' }}>📞 {m.phone}</div>}
+              
+              <Link href={`/mosque/${encodeURIComponent(m.display_name)}`} style={{ display: 'block', padding: 10, background: 'rgba(15,77,58,.1)', color: '#0f4d3a', border: '1px solid rgba(15,77,58,.3)', borderRadius: 10, textAlign: 'center', fontSize: 12, fontWeight: 900, textDecoration: 'none', marginBottom: 10 }}>👁️ عرض تفاصيل المسجد</Link>
+              <div style={{ display: 'flex', gap: 12, fontSize: 11, color: '#64748b', marginBottom: 12, flexWrap: 'wrap' }}>
+                {m.city && <span>📍 {m.city}</span>}
+                {m.address && <span>🏠 {m.address}</span>}
+                {m.opening_hours && <span>🕐 {m.opening_hours}</span>}
               </div>
-              <span style={{ fontSize: 22, color: 'var(--n-500)' }}>›</span>
-            </button>
+              {m.phone && (
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <a href={`tel:${m.phone}`} style={{ flex: 1, padding: 10, background: 'rgba(59,130,246,.1)', color: '#3b82f6', border: '1px solid rgba(59,130,246,.3)', borderRadius: 10, textAlign: 'center', fontSize: 12, fontWeight: 900, textDecoration: 'none' }}>📞 اتصال</a>
+                  <a href={`https://wa.me/${String(m.phone).replace(/\D/g, '').replace(/^0/, '963')}`} target="_blank" rel="noopener" style={{ flex: 1, padding: 10, background: 'rgba(37,211,102,.1)', color: '#059669', border: '1px solid rgba(37,211,102,.3)', borderRadius: 10, textAlign: 'center', fontSize: 12, fontWeight: 900, textDecoration: 'none' }}>📱 واتساب</a>
+                </div>
+              )}
+            </div>
           ))}
         </div>
       )}
+
+      {/* Info */}
+      <div style={{ margin: 16, padding: 14, background: 'rgba(15,77,58,.08)', border: '1px solid rgba(15,77,58,.15)', borderRadius: 12, fontSize: 12, color: '#0f4d3a', fontWeight: 700, lineHeight: 1.7, textAlign: 'center' }}>
+        🕌 مواقيت الصلاة حسب تقويم أم القرى — قد تختلف بدقائق حسب الموقع
+      </div>
     </div>
   );
 }

@@ -44,22 +44,46 @@ export default function PlansPage() {
       router.push('/login');
       return;
     }
+    if (!confirm(`سيتم إرسال طلب ترقية إلى باقة "${plan.name_en || plan.name}". هل تريد المتابعة؟`)) {
+      return;
+    }
+    
     setSubscribing(plan.id);
     setMessage(null);
+    
     try {
-      await subscribeEntity({
-        entityId: session.id,
-        planId: plan.id,
-        period,
-        paymentMethod: 'cash',
-      });
+      // نُسجّل طلب الترقية فقط — لا تفعيل
+      if (supabase) {
+        const { data: currentSub } = await supabase
+          .from('entity_subscriptions')
+          .select('id')
+          .eq('entity_id', session.id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (currentSub) {
+          await supabase.from('entity_subscriptions')
+            .update({
+              requested_plan_id: plan.id,
+              upgrade_request: {
+                plan_id: plan.id,
+                plan_name: plan.name_en || plan.name,
+                requested_at: new Date().toISOString(),
+                requested_by: session.display_name,
+              },
+              requested_renewal: true,
+              requested_at: new Date().toISOString(),
+            })
+            .eq('id', currentSub.id);
+        }
+      }
+      
       setMessage({
         type: 'success',
-        text: `🎉 تم تفعيل باقة "${plan.name_en || plan.name}" بنجاح!`,
+        text: `📩 تم إرسال طلب الترقية إلى "${plan.name_en || plan.name}" — بانتظار موافقة الإدارة`,
       });
-      const sub = await getCurrentSubscription(session.id);
-      setCurrentSub(sub);
-      setTimeout(() => router.push('/merchant'), 1500);
+      setTimeout(() => router.push('/merchant/subscription'), 2000);
     } catch (err) {
       setMessage({ type: 'error', text: 'تعذّر: ' + (err.message || 'خطأ') });
     } finally {

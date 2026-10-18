@@ -3,227 +3,97 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
-import { getSession } from '@/lib/auth';
+import { useCurrentUser } from '@/lib/useCurrentUser';
+import { useToast } from '@/components/Toast';
+import { SkeletonList } from '@/components/Skeleton';
+import EmptyState from '@/components/EmptyState';
+import FileUploader from '@/components/FileUploader';
 
-const DOC_TYPES = [
-  { k: 'residence', l: '🏠 شهادة سكن' },
-  { k: 'birth', l: '👶 شهادة ميلاد' },
-  { k: 'death', l: '⚰️ شهادة وفاة' },
-  { k: 'marriage', l: '💍 عقد زواج' },
-  { k: 'building_permit', l: '🏗️ تصريح بناء' },
-  { k: 'business_permit', l: '💼 رخصة مهنة' },
-  { k: 'other', l: '📋 أخرى' },
-];
-
-const STATUSES = {
-  pending: { l: 'قيد المراجعة', color: '#f59e0b' },
-  approved: { l: 'موافق', color: '#16a34a' },
-  rejected: { l: 'مرفوض', color: '#dc2626' },
-  issued: { l: 'صادر', color: '#0891b2' },
-};
-
-export default function DocumentsPage() {
+export default function DocsPage() {
   const router = useRouter();
-  const [entity, setEntity] = useState(null);
+  const { user, loading: uL, dataOwnerName } = useCurrentUser();
+  const { success, error: tE } = useToast();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [mode, setMode] = useState(null);
-  const [editing, setEditing] = useState(null);
-  const [form, setForm] = useState({});
+  const [modal, setModal] = useState(false);
+  const [form, setForm] = useState({ title: '', file_url: '', category: 'general' });
   const [saving, setSaving] = useState(false);
-  const [filter, setFilter] = useState('all');
 
   useEffect(() => {
-    let stored = null;
-    try { stored = getSession(); } catch (e) {}
-    if (!stored) { router.replace('/login'); return; }
-    setEntity(stored);
-    load(stored);
-  }, [router]);
+    if (uL) return;
+    if (!user) { router.replace('/login'); return; }
+    load();
+  }, [user, uL]);
 
-  async function load(ent) {
-    if (!supabase) return;
-    const { data } = await supabase.from('civil_documents').select('*').eq('entity_name', ent.display_name).order('created_at', { ascending: false });
-    setItems(Array.isArray(data) ? data : []);
+  async function load() {
+    if (!supabase || !dataOwnerName) { setLoading(false); return; }
+    const { data } = await supabase.from('documents').select('*').eq('entity_name', dataOwnerName).order('created_at', { ascending: false });
+    setItems(data || []);
     setLoading(false);
   }
 
-  function openAdd() {
-    setMode('add');
-    setForm({ doc_type: 'residence', title: '', requester_name: '', requester_phone: '', status: 'pending', fee: 0, notes: '' });
-  }
-
-  function openEdit(item) {
-    setMode('edit');
-    setEditing(item);
-    setForm({ ...item });
-  }
-
   async function save() {
-    if (!form.title?.trim()) { alert('العنوان مطلوب'); return; }
+    if (!form.title?.trim()) { tE('العنوان مطلوب'); return; }
+    if (!form.file_url) { tE('الملف مطلوب'); return; }
     setSaving(true);
-    const payload = {
-      entity_name: entity.display_name,
-      doc_type: form.doc_type,
-      title: form.title.trim(),
-      requester_name: form.requester_name?.trim() || null,
-      requester_phone: form.requester_phone?.trim() || null,
-      status: form.status,
-      fee: Number(form.fee) || 0,
-      notes: form.notes?.trim() || null,
-      issued_at: form.status === 'issued' ? new Date().toISOString() : null,
-    };
-    let err;
-    if (mode === 'add') {
-      ({ error: err } = await supabase.from('civil_documents').insert(payload));
-    } else {
-      ({ error: err } = await supabase.from('civil_documents').update(payload).eq('id', editing.id));
-    }
+    try {
+      const { error } = await supabase.from('documents').insert({
+        entity_name: dataOwnerName, title: form.title.trim(), file_url: form.file_url, category: form.category || 'general',
+      });
+      if (error) throw error;
+      success('✅ تم'); setModal(false); setForm({ title: '', file_url: '', category: 'general' }); load();
+    } catch (e) { tE('تعذّر: ' + e.message); }
     setSaving(false);
-    if (err) { alert('تعذّر الحفظ: ' + err.message); return; }
-    setMode(null); setEditing(null);
-    load(entity);
   }
 
-  async function updateStatus(item, status) {
-    await supabase.from('civil_documents').update({ status, issued_at: status === 'issued' ? new Date().toISOString() : item.issued_at }).eq('id', item.id);
-    load(entity);
-  }
-
-  async function del(item) {
+  async function del(c) {
     if (!confirm('حذف؟')) return;
-    await supabase.from('civil_documents').delete().eq('id', item.id);
-    load(entity);
+    await supabase.from('documents').delete().eq('id', c.id);
+    success('تم'); load();
   }
 
-  if (!entity) return <div className="sect-empty" style={{ padding: 80 }}><span className="em">⏳</span></div>;
-
-  const filtered = filter === 'all' ? items : items.filter((i) => i.status === filter);
-  const docLabel = (k) => DOC_TYPES.find((t) => t.k === k)?.l || k;
+  if (uL || loading) return <div style={{ padding: 16, background: '#f8fafc', minHeight: '100vh' }}><SkeletonList count={3} /></div>;
 
   return (
-    <div className="sect-page" style={{ paddingBottom: 40 }}>
-      <div className="inv-header">
-        <Link href="/merchant" className="inv-back">→</Link>
-        <span className="inv-title">📜 الشهادات والتصاريح</span>
-        <button className="mng-add-btn" onClick={openAdd} type="button">+ جديد</button>
+    <div style={{ minHeight: '100vh', background: '#f8fafc', paddingBottom: 80 }}>
+      <div style={{ position: 'sticky', top: 0, zIndex: 10, background: '#0f4d3a', padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
+        <Link href="/merchant" style={{ color: '#fff', textDecoration: 'none', fontSize: 20, width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,.1)', borderRadius: '50%' }}>→</Link>
+        <div style={{ flex: 1, color: '#fff', fontSize: 16, fontWeight: 900 }}>📄 المستندات ({items.length})</div>
+        <button onClick={() => setModal(true)} style={{ background: '#fbbf24', color: '#0f4d3a', border: 'none', padding: '8px 14px', borderRadius: 10, fontSize: 12, fontWeight: 900, cursor: 'pointer', fontFamily: 'inherit' }}>+ ملف</button>
       </div>
-
-      <div className="store-cat-scroll" style={{ paddingTop: 14 }}>
-        {[
-          { k: 'all', l: 'الكل' },
-          { k: 'pending', l: 'قيد المراجعة' },
-          { k: 'approved', l: 'موافق' },
-          { k: 'issued', l: 'صادر' },
-          { k: 'rejected', l: 'مرفوض' },
-        ].map((f) => (
-          <button key={f.k} className={`store-cat-chip ${filter === f.k ? 'active' : ''}`} onClick={() => setFilter(f.k)} type="button">
-            {f.l}
-          </button>
+      <div style={{ padding: 16 }}>
+        {items.length === 0 ? <EmptyState icon="📄" title="لا توجد مستندات" actionLabel="+ رفع ملف" onAction={() => setModal(true)} /> : items.map(it => (
+          <div key={it.id} style={{ background: '#fff', borderRadius: 14, padding: 14, marginBottom: 10, border: '1px solid #e5e7eb', display: 'flex', gap: 12 }}>
+            <div style={{ width: 48, height: 48, borderRadius: 10, background: 'linear-gradient(135deg,#0f4d3a,#075640)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0 }}>📄</div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 14, fontWeight: 900, marginBottom: 4 }}>{it.title}</div>
+              <div style={{ fontSize: 11, color: '#64748b' }}>{it.category}</div>
+              <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 4 }}>{new Date(it.created_at).toLocaleDateString('ar-EG')}</div>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+              <a href={it.file_url} target="_blank" rel="noopener" style={{ padding: 6, background: '#f1f5f9', borderRadius: 6, fontSize: 12, textDecoration: 'none' }}>👁️</a>
+              <button onClick={() => del(it)} style={{ padding: 6, background: 'rgba(220,38,38,.1)', color: '#dc2626', border: 'none', borderRadius: 6, fontSize: 12, cursor: 'pointer' }}>🗑️</button>
+            </div>
+          </div>
         ))}
       </div>
-
-      {loading ? (
-        <div className="sect-empty"><span className="em">⏳</span></div>
-      ) : filtered.length === 0 ? (
-        <div className="sect-empty"><span className="em">📜</span><p>لا توجد طلبات</p></div>
-      ) : (
-        <div style={{ padding: 20 }}>
-          {filtered.map((item) => {
-            const st = STATUSES[item.status] || STATUSES.pending;
-            return (
-              <div key={item.id} className="debt-card">
-                <div className="debt-head">
-                  <div>
-                    <div className="debt-customer">{docLabel(item.doc_type)}</div>
-                    <div style={{ fontSize: 12, color: 'var(--n-600)', fontWeight: 700, marginTop: 3 }}>{item.title}</div>
-                    {item.requester_name && <div style={{ fontSize: 11.5, color: 'var(--n-500)', marginTop: 3 }}>👤 {item.requester_name}</div>}
-                    {item.requester_phone && <div style={{ fontSize: 11.5, color: 'var(--n-500)', direction: 'ltr', textAlign: 'right' }}>{item.requester_phone}</div>}
-                  </div>
-                  <span style={{ padding: '4px 10px', borderRadius: 999, fontSize: 10.5, fontWeight: 900, background: `${st.color}1a`, color: st.color }}>
-                    {st.l}
-                  </span>
-                </div>
-                {item.fee > 0 && (
-                  <div style={{ fontSize: 12, color: 'var(--n-500)', fontWeight: 700, marginTop: 6 }}>
-                    💰 الرسوم: {Number(item.fee).toLocaleString()} ل.س
-                  </div>
-                )}
-                {item.notes && <div style={{ fontSize: 12, color: 'var(--n-500)', marginTop: 6, lineHeight: 1.6 }}>{item.notes}</div>}
-                <div className="debt-actions">
-                  {item.status === 'pending' && (
-                    <>
-                      <button className="debt-action pay" onClick={() => updateStatus(item, 'approved')} type="button">✓ موافقة</button>
-                      <button className="debt-action del" onClick={() => updateStatus(item, 'rejected')} type="button">✕ رفض</button>
-                    </>
-                  )}
-                  {item.status === 'approved' && (
-                    <button className="debt-action pay" onClick={() => updateStatus(item, 'issued')} type="button">📤 إصدار</button>
-                  )}
-                  <button className="debt-action edit" onClick={() => openEdit(item)} type="button">✏️</button>
-                  <button className="debt-action del" onClick={() => del(item)} type="button">🗑️</button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {mode && (
-        <div className="mng-modal-bg" onClick={() => { setMode(null); setEditing(null); }}>
-          <div className="mng-modal" onClick={(ev) => ev.stopPropagation()}>
-            <div className="mng-modal-handle" />
-            <h3 className="mng-modal-title">{mode === 'add' ? '➕ طلب جديد' : '✏️ تعديل'}</h3>
-
-            <div className="new-service-field">
-              <label className="new-service-label">نوع المستند</label>
-              <select className="new-service-select" value={form.doc_type} onChange={(ev) => setForm({ ...form, doc_type: ev.target.value })}>
-                {DOC_TYPES.map((t) => <option key={t.k} value={t.k}>{t.l}</option>)}
-              </select>
+      {modal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 100, display: 'flex', alignItems: 'flex-end' }} onClick={() => setModal(false)}>
+          <div style={{ background: '#fff', borderRadius: '24px 24px 0 0', width: '100%', maxWidth: 500, margin: '0 auto', padding: '24px 20px 30px' }} onClick={(e) => e.stopPropagation()}>
+            <h3 style={{ fontSize: 18, fontWeight: 900, marginBottom: 16 }}>رفع مستند</h3>
+            <input type="text" placeholder="العنوان *" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} style={{ width: '100%', padding: 12, border: '1px solid #e5e7eb', borderRadius: 10, fontSize: 13, marginBottom: 10, boxSizing: 'border-box', fontFamily: 'inherit' }} />
+            <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} style={{ width: '100%', padding: 12, border: '1px solid #e5e7eb', borderRadius: 10, fontSize: 13, marginBottom: 10, boxSizing: 'border-box', fontFamily: 'inherit' }}>
+              <option value="general">عام</option>
+              <option value="license">رخصة</option>
+              <option value="contract">عقد</option>
+              <option value="invoice">فاتورة</option>
+            </select>
+            <div style={{ marginBottom: 16 }}>
+              <FileUploader label="ارفع الملف" folder="documents" value={form.file_url} onUpload={(url) => setForm({ ...form, file_url: url })} maxSize={20} />
             </div>
-
-            <div className="new-service-field">
-              <label className="new-service-label">العنوان *</label>
-              <input className="new-service-input" value={form.title || ''} onChange={(ev) => setForm({ ...form, title: ev.target.value })} />
-            </div>
-
-            <div className="new-prod-row">
-              <div className="new-service-field">
-                <label className="new-service-label">الاسم</label>
-                <input className="new-service-input" value={form.requester_name || ''} onChange={(ev) => setForm({ ...form, requester_name: ev.target.value })} />
-              </div>
-              <div className="new-service-field">
-                <label className="new-service-label">الهاتف</label>
-                <input className="new-service-input" type="tel" value={form.requester_phone || ''} onChange={(ev) => setForm({ ...form, requester_phone: ev.target.value })} />
-              </div>
-            </div>
-
-            <div className="new-prod-row">
-              <div className="new-service-field">
-                <label className="new-service-label">الحالة</label>
-                <select className="new-service-select" value={form.status} onChange={(ev) => setForm({ ...form, status: ev.target.value })}>
-                  <option value="pending">قيد المراجعة</option>
-                  <option value="approved">موافق</option>
-                  <option value="issued">صادر</option>
-                  <option value="rejected">مرفوض</option>
-                </select>
-              </div>
-              <div className="new-service-field">
-                <label className="new-service-label">الرسوم</label>
-                <input className="new-service-input" type="number" value={form.fee || 0} onChange={(ev) => setForm({ ...form, fee: ev.target.value })} />
-              </div>
-            </div>
-
-            <div className="new-service-field">
-              <label className="new-service-label">ملاحظات</label>
-              <textarea className="new-service-textarea" rows={2} value={form.notes || ''} onChange={(ev) => setForm({ ...form, notes: ev.target.value })} />
-            </div>
-
-            <div className="admin-form-actions">
-              <button className="mng-btn ghost" onClick={() => { setMode(null); setEditing(null); }} type="button">إلغاء</button>
-              <button className="mng-btn primary" onClick={save} disabled={saving} type="button">
-                {saving ? '...' : '✓ حفظ'}
-              </button>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button onClick={() => setModal(false)} style={{ flex: 1, padding: 12, background: '#f1f5f9', border: 'none', borderRadius: 10, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' }}>إلغاء</button>
+              <button onClick={save} disabled={saving} style={{ flex: 1, padding: 12, background: 'linear-gradient(135deg,#10b981,#059669)', color: '#fff', border: 'none', borderRadius: 10, fontWeight: 900, cursor: saving ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>{saving ? '...' : '✓ رفع'}</button>
             </div>
           </div>
         </div>

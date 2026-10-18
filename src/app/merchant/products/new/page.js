@@ -5,7 +5,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
-import { getSession } from '@/lib/auth';
+import { useCurrentUser } from '@/lib/useCurrentUser';
 import ImageUploader from '@/components/ImageUploader';
 import FileUploader from '@/components/FileUploader';
 
@@ -36,8 +36,9 @@ async function getModerationStatus(supabase, entity) {
 }
 
 
-export default function NewProduct() {
+export default function NewProductPage() {
   const router = useRouter();
+  const { user, loading: userLoading, isOwner, isEmployee, isSectionAdmin, hasPermission, dataOwnerName } = useCurrentUser();
   const [entity, setEntity] = useState(null);
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
@@ -80,7 +81,7 @@ export default function NewProduct() {
 
     setLoading(true);
     const payload = {
-      provider_name: entity.display_name,
+      provider_name: dataOwnerName,
       title: f.title.trim(),
       description: f.description.trim() || null,
       price: Number(f.price),
@@ -93,8 +94,8 @@ export default function NewProduct() {
       unit: f.unit,
     };
     const moderation = await getModerationStatus(supabase, entity);
-    const payloadWithStatus = { ...payload, moderation_status: moderationInfo.moderation };
-    const { error: err } = await supabase.from('products').insert({ ...payloadWithStatus, moderation_status: moderationInfo.moderation });
+    const payloadWithStatus = { ...payload, moderation_status: moderation.moderation };
+    const { error: err } = await supabase.from('products').insert({ ...payloadWithStatus, moderation_status: moderation.moderation });
     setLoading(false);
 
     if (err) {

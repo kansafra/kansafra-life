@@ -1,0 +1,114 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import { useRouter, useParams } from 'next/navigation';
+import { supabase } from '@/lib/supabase';
+import { addToCart as addToCartLib } from '@/lib/cart';
+
+export default function ProductPage() {
+  const router = useRouter();
+  const params = useParams();
+  const [product, setProduct] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (params?.id) load(params.id);
+  }, [params?.id]);
+
+  async function load(id) {
+    if (!supabase) { setLoading(false); return; }
+    const { data } = await supabase.from('products').select('*').eq('id', id).maybeSingle();
+    setProduct(data);
+    setLoading(false);
+  }
+
+  function handleAddToCart() {
+    if (!product) return;
+    try {
+      addToCartLib({
+        id: product.id,
+        title: product.title,
+        price: product.price,
+        currency: product.currency,
+        image: product.image_url,
+        provider_name: product.provider_name,
+        qty: 1,
+      });
+      alert('✅ تمت الإضافة للسلة');
+    } catch (e) {
+      alert('تعذّر: ' + e.message);
+    }
+  }
+
+  if (loading) return <div className="sect-empty" style={{ padding: 80 }}><span className="em">⏳</span></div>;
+  if (!product) return (
+    <div className="sect-empty" style={{ padding: 80 }}>
+      <span className="em">🔍</span>
+      <p>المنتج غير موجود</p>
+      <button className="mng-btn primary" onClick={() => router.push('/')} type="button" style={{ marginTop: 16 }}>
+        العودة للرئيسية
+      </button>
+    </div>
+  );
+
+  return (
+    <div className="sect-page" style={{ paddingBottom: 100 }}>
+      <div className="inv-header">
+        <button className="inv-back" onClick={() => router.back()} type="button">→</button>
+        <span className="inv-title">{product.title}</span>
+        <span style={{ width: 40 }} />
+      </div>
+
+      {product.image_url && (
+        <div style={{ padding: '0 16px 16px' }}>
+          <img
+            src={product.image_url}
+            alt={product.title}
+            style={{ width: '100%', maxHeight: 300, objectFit: 'cover', borderRadius: 16 }}
+          />
+        </div>
+      )}
+
+      <div style={{ padding: '0 16px' }}>
+        <h1 style={{ fontSize: 22, fontWeight: 900, marginBottom: 8 }}>{product.title}</h1>
+        <div style={{ fontSize: 13, color: 'var(--n-500)', marginBottom: 12 }}>🏪 {product.provider_name}</div>
+        <div style={{ fontSize: 28, fontWeight: 900, color: '#14b8a6', direction: 'ltr', textAlign: 'right', marginBottom: 16 }}>
+          {Number(product.price || 0).toLocaleString()} {product.currency || 'SYP'}
+        </div>
+        {product.description && (
+          <p style={{ fontSize: 14, lineHeight: 1.8, color: 'var(--n-300)', marginBottom: 16 }}>
+            {product.description}
+          </p>
+        )}
+
+        <button
+          onClick={handleAddToCart}
+          type="button"
+          style={{
+            width: '100%', padding: 16, marginTop: 12,
+            background: 'linear-gradient(135deg, #22c55e, #16a34a)',
+            color: '#fff', border: 'none', borderRadius: 14,
+            fontSize: 16, fontWeight: 900, cursor: 'pointer',
+          }}
+        >
+          🛒 أضف للسلة
+        </button>
+
+        <button
+          onClick={() => router.push('/cart')}
+          type="button"
+          style={{
+            width: '100%', padding: 14, marginTop: 10,
+            background: 'rgba(20,184,166,.15)',
+            color: '#14b8a6',
+            border: '1px solid rgba(20,184,166,.3)',
+            borderRadius: 14,
+            fontSize: 14, fontWeight: 900, cursor: 'pointer',
+          }}
+        >
+          🛒 اذهب للسلة
+        </button>
+      </div>
+    </div>
+  );
+}

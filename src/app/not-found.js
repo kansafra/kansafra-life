@@ -3,66 +3,22 @@ import Link from 'next/link';
 
 export default function NotFound() {
   return (
-    <div style={{
-      minHeight: '100vh',
-      background: 'linear-gradient(160deg, #05402d 0%, #0a6b50 60%, #041f17 100%)',
-      color: '#fff',
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'center',
-      justifyContent: 'center',
-      padding: '40px 24px',
-      textAlign: 'center',
-      maxWidth: '680px',
-      margin: '0 auto',
-    }}>
-      <div style={{
-        fontSize: 120,
-        fontWeight: 900,
-        letterSpacing: '-8px',
-        background: 'linear-gradient(180deg, #fff 0%, #f2cc55 100%)',
-        WebkitBackgroundClip: 'text',
-        WebkitTextFillColor: 'transparent',
-        backgroundClip: 'text',
-        lineHeight: 1,
-        filter: 'drop-shadow(0 6px 18px rgba(0,0,0,.3))',
-      }}>
-        404
-      </div>
-      <h1 style={{ fontSize: 24, fontWeight: 900, margin: '20px 0 12px', letterSpacing: '-.5px' }}>
-        الصفحة غير موجودة
-      </h1>
-      <p style={{ fontSize: 14, color: 'rgba(255,255,255,.65)', lineHeight: 1.7, maxWidth: 380, margin: '0 0 32px', fontWeight: 500 }}>
-        الرابط الذي تحاول الوصول إليه غير متاح أو تم نقله.
-      </p>
-      <div style={{ display: 'flex', gap: 12 }}>
-        <Link href="/" style={{
-          padding: '14px 28px',
-          borderRadius: 14,
-          background: 'linear-gradient(135deg, #f2cc55, #e8b923)',
-          color: '#05402d',
-          fontSize: 15,
-          fontWeight: 900,
-          textDecoration: 'none',
-          boxShadow: '0 12px 28px rgba(232,185,35,.35)',
-        }}>
-          → الرئيسية
-        </Link>
-        <button
-          onClick={() => window.history.back()}
-          style={{
-            padding: '14px 28px',
-            borderRadius: 14,
-            background: 'rgba(255,255,255,.1)',
-            border: '1px solid rgba(255,255,255,.2)',
-            color: '#fff',
-            fontSize: 15,
-            fontWeight: 800,
-            cursor: 'pointer',
-          }}
-        >
-          → رجوع
-        </button>
+    <div style={{ minHeight: '100vh', background: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, textAlign: 'center' }}>
+      <div style={{ maxWidth: 400 }}>
+        <div style={{ fontSize: 100, marginBottom: 20 }}>🔍</div>
+        <h1 style={{ fontSize: 32, fontWeight: 900, color: '#0f172a', marginBottom: 12 }}>404</h1>
+        <h2 style={{ fontSize: 18, fontWeight: 800, color: '#334155', marginBottom: 12 }}>الصفحة غير موجودة</h2>
+        <p style={{ fontSize: 14, color: '#64748b', lineHeight: 1.7, marginBottom: 32 }}>
+          عذراً، الصفحة التي تبحث عنها قد تكون حُذفت أو تم تغيير رابطها.
+        </p>
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
+          <Link href="/" style={{ padding: '14px 24px', background: 'linear-gradient(135deg,#10b981,#059669)', color: '#fff', borderRadius: 12, textDecoration: 'none', fontWeight: 900, fontSize: 14, boxShadow: '0 4px 12px rgba(16,185,129,.3)' }}>
+            🏠 الرئيسية
+          </Link>
+          <Link href="/search" style={{ padding: '14px 24px', background: '#fff', color: '#334155', border: '1px solid #e5e7eb', borderRadius: 12, textDecoration: 'none', fontWeight: 900, fontSize: 14 }}>
+            🔍 بحث
+          </Link>
+        </div>
       </div>
     </div>
   );

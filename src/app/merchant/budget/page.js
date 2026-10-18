@@ -1,302 +1,120 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
-import { getSession } from '@/lib/auth';
+import { useCurrentUser } from '@/lib/useCurrentUser';
+import { useToast } from '@/components/Toast';
+import { SkeletonList } from '@/components/Skeleton';
+import EmptyState from '@/components/EmptyState';
 
 export default function BudgetPage() {
   const router = useRouter();
-  const [entity, setEntity] = useState(null);
-  const [tab, setTab] = useState('budget');
-  const [budget, setBudget] = useState([]);
-  const [projects, setProjects] = useState([]);
+  const { user, loading: uL, isOwner, isSectionAdmin, hasPermission, dataOwnerName } = useCurrentUser();
+  const { success, error: tE } = useToast();
+  const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [mode, setMode] = useState(null);
-  const [editing, setEditing] = useState(null);
+  const [modal, setModal] = useState(false);
   const [form, setForm] = useState({});
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    let stored = null;
-    try { stored = getSession(); } catch (e) {}
-    if (!stored) { router.replace('/login'); return; }
-    setEntity(stored);
-    load(stored);
-  }, [router]);
+    if (uL) return;
+    if (!user) { router.replace('/login'); return; }
+    if (!isOwner && !isSectionAdmin && !hasPermission('finance')) { router.replace('/merchant'); return; }
+    load();
+  }, [user, uL, isOwner, isSectionAdmin]);
 
-  async function load(ent) {
-    if (!supabase) return;
-    const [b, p] = await Promise.all([
-      supabase.from('municipal_budget').select('*').eq('entity_name', ent.display_name).order('transaction_date', { ascending: false }),
-      supabase.from('municipal_projects').select('*').eq('entity_name', ent.display_name).order('created_at', { ascending: false }),
-    ]);
-    setBudget(Array.isArray(b.data) ? b.data : []);
-    setProjects(Array.isArray(p.data) ? p.data : []);
+  async function load() {
+    if (!supabase || !dataOwnerName) { setLoading(false); return; }
+    let q = supabase.from('budgets').select('*').order('date', { ascending: false });
+    if (!isSectionAdmin) q = q.eq('entity_name', dataOwnerName);
+    const { data } = await q;
+    setItems(data || []);
     setLoading(false);
   }
 
-  function openAddBudget() {
-    setTab('budget');
-    setMode('add-budget');
-    setForm({ title: '', transaction_type: 'expense', amount: '', category: '', description: '', transaction_date: new Date().toISOString().slice(0, 10), is_public: true });
-  }
-
-  function openAddProject() {
-    setTab('projects');
-    setMode('add-project');
-    setForm({ title: '', description: '', status: 'planned', progress: 0, budget: 0, spent: 0, start_date: '', end_date: '' });
-  }
-
-  function openEdit(type, item) {
-    setMode('edit-' + type);
-    setEditing(item);
-    setForm({ ...item });
-  }
-
-  async function saveBudget() {
-    if (!form.title?.trim()) { alert('العنوان مطلوب'); return; }
-    if (!form.amount || Number(form.amount) <= 0) { alert('المبلغ مطلوب'); return; }
+  async function save() {
+    if (!form.title?.trim()) { tE('العنوان مطلوب'); return; }
+    if (!form.amount || Number(form.amount) <= 0) { tE('المبلغ مطلوب'); return; }
     setSaving(true);
-    const payload = {
-      entity_name: entity.display_name,
-      title: form.title.trim(),
-      transaction_type: form.transaction_type,
-      amount: Number(form.amount),
-      category: form.category?.trim() || null,
-      description: form.description?.trim() || null,
-      transaction_date: form.transaction_date || new Date().toISOString().slice(0, 10),
-      is_public: form.is_public !== false,
-    };
-    let err;
-    if (mode === 'add-budget') {
-      ({ error: err } = await supabase.from('municipal_budget').insert(payload));
-    } else {
-      ({ error: err } = await supabase.from('municipal_budget').update(payload).eq('id', editing.id));
-    }
+    try {
+      const { error } = await supabase.from('budgets').insert({
+        entity_name: dataOwnerName, title: form.title.trim(), amount: Number(form.amount),
+        type: form.type || 'expense', category: form.category || null,
+        notes: form.notes?.trim() || null, date: form.date || new Date().toISOString().slice(0, 10),
+      });
+      if (error) throw error;
+      success('✅ تم'); setModal(false); setForm({}); load();
+    } catch (e) { tE('تعذّر: ' + e.message); }
     setSaving(false);
-    if (err) { alert('تعذّر: ' + err.message); return; }
-    setMode(null); setEditing(null);
-    load(entity);
   }
 
-  async function saveProject() {
-    if (!form.title?.trim()) { alert('العنوان مطلوب'); return; }
-    setSaving(true);
-    const payload = {
-      entity_name: entity.display_name,
-      title: form.title.trim(),
-      description: form.description?.trim() || null,
-      status: form.status || 'planned',
-      progress: Number(form.progress) || 0,
-      budget: Number(form.budget) || 0,
-      spent: Number(form.spent) || 0,
-      start_date: form.start_date || null,
-      end_date: form.end_date || null,
-    };
-    let err;
-    if (mode === 'add-project') {
-      ({ error: err } = await supabase.from('municipal_projects').insert(payload));
-    } else {
-      ({ error: err } = await supabase.from('municipal_projects').update(payload).eq('id', editing.id));
-    }
-    setSaving(false);
-    if (err) { alert('تعذّر: ' + err.message); return; }
-    setMode(null); setEditing(null);
-    load(entity);
-  }
-
-  async function delBudget(item) {
+  async function del(c) {
     if (!confirm('حذف؟')) return;
-    await supabase.from('municipal_budget').delete().eq('id', item.id);
-    load(entity);
+    await supabase.from('budgets').delete().eq('id', c.id);
+    success('تم'); load();
   }
 
-  async function delProject(item) {
-    if (!confirm('حذف المشروع؟')) return;
-    await supabase.from('municipal_projects').delete().eq('id', item.id);
-    load(entity);
-  }
+  const stats = useMemo(() => {
+    const income = items.filter(i => i.type === 'income').reduce((s, i) => s + Number(i.amount || 0), 0);
+    const expense = items.filter(i => i.type === 'expense').reduce((s, i) => s + Number(i.amount || 0), 0);
+    return { income, expense, balance: income - expense };
+  }, [items]);
 
-  if (!entity) return <div className="sect-empty" style={{ padding: 80 }}><span className="em">⏳</span></div>;
-
-  const income = budget.filter((b) => b.transaction_type === 'income').reduce((s, b) => s + Number(b.amount || 0), 0);
-  const expense = budget.filter((b) => b.transaction_type === 'expense').reduce((s, b) => s + Number(b.amount || 0), 0);
-  const balance = income - expense;
+  if (uL || loading) return <div style={{ padding: 16, background: '#f8fafc', minHeight: '100vh' }}><SkeletonList count={3} /></div>;
 
   return (
-    <div className="sect-page" style={{ paddingBottom: 40 }}>
-      <div className="inv-header">
-        <Link href="/merchant" className="inv-back">→</Link>
-        <span className="inv-title">💰 الميزانية والمشاريع</span>
-        <button className="mng-add-btn" onClick={tab === 'budget' ? openAddBudget : openAddProject} type="button">+ جديد</button>
+    <div style={{ minHeight: '100vh', background: '#f8fafc', paddingBottom: 80 }}>
+      <div style={{ position: 'sticky', top: 0, zIndex: 10, background: '#0f4d3a', padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
+        <Link href="/merchant" style={{ color: '#fff', textDecoration: 'none', fontSize: 20, width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,.1)', borderRadius: '50%' }}>→</Link>
+        <div style={{ flex: 1, color: '#fff', fontSize: 16, fontWeight: 900 }}>💵 الميزانية</div>
+        <button onClick={() => { setForm({}); setModal(true); }} style={{ background: '#fbbf24', color: '#0f4d3a', border: 'none', padding: '8px 14px', borderRadius: 10, fontSize: 12, fontWeight: 900, cursor: 'pointer', fontFamily: 'inherit' }}>+ جديد</button>
       </div>
-
-      <div style={{ padding: 20, display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
-        <div className="debt-stat" style={{ padding: 12 }}>
-          <div className="debt-stat-val" style={{ fontSize: 15, color: '#16a34a' }}>{income.toLocaleString()}</div>
-          <div className="debt-stat-lbl">إيرادات</div>
-        </div>
-        <div className="debt-stat danger" style={{ padding: 12 }}>
-          <div className="debt-stat-val" style={{ fontSize: 15, color: '#dc2626' }}>{expense.toLocaleString()}</div>
-          <div className="debt-stat-lbl">مصروفات</div>
-        </div>
-        <div className="debt-stat warn" style={{ padding: 12 }}>
-          <div className="debt-stat-val" style={{ fontSize: 15 }}>{balance.toLocaleString()}</div>
-          <div className="debt-stat-lbl">الرصيد</div>
-        </div>
-      </div>
-
-      <div className="store-cat-scroll" style={{ paddingTop: 8 }}>
-        <button className={`store-cat-chip ${tab === 'budget' ? 'active' : ''}`} onClick={() => setTab('budget')} type="button">💰 الميزانية</button>
-        <button className={`store-cat-chip ${tab === 'projects' ? 'active' : ''}`} onClick={() => setTab('projects')} type="button">🏗️ المشاريع ({projects.length})</button>
-      </div>
-
-      {loading ? (
-        <div className="sect-empty"><span className="em">⏳</span></div>
-      ) : tab === 'budget' ? (
-        budget.length === 0 ? (
-          <div className="sect-empty"><span className="em">💰</span><p>لا توجد معاملات</p></div>
-        ) : (
-          <div style={{ padding: 20 }}>
-            {budget.map((b) => (
-              <div key={b.id} className="debt-card" style={{ borderRightColor: b.transaction_type === 'income' ? '#16a34a' : '#dc2626' }}>
-                <div className="debt-head">
-                  <div>
-                    <div className="debt-customer">{b.transaction_type === 'income' ? '💰' : '💸'} {b.title}</div>
-                    {b.category && <div style={{ fontSize: 11.5, color: 'var(--n-500)', marginTop: 3 }}>🏷️ {b.category}</div>}
-                  </div>
-                  <span style={{ fontSize: 15, fontWeight: 900, color: b.transaction_type === 'income' ? '#16a34a' : '#dc2626', direction: 'ltr' }}>
-                    {b.transaction_type === 'income' ? '+' : '−'}{Number(b.amount).toLocaleString()}
-                  </span>
-                </div>
-                {b.description && <div style={{ fontSize: 12, color: 'var(--n-600)', marginTop: 6 }}>{b.description}</div>}
-                <div style={{ fontSize: 11, color: 'var(--n-400)', marginTop: 6 }}>{new Date(b.transaction_date).toLocaleDateString('ar-EG')}</div>
-                <div className="debt-actions">
-                  <button className="debt-action edit" onClick={() => openEdit('budget', b)} type="button">✏️</button>
-                  <button className="debt-action del" onClick={() => delBudget(b)} type="button">🗑️</button>
-                </div>
-              </div>
-            ))}
+      <div style={{ padding: 16 }}>
+        <div style={{ background: stats.balance >= 0 ? 'linear-gradient(135deg,#10b981,#059669)' : 'linear-gradient(135deg,#ef4444,#dc2626)', borderRadius: 18, padding: 20, color: '#fff', marginBottom: 16 }}>
+          <div style={{ fontSize: 11, opacity: 0.85, marginBottom: 6 }}>الرصيد الحالي</div>
+          <div style={{ fontSize: 28, fontWeight: 900 }}>{stats.balance.toLocaleString()} <span style={{ fontSize: 13, opacity: 0.8 }}>SYP</span></div>
+          <div style={{ display: 'flex', gap: 20, marginTop: 12, fontSize: 11 }}>
+            <div><span style={{ opacity: 0.75 }}>وارد: </span><strong>+{stats.income.toLocaleString()}</strong></div>
+            <div><span style={{ opacity: 0.75 }}>صادر: </span><strong>-{stats.expense.toLocaleString()}</strong></div>
           </div>
-        )
-      ) : (
-        projects.length === 0 ? (
-          <div className="sect-empty"><span className="em">🏗️</span><p>لا توجد مشاريع</p></div>
-        ) : (
-          <div style={{ padding: 20 }}>
-            {projects.map((p) => (
-              <div key={p.id} className="debt-card" style={{ borderRightColor: '#8b5cf6' }}>
-                <div className="debt-head">
-                  <div>
-                    <div className="debt-customer">🏗️ {p.title}</div>
-                  </div>
-                  <span style={{ padding: '4px 10px', borderRadius: 999, fontSize: 10.5, fontWeight: 900, background: 'rgba(139,92,246,.15)', color: '#8b5cf6' }}>
-                    {p.status === 'planned' ? 'مخطط' : p.status === 'in_progress' ? 'قيد التنفيذ' : p.status === 'done' ? 'منجز' : p.status}
-                  </span>
-                </div>
-                {p.description && <div style={{ fontSize: 12, color: 'var(--n-600)', marginTop: 6, lineHeight: 1.6 }}>{p.description}</div>}
-                <div className="debt-progress" style={{ marginTop: 10 }}>
-                  <div className="debt-progress-fill" style={{ width: `${p.progress}%` }} />
-                </div>
-                <div style={{ fontSize: 11, color: 'var(--n-500)', marginTop: 6, fontWeight: 700 }}>
-                  {p.progress}% · 💰 {Number(p.spent).toLocaleString()} / {Number(p.budget).toLocaleString()}
-                </div>
-                <div className="debt-actions">
-                  <button className="debt-action edit" onClick={() => openEdit('project', p)} type="button">✏️</button>
-                  <button className="debt-action del" onClick={() => delProject(p)} type="button">🗑️</button>
-                </div>
+        </div>
+      </div>
+      <div style={{ padding: '0 16px' }}>
+        {items.length === 0 ? <EmptyState icon="💵" title="لا توجد حركات" actionLabel="+ إضافة" onAction={() => { setForm({}); setModal(true); }} /> : items.map(it => {
+          const isIncome = it.type === 'income';
+          return (
+            <div key={it.id} style={{ background: '#fff', borderRadius: 14, padding: 14, marginBottom: 10, border: '1px solid #e5e7eb', display: 'flex', gap: 12 }}>
+              <div style={{ width: 44, height: 44, borderRadius: 10, background: isIncome ? 'rgba(16,185,129,.15)' : 'rgba(239,68,68,.15)', color: isIncome ? '#10b981' : '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>{isIncome ? '📥' : '📤'}</div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 14, fontWeight: 900, marginBottom: 4 }}>{it.title}</div>
+                <div style={{ fontSize: 11, color: '#64748b' }}>{it.category || (isIncome ? 'وارد' : 'صادر')} · {new Date(it.date).toLocaleDateString('ar-EG')}</div>
               </div>
-            ))}
-          </div>
-        )
-      )}
-
-      {mode && (
-        <div className="mng-modal-bg" onClick={() => { setMode(null); setEditing(null); }}>
-          <div className="mng-modal" onClick={(ev) => ev.stopPropagation()}>
-            <div className="mng-modal-handle" />
-            <h3 className="mng-modal-title">
-              {mode.includes('budget') ? '💰 معاملة' : '🏗️ مشروع'}
-            </h3>
-
-            {mode.includes('budget') ? (
-              <>
-                <div className="new-service-field">
-                  <label className="new-service-label">العنوان *</label>
-                  <input className="new-service-input" value={form.title || ''} onChange={(ev) => setForm({ ...form, title: ev.target.value })} />
-                </div>
-                <div className="new-prod-row">
-                  <div className="new-service-field">
-                    <label className="new-service-label">النوع</label>
-                    <select className="new-service-select" value={form.transaction_type} onChange={(ev) => setForm({ ...form, transaction_type: ev.target.value })}>
-                      <option value="income">💰 إيراد</option>
-                      <option value="expense">💸 مصروف</option>
-                    </select>
-                  </div>
-                  <div className="new-service-field">
-                    <label className="new-service-label">المبلغ *</label>
-                    <input className="new-service-input" type="number" value={form.amount || ''} onChange={(ev) => setForm({ ...form, amount: ev.target.value })} />
-                  </div>
-                </div>
-                <div className="new-service-field">
-                  <label className="new-service-label">الفئة</label>
-                  <input className="new-service-input" value={form.category || ''} onChange={(ev) => setForm({ ...form, category: ev.target.value })} placeholder="مثال: مياه، كهرباء..." />
-                </div>
-                <div className="new-service-field">
-                  <label className="new-service-label">التاريخ</label>
-                  <input className="new-service-input" type="date" value={form.transaction_date || ''} onChange={(ev) => setForm({ ...form, transaction_date: ev.target.value })} />
-                </div>
-                <div className="new-service-field">
-                  <label className="new-service-label">الوصف</label>
-                  <textarea className="new-service-textarea" rows={2} value={form.description || ''} onChange={(ev) => setForm({ ...form, description: ev.target.value })} />
-                </div>
-                <div className="admin-form-actions">
-                  <button className="mng-btn ghost" onClick={() => { setMode(null); setEditing(null); }} type="button">إلغاء</button>
-                  <button className="mng-btn primary" onClick={saveBudget} disabled={saving} type="button">{saving ? '...' : '✓ حفظ'}</button>
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="new-service-field">
-                  <label className="new-service-label">اسم المشروع *</label>
-                  <input className="new-service-input" value={form.title || ''} onChange={(ev) => setForm({ ...form, title: ev.target.value })} />
-                </div>
-                <div className="new-service-field">
-                  <label className="new-service-label">الوصف</label>
-                  <textarea className="new-service-textarea" rows={3} value={form.description || ''} onChange={(ev) => setForm({ ...form, description: ev.target.value })} />
-                </div>
-                <div className="new-prod-row">
-                  <div className="new-service-field">
-                    <label className="new-service-label">الحالة</label>
-                    <select className="new-service-select" value={form.status || 'planned'} onChange={(ev) => setForm({ ...form, status: ev.target.value })}>
-                      <option value="planned">مخطط</option>
-                      <option value="in_progress">قيد التنفيذ</option>
-                      <option value="done">منجز</option>
-                      <option value="cancelled">ملغي</option>
-                    </select>
-                  </div>
-                  <div className="new-service-field">
-                    <label className="new-service-label">التقدم %</label>
-                    <input className="new-service-input" type="number" min="0" max="100" value={form.progress || 0} onChange={(ev) => setForm({ ...form, progress: ev.target.value })} />
-                  </div>
-                </div>
-                <div className="new-prod-row">
-                  <div className="new-service-field">
-                    <label className="new-service-label">الميزانية</label>
-                    <input className="new-service-input" type="number" value={form.budget || 0} onChange={(ev) => setForm({ ...form, budget: ev.target.value })} />
-                  </div>
-                  <div className="new-service-field">
-                    <label className="new-service-label">المصروف</label>
-                    <input className="new-service-input" type="number" value={form.spent || 0} onChange={(ev) => setForm({ ...form, spent: ev.target.value })} />
-                  </div>
-                </div>
-                <div className="admin-form-actions">
-                  <button className="mng-btn ghost" onClick={() => { setMode(null); setEditing(null); }} type="button">إلغاء</button>
-                  <button className="mng-btn primary" onClick={saveProject} disabled={saving} type="button">{saving ? '...' : '✓ حفظ'}</button>
-                </div>
-              </>
-            )}
+              <div style={{ textAlign: 'left' }}>
+                <div style={{ fontSize: 15, fontWeight: 900, color: isIncome ? '#10b981' : '#ef4444' }}>{isIncome ? '+' : '-'}{Number(it.amount).toLocaleString()}</div>
+                <button onClick={() => del(it)} style={{ marginTop: 4, padding: '2px 8px', background: 'rgba(220,38,38,.1)', color: '#dc2626', border: 'none', borderRadius: 6, fontSize: 10, cursor: 'pointer', fontFamily: 'inherit' }}>🗑️</button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {modal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 100, display: 'flex', alignItems: 'flex-end' }} onClick={() => setModal(false)}>
+          <div style={{ background: '#fff', borderRadius: '24px 24px 0 0', width: '100%', maxWidth: 500, margin: '0 auto', padding: '24px 20px 30px' }} onClick={(e) => e.stopPropagation()}>
+            <h3 style={{ fontSize: 18, fontWeight: 900, marginBottom: 16 }}>حركة جديدة</h3>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+              <button onClick={() => setForm({ ...form, type: 'income' })} style={{ flex: 1, padding: 12, background: form.type === 'income' ? 'linear-gradient(135deg,#10b981,#059669)' : '#f1f5f9', color: form.type === 'income' ? '#fff' : '#64748b', border: 'none', borderRadius: 10, fontWeight: 900, cursor: 'pointer', fontFamily: 'inherit' }}>📥 وارد</button>
+              <button onClick={() => setForm({ ...form, type: 'expense' })} style={{ flex: 1, padding: 12, background: form.type === 'expense' || !form.type ? 'linear-gradient(135deg,#ef4444,#dc2626)' : '#f1f5f9', color: form.type === 'expense' || !form.type ? '#fff' : '#64748b', border: 'none', borderRadius: 10, fontWeight: 900, cursor: 'pointer', fontFamily: 'inherit' }}>📤 صادر</button>
+            </div>
+            <input type="text" placeholder="العنوان *" value={form.title || ''} onChange={(e) => setForm({ ...form, title: e.target.value })} style={{ width: '100%', padding: 12, border: '1px solid #e5e7eb', borderRadius: 10, fontSize: 13, marginBottom: 10, boxSizing: 'border-box', fontFamily: 'inherit' }} />
+            <input type="number" placeholder="المبلغ *" value={form.amount || ''} onChange={(e) => setForm({ ...form, amount: e.target.value })} style={{ width: '100%', padding: 12, border: '1px solid #e5e7eb', borderRadius: 10, fontSize: 13, marginBottom: 10, boxSizing: 'border-box', fontFamily: 'inherit' }} />
+            <input type="text" placeholder="التصنيف" value={form.category || ''} onChange={(e) => setForm({ ...form, category: e.target.value })} style={{ width: '100%', padding: 12, border: '1px solid #e5e7eb', borderRadius: 10, fontSize: 13, marginBottom: 10, boxSizing: 'border-box', fontFamily: 'inherit' }} />
+            <textarea placeholder="ملاحظات" value={form.notes || ''} onChange={(e) => setForm({ ...form, notes: e.target.value })} rows={2} style={{ width: '100%', padding: 12, border: '1px solid #e5e7eb', borderRadius: 10, fontSize: 13, marginBottom: 16, boxSizing: 'border-box', fontFamily: 'inherit', resize: 'vertical' }} />
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button onClick={() => setModal(false)} style={{ flex: 1, padding: 12, background: '#f1f5f9', border: 'none', borderRadius: 10, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' }}>إلغاء</button>
+              <button onClick={save} disabled={saving} style={{ flex: 1, padding: 12, background: 'linear-gradient(135deg,#10b981,#059669)', color: '#fff', border: 'none', borderRadius: 10, fontWeight: 900, cursor: saving ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>{saving ? '...' : '✓ حفظ'}</button>
+            </div>
           </div>
         </div>
       )}

@@ -9,6 +9,9 @@ import NotificationListener from '@/components/NotificationListener';
 import SubscriptionReminder from '@/components/SubscriptionReminder';
 import DebtReminder from '@/components/DebtReminder';
 import HijriBar from '@/components/HijriBar';
+import PushToggle from '@/components/PushToggle';
+import GlobalBottomNav from '@/components/GlobalBottomNav';
+import { ToastProvider } from '@/components/Toast';
 
 export const metadata = {
   manifest: '/manifest.json',
@@ -37,9 +40,16 @@ export default function RootLayout({ children }) {
           href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&display=swap"
           rel="stylesheet"
         />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <meta name="apple-mobile-web-app-title" content="سند" />
+        <meta name="format-detection" content="telephone=no" />
       </head>
       <body>
+        <ToastProvider>
+          
         <HijriBar />
+        <PushToggle compact />
         {children}
         <AzkarBar />
         <NotificationListener />
@@ -48,6 +58,9 @@ export default function RootLayout({ children }) {
         <ServiceWorkerRegistrar />
         <InstallPrompt />
         <NotificationSetup />
+      
+        </ToastProvider>
+        <GlobalBottomNav />
       </body>
     </html>
   );

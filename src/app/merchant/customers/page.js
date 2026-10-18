@@ -1,206 +1,121 @@
 'use client';
-
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
-import { getSession } from '@/lib/auth';
+import { useCurrentUser } from '@/lib/useCurrentUser';
+import { useToast } from '@/components/Toast';
+import { SkeletonList } from '@/components/Skeleton';
+import EmptyState from '@/components/EmptyState';
 
 export default function CustomersPage() {
   const router = useRouter();
-  const [s, setS] = useState(null);
-  const [list, setList] = useState([]);
-  const [L, setL] = useState(true);
-  const [q, setQ] = useState('');
-  const [ed, setEd] = useState(null);
-  const [f, setF] = useState({});
-  const [viewing, setViewing] = useState(null);
-  const [history, setHistory] = useState({ orders: [], invoices: [], appointments: [], debts: [] });
+  const { user, loading: userLoading, isOwner, isSectionAdmin, hasPermission, dataOwnerName } = useCurrentUser();
+  const { success, error: toastError } = useToast();
+  const [customers, setCustomers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
 
   useEffect(() => {
-    const x = getSession();
-    if (!x) { router.replace('/login'); return; }
-    setS(x); load(x);
-  }, [router]);
+    if (userLoading) return;
+    if (!user) { router.replace('/login'); return; }
+    load();
+  }, [user, userLoading]);
 
-  async function load(x) {
-    if (!supabase) { setL(false); return; }
-    const { data } = await supabase
-      .from('customers')
-      .select('*')
-      .eq('entity_name', x.display_name)
-      .order('created_at', { ascending: false });
-    setList(Array.isArray(data) ? data : []);
-    setL(false);
+  async function load() {
+    if (!supabase || !dataOwnerName) { setLoading(false); return; }
+    try {
+      // جلب العملاء
+      let cq = supabase.from('customers').select('*').order('created_at', { ascending: false });
+      if (!isSectionAdmin) cq = cq.eq('entity_name', dataOwnerName);
+      
+      // جلب الطلبات لحساب الإجمالي والديون
+      let oq = supabase.from('orders').select('customer_phone, total, status');
+      if (!isSectionAdmin) oq = oq.eq('provider_name', dataOwnerName);
+
+      let dq = supabase.from('debts').select('customer_phone, amount, paid');
+      if (!isSectionAdmin) dq = dq.eq('entity_name', dataOwnerName);
+
+      const [cRes, oRes, dRes] = await Promise.all([cq, oq, dq]);
+      
+      const ordersMap = {};
+      (oRes.data || []).forEach(o => {
+        if (o.status === 'done') {
+          ordersMap[o.customer_phone] = (ordersMap[o.customer_phone] || 0) + Number(o.total || 0);
+        }
+      });
+
+      const debtsMap = {};
+      (dRes.data || []).forEach(d => {
+        debtsMap[d.customer_phone] = (debtsMap[d.customer_phone] || 0) + (Number(d.amount || 0) - Number(d.paid || 0));
+      });
+
+      const list = (cRes.data || []).map(c => ({
+        ...c,
+        total_spent: ordersMap[c.phone] || 0,
+        total_debts: debtsMap[c.phone] || 0,
+      }));
+
+      setCustomers(list);
+    } catch (e) { toastError('تعذّر التحميل'); }
+    setLoading(false);
   }
 
-  function add() {
-    setEd('new');
-    setF({ full_name: '', phone: '', email: '', address: '', notes: '' });
-  }
-  function edit(x) { setEd(x.id); setF({ ...x }); }
+  const filtered = useMemo(() => {
+    if (!search.trim()) return customers;
+    const q = search.trim().toLowerCase();
+    return customers.filter(c =>
+      (c.name || '').toLowerCase().includes(q) ||
+      (c.phone || '').includes(q)
+    );
+  }, [customers, search]);
 
-  async function save() {
-    if (!f.full_name?.trim()) { alert('الاسم مطلوب'); return; }
-    if (!f.phone?.trim()) { alert('الهاتف مطلوب'); return; }
-    const p = {
-      entity_name: s.display_name,
-      full_name: f.full_name.trim(),
-      phone: f.phone.trim(),
-      email: f.email?.trim() || null,
-      address: f.address?.trim() || null,
-      notes: f.notes?.trim() || null,
-    };
-    let err;
-    if (ed === 'new') ({ error: err } = await supabase.from('customers').insert(p));
-    else ({ error: err } = await supabase.from('customers').update(p).eq('id', ed));
-    if (err) { alert('تعذّر: ' + err.message); return; }
-    setEd(null); load(s);
-  }
-
-  async function del(x) {
-    if (!confirm('حذف العميل؟')) return;
-    await supabase.from('customers').delete().eq('id', x.id);
-    load(s);
-  }
-
-  async function view(x) {
-    setViewing(x);
-    if (!supabase) return;
-    const [ord, inv, apt, dbt] = await Promise.all([
-      supabase.from('orders').select('*').eq('customer_phone', x.phone).order('created_at', { ascending: false }).limit(10),
-      supabase.from('invoices').select('*').eq('customer_phone', x.phone).order('created_at', { ascending: false }).limit(10),
-      supabase.from('appointments').select('*').eq('patient_phone', x.phone).order('appointment_date', { ascending: false }).limit(10),
-      supabase.from('debts').select('*').eq('customer_phone', x.phone).order('created_at', { ascending: false }).limit(10),
-    ]);
-    setHistory({
-      orders: Array.isArray(ord.data) ? ord.data : [],
-      invoices: Array.isArray(inv.data) ? inv.data : [],
-      appointments: Array.isArray(apt.data) ? apt.data : [],
-      debts: Array.isArray(dbt.data) ? dbt.data : [],
-    });
-  }
-
-  function wa(x) {
-    const ph = (x.phone || '').replace(/[^0-9]/g, '');
-    if (!ph) return;
-    const msg = 'السلام عليكم ' + x.full_name + '،\n\nمن ' + s.display_name;
-    window.open('https://wa.me/' + ph + '?text=' + encodeURIComponent(msg), '_blank');
-  }
-
-  const filtered = list.filter((x) => {
-    if (!q.trim()) return true;
-    const z = q.trim().toLowerCase();
-    return (x.full_name || '').toLowerCase().includes(z) || (x.phone || '').includes(z);
-  });
+  if (userLoading || loading) return <div style={{ padding: 16, background: '#f8fafc', minHeight: '100vh' }}><SkeletonList count={4} /></div>;
 
   return (
-    <div className="sect-page" style={{ paddingBottom: 60 }}>
-      <div className="inv-header">
-        <Link href="/merchant" className="inv-back">→</Link>
-        <span className="inv-title">👥 العملاء</span>
-        <button className="mng-add-btn" onClick={add} type="button">+ عميل</button>
+    <div style={{ minHeight: '100vh', background: '#f8fafc', paddingBottom: 40 }}>
+      <div style={{ position: 'sticky', top: 0, zIndex: 10, background: '#0f4d3a', padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
+        <Link href="/merchant" style={{ color: '#fff', textDecoration: 'none', fontSize: 20, width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,.1)', borderRadius: '50%' }}>→</Link>
+        <div style={{ flex: 1 }}>
+          <div style={{ color: '#fff', fontSize: 16, fontWeight: 900 }}>👥 العملاء</div>
+          <div style={{ color: 'rgba(255,255,255,.7)', fontSize: 11, marginTop: 2 }}>{filtered.length} عميل</div>
+        </div>
       </div>
 
-      <div style={{ padding: '12px 16px' }}>
-        <input className="new-service-input" placeholder="🔍 ابحث بالاسم أو الهاتف..." value={q} onChange={(e) => setQ(e.target.value)} />
+      <div style={{ padding: 16 }}>
+        <input type="text" placeholder="🔍 ابحث بالاسم أو الهاتف..." value={search} onChange={(e) => setSearch(e.target.value)}
+          style={{ width: '100%', padding: '12px 14px', border: '1px solid #e5e7eb', borderRadius: 12, fontSize: 13, fontFamily: 'inherit', boxSizing: 'border-box', outline: 'none', background: '#fff' }} />
       </div>
 
-      {L ? <div className="sect-empty"><span className="em">⏳</span></div>
-       : filtered.length === 0 ? <div className="sect-empty"><span className="em">👥</span><p>لا يوجد عملاء بعد</p><p style={{ fontSize: 12, color: 'var(--ink-500)', marginTop: 8 }}>أضف عميلك الأول من الزر أعلاه</p></div>
-       : <div style={{ padding: 16 }}>
-          {filtered.map((x) => (
-            <div key={x.id} className="debt-card" style={{ borderRightColor: '#0ea5e9', marginBottom: 10 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-                <div style={{ width: 44, height: 44, borderRadius: 12, background: 'rgba(14,165,233,.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0 }}>👤</div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 15, fontWeight: 900 }}>{x.full_name}</div>
-                  <div style={{ fontSize: 12, color: 'var(--ink-500)', direction: 'ltr', textAlign: 'right' }}>📞 {x.phone}</div>
-                </div>
+      <div style={{ padding: '0 16px' }}>
+        {filtered.length === 0 ? (
+          <EmptyState icon="👥" title="لا يوجد عملاء" description="العملاء الذين يشترون منك سيظهرون هنا" />
+        ) : filtered.map(c => (
+          <div key={c.id} style={{ background: '#fff', borderRadius: 14, padding: 14, marginBottom: 10, border: '1px solid #e5e7eb' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+              <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'linear-gradient(135deg,#0f4d3a,#075640)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, fontWeight: 900 }}>
+                {(c.name || '?').charAt(0)}
               </div>
-              {x.address && <div style={{ fontSize: 11.5, color: 'var(--ink-500)', marginBottom: 6 }}>📍 {x.address}</div>}
-              {Number(x.total_spent) > 0 && (
-                <div style={{ fontSize: 12, color: '#22c55e', fontWeight: 900, marginBottom: 6 }}>
-                  💰 إجمالي الشراء: {Number(x.total_spent).toLocaleString()}
-                </div>
-              )}
-              <div className="debt-actions">
-                <button className="debt-action" onClick={() => view(x)} type="button" title="عرض">👁️</button>
-                <button className="debt-action" onClick={() => wa(x)} type="button" title="واتساب">💬</button>
-                <button className="debt-action edit" onClick={() => edit(x)} type="button">✏️</button>
-                <button className="debt-action del" onClick={() => del(x)} type="button">🗑️</button>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 14, fontWeight: 900, color: '#0f172a' }}>{c.name || 'عميل'}</div>
+                <div style={{ fontSize: 12, color: '#64748b', direction: 'ltr', textAlign: 'right', marginTop: 2 }}>{c.phone}</div>
               </div>
+              <a href={`tel:${c.phone}`} style={{ padding: 8, background: 'rgba(59,130,246,.1)', color: '#3b82f6', borderRadius: 8, textDecoration: 'none', fontSize: 14 }}>📞</a>
             </div>
-          ))}
-        </div>
-      }
-
-      {ed && (
-        <div className="mng-modal-bg" onClick={() => setEd(null)}>
-          <div className="mng-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="mng-modal-handle" />
-            <h3 className="mng-modal-title">{ed === 'new' ? '➕ عميل جديد' : '✏️ تعديل'}</h3>
-            <div className="new-service-field">
-              <label className="new-service-label">الاسم الكامل *</label>
-              <input className="new-service-input" value={f.full_name || ''} onChange={(e) => setF({ ...f, full_name: e.target.value })} />
-            </div>
-            <div className="new-service-field">
-              <label className="new-service-label">📞 الهاتف *</label>
-              <input className="new-service-input" type="tel" value={f.phone || ''} onChange={(e) => setF({ ...f, phone: e.target.value })} style={{ direction: 'ltr' }} />
-            </div>
-            <div className="new-service-field">
-              <label className="new-service-label">📧 الإيميل</label>
-              <input className="new-service-input" type="email" value={f.email || ''} onChange={(e) => setF({ ...f, email: e.target.value })} style={{ direction: 'ltr' }} />
-            </div>
-            <div className="new-service-field">
-              <label className="new-service-label">📍 العنوان</label>
-              <input className="new-service-input" value={f.address || ''} onChange={(e) => setF({ ...f, address: e.target.value })} />
-            </div>
-            <div className="new-service-field">
-              <label className="new-service-label">ملاحظات</label>
-              <textarea className="new-service-textarea" value={f.notes || ''} onChange={(e) => setF({ ...f, notes: e.target.value })} />
-            </div>
-            <div className="admin-form-actions">
-              <button className="mng-btn ghost" onClick={() => setEd(null)} type="button">إلغاء</button>
-              <button className="mng-btn primary" onClick={save} type="button">✓ حفظ</button>
+            
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, paddingTop: 12, borderTop: '1px solid #f1f5f9' }}>
+              <div style={{ background: '#f8fafc', padding: 10, borderRadius: 8 }}>
+                <div style={{ fontSize: 10, color: '#64748b', fontWeight: 700, marginBottom: 2 }}>إجمالي الشراء</div>
+                <div style={{ fontSize: 13, fontWeight: 900, color: '#10b981' }}>{c.total_spent.toLocaleString()} SYP</div>
+              </div>
+              <div style={{ background: '#f8fafc', padding: 10, borderRadius: 8 }}>
+                <div style={{ fontSize: 10, color: '#64748b', fontWeight: 700, marginBottom: 2 }}>الديون المتبقية</div>
+                <div style={{ fontSize: 13, fontWeight: 900, color: c.total_debts > 0 ? '#ef4444' : '#64748b' }}>{c.total_debts.toLocaleString()} SYP</div>
+              </div>
             </div>
           </div>
-        </div>
-      )}
-
-      {viewing && (
-        <div className="mng-modal-bg" onClick={() => setViewing(null)}>
-          <div className="mng-modal" onClick={(e) => e.stopPropagation()} style={{ maxHeight: '90vh', overflowY: 'auto' }}>
-            <div className="mng-modal-handle" />
-            <h3 className="mng-modal-title">👤 {viewing.full_name}</h3>
-
-            <div style={{ padding: 12, background: 'var(--ink-50)', borderRadius: 12, marginBottom: 14 }}>
-              <div style={{ fontSize: 12, marginBottom: 4 }}>📞 {viewing.phone}</div>
-              {viewing.email && <div style={{ fontSize: 12, marginBottom: 4, direction: 'ltr', textAlign: 'right' }}>📧 {viewing.email}</div>}
-              {viewing.address && <div style={{ fontSize: 12 }}>📍 {viewing.address}</div>}
-            </div>
-
-            <div style={{ fontSize: 13, fontWeight: 900, marginBottom: 8 }}>📊 السجل</div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8, marginBottom: 14 }}>
-              <Stat label="طلبات" value={history.orders.length} />
-              <Stat label="فواتير" value={history.invoices.length} />
-              <Stat label="مواعيد" value={history.appointments.length} />
-              <Stat label="ديون" value={history.debts.length} />
-            </div>
-
-            <button className="mng-btn primary" onClick={() => setViewing(null)} type="button" style={{ width: '100%' }}>إغلاق</button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function Stat({ label, value }) {
-  return (
-    <div style={{ padding: 12, background: 'rgba(14,165,233,.08)', border: '1px solid rgba(14,165,233,.2)', borderRadius: 12, textAlign: 'center' }}>
-      <div style={{ fontSize: 20, fontWeight: 900, color: '#0ea5e9' }}>{value}</div>
-      <div style={{ fontSize: 10.5, color: 'var(--ink-500)', marginTop: 3 }}>{label}</div>
+        ))}
+      </div>
     </div>
   );
 }

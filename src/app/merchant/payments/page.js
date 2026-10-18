@@ -1,201 +1,100 @@
 'use client';
-
-
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
-import { getSession } from '@/lib/auth';
+import { useCurrentUser } from '@/lib/useCurrentUser';
+import { useToast } from '@/components/Toast';
+import { SkeletonList } from '@/components/Skeleton';
+import EmptyState from '@/components/EmptyState';
 
-const METHODS = [
-  { key: 'sham_cash', icon: '🏦', label: 'شام كاش', desc: 'حوالة عبر شام كاش' },
-  { key: 'bank_transfer', icon: '🏛️', label: 'حوالة بنكية', desc: 'تحويل بنكي مباشر' },
-  { key: 'cash', icon: '💵', label: 'نقداً', desc: 'دفع عند الاستلام' },
-  { key: 'card', icon: '💳', label: 'بطاقة', desc: 'فيزا / ماستر' },
-  { key: 'paypal', icon: '🅿️', label: 'PayPal', desc: 'للمغتربين' },
-  { key: 'custom', icon: '🔗', label: 'مخصص', desc: 'طريقة أخرى' },
-];
-
-export default function MerchantPayments() {
+export default function PaymentsPage() {
   const router = useRouter();
-  const [entity, setEntity] = useState(null);
-  const [methods, setMethods] = useState([]);
+  const { user, loading: userLoading, isOwner, isSectionAdmin, hasPermission, dataOwnerName } = useCurrentUser();
+  const { error: toastError } = useToast();
+  const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [editing, setEditing] = useState(null);
-  const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({});
+  const [period, setPeriod] = useState('all');
 
   useEffect(() => {
-    let stored = null;
-    try { stored = getSession(); } catch (e) {}
-    if (!stored) { router.replace('/login'); return; }
-    setEntity(stored);
-    load(stored);
-  }, [router]);
+    if (userLoading) return;
+    if (!user) { router.replace('/login'); return; }
+    load();
+  }, [user, userLoading]);
 
-  async function load(ent) {
-    if (!supabase) { setLoading(false); return; }
-    const { data } = await supabase.from('payment_methods').select('*').eq('entity_name', ent.display_name);
-    setMethods(Array.isArray(data) ? data : []);
+  async function load() {
+    if (!supabase || !dataOwnerName) { setLoading(false); return; }
+    try {
+      let q = supabase.from('orders').select('*').eq('status', 'done').order('created_at', { ascending: false });
+      if (!isSectionAdmin) q = q.eq('provider_name', dataOwnerName);
+      const { data, error } = await q;
+      if (error) throw error;
+      setOrders(Array.isArray(data) ? data : []);
+    } catch (e) { toastError('تعذّر التحميل'); }
     setLoading(false);
   }
 
-  function openAdd() {
-    setForm({ method_type: 'sham_cash', account_number: '', account_name: '', qr_code_url: '', instructions: '' });
-    setEditing({ _new: true });
-  }
+  const filtered = useMemo(() => {
+    if (period === 'all') return orders;
+    const now = new Date();
+    const cutoff = new Date();
+    if (period === 'today') cutoff.setHours(0,0,0,0);
+    else if (period === 'week') cutoff.setDate(now.getDate() - 7);
+    else if (period === 'month') cutoff.setMonth(now.getMonth() - 1);
+    return orders.filter(o => new Date(o.created_at) >= cutoff);
+  }, [orders, period]);
 
-  function openEdit(m) {
-    setEditing(m);
-    setForm({
-      method_type: m.method_type,
-      account_number: m.account_number || '',
-      account_name: m.account_name || '',
-      qr_code_url: m.qr_code_url || '',
-      instructions: m.instructions || '',
-    });
-  }
+  const stats = useMemo(() => {
+    const total = filtered.reduce((s, o) => s + Number(o.total || 0), 0);
+    return { total, count: filtered.length, avg: filtered.length ? total / filtered.length : 0 };
+  }, [filtered]);
 
-  async function save() {
-    if (!editing || !entity) return;
-    setSaving(true);
-    const payload = {
-      entity_name: entity.display_name,
-      method_type: form.method_type,
-      account_number: form.account_number.trim() || null,
-      account_name: form.account_name.trim() || null,
-      qr_code_url: form.qr_code_url.trim() || null,
-      instructions: form.instructions.trim() || null,
-    };
-    let err;
-    if (editing._new) {
-      ({ error: err } = await supabase.from('payment_methods').insert(payload));
-    } else {
-      ({ error: err } = await supabase.from('payment_methods').update(payload).eq('id', editing.id));
-    }
-    setSaving(false);
-    if (err) { alert('تعذّر الحفظ: ' + err.message); return; }
-    setEditing(null);
-    load(entity);
+  if (!userLoading && user && !isOwner && !isSectionAdmin && !hasPermission('finance')) {
+    return <div style={{ padding: 60, textAlign: 'center' }}>🔒 ليس لديك صلاحية</div>;
   }
-
-  async function del(m) {
-    if (!confirm('حذف طريقة الدفع؟')) return;
-    await supabase.from('payment_methods').delete().eq('id', m.id);
-    load(entity);
+  if (userLoading || (user && loading)) {
+    return <div style={{ padding: 16, background: '#f8fafc', minHeight: '100vh' }}><SkeletonList count={4} /></div>;
   }
-
-  async function toggleActive(m) {
-    await supabase.from('payment_methods').update({ is_active: !m.is_active }).eq('id', m.id);
-    load(entity);
-  }
-
-  if (!entity) return <div className="sect-empty" style={{ padding: 80 }}><span className="em">⏳</span></div>;
+  if (!user) return null;
 
   return (
-    <div className="mng-page">
-      <div className="mng-header">
-        <Link href="/merchant" className="mng-back">→</Link>
-        <span className="mng-title">💳 طرق الدفع</span>
-        <span className="mng-count">{methods.length}</span>
-        <button className="mng-add-btn" onClick={openAdd} type="button">+ إضافة</button>
+    <div style={{ minHeight: '100vh', background: '#f8fafc', paddingBottom: 40 }}>
+      <div style={{ background: '#0f4d3a', padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
+        <Link href="/merchant" style={{ color: '#fff', textDecoration: 'none', fontSize: 20 }}>→</Link>
+        <div style={{ flex: 1, color: '#fff', fontSize: 16, fontWeight: 900 }}>💳 المدفوعات</div>
       </div>
-
-      <div style={{ padding: '16px 20px 0', fontSize: 12, color: 'var(--n-500)', fontWeight: 600, lineHeight: 1.6 }}>
-        أضف طرق الدفع التي تقبلها — سيظهر للعميل عند إتمام الطلب
+      <div style={{ padding: 16 }}>
+        <div style={{ background: 'linear-gradient(135deg,#10b981,#059669)', borderRadius: 16, padding: 20, color: '#fff', marginBottom: 16 }}>
+          <div style={{ fontSize: 11, opacity: 0.85, marginBottom: 6 }}>إجمالي المدفوعات</div>
+          <div style={{ fontSize: 28, fontWeight: 900 }}>{stats.total.toLocaleString()} SYP</div>
+          <div style={{ fontSize: 11, opacity: 0.75, marginTop: 8 }}>{stats.count} عملية · متوسط {Math.round(stats.avg).toLocaleString()}</div>
+        </div>
+        <div style={{ display: 'flex', gap: 8, overflowX: 'auto', marginBottom: 12 }}>
+          {[['all','الكل'],['today','اليوم'],['week','7 أيام'],['month','30 يوم']].map(([k,l]) => (
+            <button key={k} onClick={() => setPeriod(k)} style={{
+              padding: '8px 14px', background: period === k ? '#0f4d3a' : '#fff', color: period === k ? '#fff' : '#64748b',
+              border: `1px solid ${period === k ? '#0f4d3a' : '#e5e7eb'}`, borderRadius: 10, fontSize: 12, fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'inherit',
+            }}>{l}</button>
+          ))}
+        </div>
       </div>
-
-      {loading ? (
-        <div className="sect-empty"><span className="em">⏳</span><p>جارٍ التحميل...</p></div>
-      ) : methods.length === 0 ? (
-        <div className="sect-empty">
-          <span className="em">💳</span>
-          <p>لم تُضف طرق دفع بعد</p>
-          <button className="mng-add-btn" onClick={openAdd} type="button" style={{ marginTop: 16 }}>+ إضافة الأولى</button>
-        </div>
-      ) : (
-        <div className="mng-rows">
-          {methods.map((m) => {
-            const info = METHODS.find((x) => x.key === m.method_type) || METHODS[5];
-            return (
-              <div key={m.id} className="mng-row">
-                <div className="mng-row-head">
-                  <span style={{ fontSize: 24 }}>{info.icon}</span>
-                  <div className="mng-row-title">{info.label}</div>
-                  <span className={`admin-badge ${m.is_active ? 'active' : 'warn'}`} style={{ fontSize: 10 }}>
-                    {m.is_active ? 'نشطة' : 'موقوفة'}
-                  </span>
-                </div>
-                <div className="mng-row-fields">
-                  {m.account_number && <div className="mng-row-field"><strong>الحساب:</strong> {m.account_number}</div>}
-                  {m.account_name && <div className="mng-row-field"><strong>الاسم:</strong> {m.account_name}</div>}
-                  {m.qr_code_url && <div className="mng-row-field"><strong>QR:</strong> موجود</div>}
-                </div>
-                <div className="mng-row-actions">
-                  <button className="mng-btn edit" onClick={() => openEdit(m)} type="button">✏️ تعديل</button>
-                  <button className="mng-btn" onClick={() => toggleActive(m)} type="button" style={{ background: 'var(--c-100)', color: 'var(--n-700)' }}>
-                    {m.is_active ? '⏸' : '▶'}
-                  </button>
-                  <button className="mng-btn del" onClick={() => del(m)} type="button">🗑️</button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {editing && (
-        <div className="mng-modal-bg" onClick={() => setEditing(null)}>
-          <div className="mng-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="mng-modal-handle" />
-            <h3 className="mng-modal-title">
-              {editing._new ? '➕ إضافة طريقة دفع' : '✏️ تعديل طريقة الدفع'}
-            </h3>
-
-            <div className="new-service-field">
-              <label className="new-service-label">نوع الطريقة</label>
-              <select className="new-service-select" value={form.method_type} onChange={(e) => setForm({ ...form, method_type: e.target.value })}>
-                {METHODS.map((m) => (
-                  <option key={m.key} value={m.key}>{m.icon} {m.label}</option>
-                ))}
-              </select>
+      <div style={{ padding: '0 16px' }}>
+        {filtered.length === 0 ? (
+          <EmptyState icon="💳" title="لا توجد مدفوعات" />
+        ) : filtered.map((o) => (
+          <div key={o.id} style={{ background: '#fff', borderRadius: 14, padding: 14, marginBottom: 10, border: '1px solid #e5e7eb' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+              <div style={{ fontFamily: 'monospace', fontSize: 12, fontWeight: 900 }}>#{o.order_code}</div>
+              <div style={{ fontSize: 16, fontWeight: 900, color: '#10b981' }}>+{Number(o.total || 0).toLocaleString()}</div>
             </div>
-
-            <div className="new-service-field">
-              <label className="new-service-label">رقم الحساب / المعرف</label>
-              <input className="new-service-input" value={form.account_number} onChange={(e) => setForm({ ...form, account_number: e.target.value })} placeholder="مثال: 0912345678" />
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#64748b' }}>
+              <span>👤 {o.customer_name}</span>
+              <span>💳 {o.payment_method || '—'}</span>
             </div>
-
-            <div className="new-service-field">
-              <label className="new-service-label">اسم الحساب</label>
-              <input className="new-service-input" value={form.account_name} onChange={(e) => setForm({ ...form, account_name: e.target.value })} placeholder="مثال: محمد أحمد" />
-            </div>
-
-            <div className="new-service-field">
-              <label className="new-service-label">رابط صورة الباركود / QR</label>
-              <input className="new-service-input" type="url" value={form.qr_code_url} onChange={(e) => setForm({ ...form, qr_code_url: e.target.value })} placeholder="https://..." />
-            </div>
-
-            {form.qr_code_url && (
-              <div className="pay-qr">
-                <img src={form.qr_code_url} alt="QR" onError={(e) => { e.target.style.display = 'none'; }} />
-              </div>
-            )}
-
-            <div className="new-service-field">
-              <label className="new-service-label">تعليمات الدفع</label>
-              <textarea className="new-service-textarea" value={form.instructions} onChange={(e) => setForm({ ...form, instructions: e.target.value })} placeholder="مثال: أرسل المبلغ ثم صورة الحوالة" />
-            </div>
-
-            <div className="admin-form-actions">
-              <button className="mng-btn ghost" onClick={() => setEditing(null)} type="button">إلغاء</button>
-              <button className="mng-btn primary" onClick={save} disabled={saving} type="button">
-                {saving ? '...' : '✓ حفظ'}
-              </button>
-            </div>
+            <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 6 }}>📅 {new Date(o.created_at).toLocaleDateString('ar-EG')}</div>
           </div>
-        </div>
-      )}
+        ))}
+      </div>
     </div>
   );
 }

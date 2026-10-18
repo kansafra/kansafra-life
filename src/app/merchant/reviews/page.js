@@ -1,145 +1,171 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
-import { getSession } from '@/lib/auth';
+import { useCurrentUser } from '@/lib/useCurrentUser';
+import { useToast } from '@/components/Toast';
+import { SkeletonList } from '@/components/Skeleton';
+import EmptyState from '@/components/EmptyState';
 
-export default function MerchantReviewsPage() {
+function Stars({ rating, size = 16 }) {
+  return (
+    <div style={{ display: 'flex', gap: 2, direction: 'ltr' }}>
+      {[1, 2, 3, 4, 5].map(n => (
+        <span key={n} style={{ fontSize: size, color: n <= rating ? '#fbbf24' : '#e5e7eb' }}>★</span>
+      ))}
+    </div>
+  );
+}
+
+export default function ReviewsPage() {
   const router = useRouter();
-  const [entity, setEntity] = useState(null);
+  const { user, loading: userLoading, isOwner, isSectionAdmin, hasPermission, dataOwnerName } = useCurrentUser();
+  const { success, error: toastError } = useToast();
   const [reviews, setReviews] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [replying, setReplying] = useState(null);
-  const [replyText, setReplyText] = useState('');
-  const [saving, setSaving] = useState(false);
   const [filter, setFilter] = useState('all');
+  const [search, setSearch] = useState('');
 
   useEffect(() => {
-    let stored = null;
-    try { stored = getSession(); } catch (e) {}
-    if (!stored) { router.replace('/login'); return; }
-    setEntity(stored);
-    load(stored);
-  }, [router]);
+    if (userLoading) return;
+    if (!user) { router.replace('/login'); return; }
+    load();
+  }, [user, userLoading]);
 
-  async function load(ent) {
-    if (!supabase) return;
-    const { data } = await supabase.from('reviews').select('*').eq('target_type', 'entity').eq('target_name', ent.display_name).order('created_at', { ascending: false });
-    setReviews(Array.isArray(data) ? data : []);
+  async function load() {
+    if (!supabase || !dataOwnerName) { setLoading(false); return; }
+    try {
+      let q = supabase.from('reviews').select('*').order('created_at', { ascending: false });
+      if (!isSectionAdmin) q = q.eq('target_name', dataOwnerName);
+      const { data, error } = await q;
+      if (error) throw error;
+      setReviews(Array.isArray(data) ? data : []);
+    } catch (e) { toastError('تعذّر التحميل'); }
     setLoading(false);
   }
 
-  function openReply(r) {
-    setReplying(r);
-    setReplyText(r.entity_reply || '');
+  const filtered = useMemo(() => {
+    let list = reviews;
+    if (filter === '5star') list = list.filter(r => r.rating === 5);
+    else if (filter === '4star') list = list.filter(r => r.rating === 4);
+    else if (filter === 'low') list = list.filter(r => r.rating <= 3);
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
+      list = list.filter(r =>
+        (r.reviewer_name || '').toLowerCase().includes(q) ||
+        (r.comment || '').toLowerCase().includes(q)
+      );
+    }
+    return list;
+  }, [reviews, filter, search]);
+
+  const stats = useMemo(() => {
+    const total = reviews.length;
+    const avg = total > 0 ? reviews.reduce((s, r) => s + Number(r.rating || 0), 0) / total : 0;
+    const dist = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
+    reviews.forEach(r => { if (dist[r.rating] !== undefined) dist[r.rating]++; });
+    return { total, avg: avg.toFixed(1), dist };
+  }, [reviews]);
+
+  async function deleteReview(r) {
+    if (!confirm('حذف هذا التقييم؟')) return;
+    try {
+      const { error } = await supabase.from('reviews').delete().eq('id', r.id);
+      if (error) throw error;
+      success('✅ تم الحذف');
+      setReviews(prev => prev.filter(x => x.id !== r.id));
+    } catch (e) { toastError('تعذّر: ' + e.message); }
   }
 
-  async function saveReply() {
-    if (!replyText.trim()) { alert('الرد مطلوب'); return; }
-    setSaving(true);
-    const { error } = await supabase.from('reviews').update({ entity_reply: replyText.trim(), replied_at: new Date().toISOString() }).eq('id', replying.id);
-    setSaving(false);
-    if (error) { alert('تعذّر: ' + error.message); return; }
-    setReplying(null);
-    setReplyText('');
-    load(entity);
+  if (!userLoading && user && !isOwner && !isSectionAdmin && !hasPermission('customers')) {
+    return <div style={{ padding: 60, textAlign: 'center' }}>🔒 ليس لديك صلاحية</div>;
   }
-
-  async function reportReview(r) {
-    const reason = prompt('سبب الإبلاغ؟ (محتوى مسيء / تعليق كاذب / إعلان)');
-    if (!reason) return;
-    await supabase.from('reviews').update({ is_reported: true, report_reason: reason }).eq('id', r.id);
-    alert('✅ تم إرسال الإبلاغ للإدارة');
-    load(entity);
+  if (userLoading || (user && loading)) {
+    return <div style={{ padding: 16, background: '#f8fafc', minHeight: '100vh' }}><SkeletonList count={3} /></div>;
   }
-
-  if (!entity) return <div className="sect-empty" style={{ padding: 80 }}><span className="em">⏳</span></div>;
-
-  const filtered = filter === 'all' ? reviews : filter === 'unreplied' ? reviews.filter((r) => !r.entity_reply) : reviews.filter((r) => r.entity_reply);
+  if (!user) return null;
 
   return (
-    <div className="sect-page" style={{ paddingBottom: 40 }}>
-      <div className="inv-header">
-        <Link href="/merchant" className="inv-back">→</Link>
-        <span className="inv-title">⭐ التقييمات</span>
-        <span className="mng-count">{reviews.length}</span>
-      </div>
-
-      <div className="store-cat-scroll" style={{ paddingTop: 14 }}>
-        <button className={`store-cat-chip ${filter === 'all' ? 'active' : ''}`} onClick={() => setFilter('all')} type="button">الكل</button>
-        <button className={`store-cat-chip ${filter === 'unreplied' ? 'active' : ''}`} onClick={() => setFilter('unreplied')} type="button">بدون رد</button>
-        <button className={`store-cat-chip ${filter === 'replied' ? 'active' : ''}`} onClick={() => setFilter('replied')} type="button">مع رد</button>
-      </div>
-
-      {loading ? (
-        <div className="sect-empty"><span className="em">⏳</span></div>
-      ) : filtered.length === 0 ? (
-        <div className="sect-empty"><span className="em">⭐</span><p>لا توجد تقييمات</p></div>
-      ) : (
-        <div style={{ padding: 20 }}>
-          {filtered.map((r) => (
-            <div key={r.id} className="debt-card" style={{ borderRightColor: r.rating >= 4 ? '#16a34a' : r.rating >= 3 ? '#f59e0b' : '#dc2626' }}>
-              <div className="debt-head">
-                <div>
-                  <div className="debt-customer">👤 {r.reviewer_name}</div>
-                  <div style={{ fontSize: 13, color: '#f59e0b', marginTop: 3 }}>
-                    {'★'.repeat(r.rating)}{'☆'.repeat(5 - r.rating)}
-                  </div>
-                </div>
-                {r.is_reported && (
-                  <span style={{ padding: '3px 8px', borderRadius: 999, fontSize: 10, fontWeight: 900, background: 'rgba(220,38,38,.15)', color: '#dc2626' }}>
-                    🚩 مُبلّغ
-                  </span>
-                )}
-              </div>
-              {r.comment && (
-                <div style={{ fontSize: 13, color: 'var(--n-700)', lineHeight: 1.7, marginTop: 8, padding: 10, background: 'var(--c-50)', borderRadius: 10 }}>
-                  {r.comment}
-                </div>
-              )}
-              {r.entity_reply && (
-                <div style={{ marginTop: 10, padding: 10, background: 'rgba(14,138,102,.08)', borderRight: '3px solid var(--f-600)', borderRadius: 10 }}>
-                  <div style={{ fontSize: 10.5, fontWeight: 800, color: 'var(--f-700)', marginBottom: 4 }}>↩️ ردك</div>
-                  <div style={{ fontSize: 12.5, color: 'var(--f-700)', lineHeight: 1.6 }}>{r.entity_reply}</div>
-                </div>
-              )}
-              <div style={{ fontSize: 10.5, color: 'var(--n-400)', marginTop: 8 }}>
-                {new Date(r.created_at).toLocaleDateString('ar-EG')}
-              </div>
-              <div className="debt-actions">
-                <button className="debt-action edit" onClick={() => openReply(r)} type="button">
-                  {r.entity_reply ? '✏️ تعديل الرد' : '↩️ رد'}
-                </button>
-                {!r.is_reported && (
-                  <button className="debt-action del" onClick={() => reportReview(r)} type="button">🚩 إبلاغ</button>
-                )}
-              </div>
-            </div>
-          ))}
+    <div style={{ minHeight: '100vh', background: '#f8fafc', paddingBottom: 40 }}>
+      <div style={{ position: 'sticky', top: 0, zIndex: 10, background: '#0f4d3a', padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
+        <Link href="/merchant" style={{ color: '#fff', textDecoration: 'none', fontSize: 20, width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,.1)', borderRadius: '50%' }}>→</Link>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 16, fontWeight: 900, color: '#fff' }}>⭐ التقييمات</div>
+          <div style={{ fontSize: 11, color: 'rgba(255,255,255,.7)', marginTop: 2 }}>{stats.total} تقييم</div>
         </div>
-      )}
+      </div>
 
-      {replying && (
-        <div className="mng-modal-bg" onClick={() => setReplying(null)}>
-          <div className="mng-modal" onClick={(ev) => ev.stopPropagation()}>
-            <div className="mng-modal-handle" />
-            <h3 className="mng-modal-title">↩️ الرد على التقييم</h3>
-            <div style={{ background: 'var(--c-50)', padding: 12, borderRadius: 12, marginBottom: 14 }}>
-              <div style={{ fontSize: 13, fontWeight: 800, marginBottom: 4 }}>{replying.reviewer_name} — {'★'.repeat(replying.rating)}</div>
-              {replying.comment && <div style={{ fontSize: 12, color: 'var(--n-500)' }}>{replying.comment}</div>}
-            </div>
-            <div className="new-service-field">
-              <label className="new-service-label">ردك</label>
-              <textarea className="new-service-textarea" rows={4} value={replyText} onChange={(ev) => setReplyText(ev.target.value)} placeholder="شكراً لتقييمك..." />
-            </div>
-            <div className="admin-form-actions">
-              <button className="mng-btn ghost" onClick={() => setReplying(null)} type="button">إلغاء</button>
-              <button className="mng-btn primary" onClick={saveReply} disabled={saving} type="button">{saving ? '...' : '✓ حفظ الرد'}</button>
-            </div>
+      <div style={{ padding: 16 }}>
+        <div style={{ background: 'linear-gradient(135deg,#0f4d3a,#075640)', borderRadius: 18, padding: 20, color: '#fff', marginBottom: 16, display: 'flex', gap: 16, alignItems: 'center' }}>
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: 40, fontWeight: 900, lineHeight: 1 }}>{stats.avg}</div>
+            <Stars rating={Math.round(Number(stats.avg))} size={14} />
+            <div style={{ fontSize: 10, opacity: 0.7, marginTop: 4 }}>{stats.total} تقييم</div>
+          </div>
+          <div style={{ flex: 1 }}>
+            {[5, 4, 3, 2, 1].map(n => {
+              const pct = stats.total > 0 ? (stats.dist[n] / stats.total) * 100 : 0;
+              return (
+                <div key={n} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                  <span style={{ fontSize: 11, width: 12 }}>{n}★</span>
+                  <div style={{ flex: 1, height: 6, background: 'rgba(255,255,255,.15)', borderRadius: 3, overflow: 'hidden' }}>
+                    <div style={{ width: `${pct}%`, height: '100%', background: '#fbbf24' }} />
+                  </div>
+                  <span style={{ fontSize: 10, width: 24, textAlign: 'left' }}>{stats.dist[n]}</span>
+                </div>
+              );
+            })}
           </div>
         </div>
-      )}
+
+        <input type="text" placeholder="🔍 ابحث بالاسم أو التعليق..." value={search} onChange={(e) => setSearch(e.target.value)}
+          style={{ width: '100%', padding: '12px 14px', border: '1px solid #e5e7eb', borderRadius: 12, fontSize: 13, fontFamily: 'inherit', boxSizing: 'border-box', outline: 'none', background: '#fff', marginBottom: 10 }} />
+        
+        <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4 }}>
+          {[
+            { k: 'all', l: 'الكل', n: stats.total },
+            { k: '5star', l: '5★', n: stats.dist[5] },
+            { k: '4star', l: '4★', n: stats.dist[4] },
+            { k: 'low', l: '≤3★', n: stats.dist[3] + stats.dist[2] + stats.dist[1] },
+          ].map((f) => (
+            <button key={f.k} onClick={() => setFilter(f.k)} style={{
+              padding: '8px 14px', background: filter === f.k ? '#0f4d3a' : '#fff', color: filter === f.k ? '#fff' : '#64748b',
+              border: `1px solid ${filter === f.k ? '#0f4d3a' : '#e5e7eb'}`, borderRadius: 10, fontSize: 11.5, fontWeight: 800,
+              cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'inherit',
+            }}>{f.l} ({f.n})</button>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ padding: '0 16px' }}>
+        {filtered.length === 0 ? (
+          <EmptyState icon="⭐" title={search ? 'لا توجد نتائج' : 'لا توجد تقييمات بعد'} description={search ? 'جرّب البحث بكلمات مختلفة' : 'ستظهر هنا تقييمات عملائك'} />
+        ) : filtered.map((r) => (
+          <div key={r.id} style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 14, padding: 14, marginBottom: 10 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                  <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'linear-gradient(135deg,#0f4d3a,#075640)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 900 }}>
+                    {(r.reviewer_name || '?').charAt(0).toUpperCase()}
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 900, color: '#0f172a' }}>{r.reviewer_name || 'زائر'}</div>
+                    <div style={{ fontSize: 10, color: '#94a3b8' }}>{new Date(r.created_at).toLocaleDateString('ar-EG')}</div>
+                  </div>
+                </div>
+                <Stars rating={Number(r.rating) || 0} />
+              </div>
+              <button onClick={() => deleteReview(r)} style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(220,38,38,.1)', color: '#dc2626', border: 'none', fontSize: 14, cursor: 'pointer' }}>🗑️</button>
+            </div>
+            {r.comment && (
+              <div style={{ padding: 12, background: '#f8fafc', borderRadius: 10, fontSize: 13, color: '#334155', lineHeight: 1.7 }}>
+                "{r.comment}"
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

@@ -1,179 +1,194 @@
 'use client';
-
-
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
-import { getSession } from '@/lib/auth';
+import { useCurrentUser } from '@/lib/useCurrentUser';
+import { useToast } from '@/components/Toast';
+import { SkeletonList } from '@/components/Skeleton';
 
 export default function ReportsPage() {
   const router = useRouter();
-  const [entity, setEntity] = useState(null);
-  const [stats, setStats] = useState({ services: 0, products: 0, orders: 0, revenue: 0, reviews: 0, rating: 0 });
-  const [ordersByDay, setOrdersByDay] = useState([]);
+  const { user, loading: userLoading, isOwner, isSectionAdmin, hasPermission, dataOwnerName } = useCurrentUser();
+  const { error: toastError } = useToast();
+  const [orders, setOrders] = useState([]);
+  const [products, setProducts] = useState([]);
+  const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [period, setPeriod] = useState('month');
 
   useEffect(() => {
-    let stored = null;
-    try { stored = getSession(); } catch (e) {}
-    if (!stored) { router.replace('/login'); return; }
-    setEntity(stored);
-    load(stored);
-  }, [router]);
+    if (userLoading) return;
+    if (!user) { router.replace('/login'); return; }
+    load();
+  }, [user, userLoading]);
 
-  async function load(ent) {
-    if (!supabase) { setLoading(false); return; }
-    const [s, p, o, r] = await Promise.all([
-      supabase.from('services').select('*', { count: 'exact', head: true }).eq('provider_name', ent.display_name),
-      supabase.from('products').select('*', { count: 'exact', head: true }).eq('provider_name', ent.display_name),
-      supabase.from('orders').select('*').eq('provider_name', ent.display_name),
-      supabase.from('reviews').select('rating').eq('target_id', ent.display_name),
-    ]);
-    const orders = Array.isArray(o.data) ? o.data : [];
-    const revenue = orders.reduce((sum, x) => sum + (Number(x.total) || 0), 0);
-    const ratings = (r.data || []).map((x) => Number(x.rating) || 0);
-    const avgRating = ratings.length ? (ratings.reduce((a, b) => a + b, 0) / ratings.length).toFixed(1) : 0;
+  async function load() {
+    if (!supabase || !dataOwnerName) { setLoading(false); return; }
+    try {
+      let oq = supabase.from('orders').select('*').order('created_at', { ascending: false });
+      let pq = supabase.from('products').select('*');
+      let cq = supabase.from('customers').select('*');
+      if (!isSectionAdmin) {
+        oq = oq.eq('provider_name', dataOwnerName);
+        pq = pq.eq('provider_name', dataOwnerName);
+        cq = cq.eq('entity_name', dataOwnerName);
+      }
+      const [o, p, c] = await Promise.all([oq, pq, cq]);
+      setOrders(o.data || []);
+      setProducts(p.data || []);
+      setCustomers(c.data || []);
+    } catch (e) { toastError('تعذّر التحميل'); }
+    setLoading(false);
+  }
 
-    // تجميع الطلبات حسب آخر 7 أيام
+  const periodOrders = useMemo(() => {
+    if (period === 'all') return orders;
+    const now = new Date();
+    const cutoff = new Date();
+    if (period === 'week') cutoff.setDate(now.getDate() - 7);
+    else if (period === 'month') cutoff.setMonth(now.getMonth() - 1);
+    else if (period === 'year') cutoff.setFullYear(now.getFullYear() - 1);
+    return orders.filter(o => new Date(o.created_at) >= cutoff);
+  }, [orders, period]);
+
+  const kpis = useMemo(() => {
+    const done = periodOrders.filter(o => o.status === 'done');
+    const revenue = done.reduce((s, o) => s + Number(o.total || 0), 0);
+    return {
+      revenue,
+      done: done.length,
+      pending: periodOrders.filter(o => ['new','preparing','delivering'].includes(o.status)).length,
+      cancelled: periodOrders.filter(o => o.status === 'cancelled').length,
+      avgOrder: done.length ? revenue / done.length : 0,
+    };
+  }, [periodOrders]);
+
+  const topProducts = useMemo(() => {
+    const counts = {};
+    periodOrders.filter(o => o.status === 'done').forEach(o => {
+      (o.items || []).forEach(it => {
+        const k = it.title || 'منتج';
+        if (!counts[k]) counts[k] = { title: k, qty: 0, revenue: 0 };
+        counts[k].qty += Number(it.qty) || 0;
+        counts[k].revenue += (Number(it.price) || 0) * (Number(it.qty) || 0);
+      });
+    });
+    return Object.values(counts).sort((a, b) => b.revenue - a.revenue).slice(0, 5);
+  }, [periodOrders]);
+
+  const chartData = useMemo(() => {
     const days = [];
     for (let i = 6; i >= 0; i--) {
       const d = new Date();
       d.setDate(d.getDate() - i);
-      const key = d.toISOString().slice(0, 10);
-      const count = orders.filter((o) => o.created_at?.slice(0, 10) === key).length;
-      days.push({ day: d.toLocaleDateString('ar-EG', { weekday: 'short' }), count, date: key });
+      d.setHours(0,0,0,0);
+      const next = new Date(d);
+      next.setDate(next.getDate() + 1);
+      const total = orders
+        .filter(o => o.status === 'done' && new Date(o.created_at) >= d && new Date(o.created_at) < next)
+        .reduce((s, o) => s + Number(o.total || 0), 0);
+      days.push({ label: d.toLocaleDateString('ar-EG', { weekday: 'short' }), value: total });
     }
+    return days;
+  }, [orders]);
 
-    setStats({
-      services: s.count || 0,
-      products: p.count || 0,
-      orders: orders.length,
-      revenue,
-      reviews: ratings.length,
-      rating: avgRating,
-    });
-    setOrdersByDay(days);
-    setLoading(false);
+  const maxChart = Math.max(...chartData.map(d => d.value), 1);
+
+  if (!userLoading && user && !isOwner && !isSectionAdmin && !hasPermission('reports')) {
+    return <div style={{ padding: 60, textAlign: 'center' }}>🔒 ليس لديك صلاحية</div>;
   }
-
-  function exportCSV() {
-    if (!entity) return;
-    const csv = '\uFEFF' + [
-      ['البند', 'القيمة'],
-      ['الخدمات', stats.services],
-      ['المنتجات', stats.products],
-      ['الطلبات', stats.orders],
-      ['الإيرادات', stats.revenue],
-      ['التقييمات', stats.reviews],
-      ['متوسط التقييم', stats.rating],
-    ].map((r) => r.join(',')).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `sanad-report-${Date.now()}.csv`;
-    a.click();
+  if (userLoading || (user && loading)) {
+    return <div style={{ padding: 16, background: '#f8fafc', minHeight: '100vh' }}><SkeletonList count={4} /></div>;
   }
-
-  if (!entity) return <div className="sect-empty" style={{ padding: 80 }}><span className="em">⏳</span></div>;
-
-  const maxOrders = Math.max(...ordersByDay.map((d) => d.count), 1);
-
-  // Donut للإيرادات
-  const donutParts = [
-    { label: 'طلبات مكتملة', val: stats.orders, color: '#0e8a66' },
-    { label: 'منتجات', val: stats.products, color: '#e8b923' },
-    { label: 'خدمات', val: stats.services, color: '#0891b2' },
-  ];
-  const total = donutParts.reduce((s, p) => s + p.val, 0) || 1;
-  let offset = 0;
+  if (!user) return null;
 
   return (
-    <div className="reports-page">
-      <div className="notif-header">
-        <Link href="/merchant" className="notif-back">→</Link>
-        <span className="notif-title">📊 التقارير</span>
-        <button className="mng-add-btn" onClick={exportCSV} type="button">📥 CSV</button>
+    <div style={{ minHeight: '100vh', background: '#f8fafc', paddingBottom: 40 }}>
+      <div style={{ background: '#0f4d3a', padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
+        <Link href="/merchant" style={{ color: '#fff', textDecoration: 'none', fontSize: 20 }}>→</Link>
+        <div style={{ flex: 1, color: '#fff', fontSize: 16, fontWeight: 900 }}>📊 التقارير</div>
       </div>
 
-      {loading ? (
-        <div className="sect-empty"><span className="em">⏳</span></div>
-      ) : (
-        <>
-          <div className="report-kpis">
-            <div className="report-kpi">
-              <div className="report-kpi-val">{stats.revenue.toLocaleString()}</div>
-              <div className="report-kpi-lbl">الإيرادات (ل.س)</div>
-            </div>
-            <div className="report-kpi">
-              <div className="report-kpi-val">{stats.orders}</div>
-              <div className="report-kpi-lbl">الطلبات</div>
-            </div>
-            <div className="report-kpi">
-              <div className="report-kpi-val">{stats.reviews}</div>
-              <div className="report-kpi-lbl">التقييمات</div>
-            </div>
-            <div className="report-kpi">
-              <div className="report-kpi-val">{stats.rating} ⭐</div>
-              <div className="report-kpi-lbl">متوسط التقييم</div>
-            </div>
-          </div>
+      <div style={{ padding: 16 }}>
+        <div style={{ display: 'flex', gap: 8, overflowX: 'auto', marginBottom: 12 }}>
+          {[['all','الكل'],['week','7 أيام'],['month','30 يوم'],['year','سنة']].map(([k,l]) => (
+            <button key={k} onClick={() => setPeriod(k)} style={{
+              padding: '8px 16px', background: period === k ? '#0f4d3a' : '#fff', color: period === k ? '#fff' : '#64748b',
+              border: `1px solid ${period === k ? '#0f4d3a' : '#e5e7eb'}`, borderRadius: 10, fontSize: 12, fontWeight: 800,
+              cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'inherit',
+            }}>{l}</button>
+          ))}
+        </div>
 
-          <div className="report-chart">
-            <div className="report-chart-title">الطلبات آخر 7 أيام</div>
-            <div className="bars">
-              {ordersByDay.map((d, i) => (
-                <div key={i} className="bar-col">
-                  <span className="bar-value">{d.count}</span>
-                  <div className="bar" style={{ height: `${(d.count / maxOrders) * 100}%` }} />
-                  <span className="bar-label">{d.day}</span>
+        <div style={{ background: 'linear-gradient(135deg,#10b981,#059669)', borderRadius: 18, padding: 20, color: '#fff', marginBottom: 16 }}>
+          <div style={{ fontSize: 11, opacity: 0.85, marginBottom: 8 }}>إجمالي الإيرادات</div>
+          <div style={{ fontSize: 28, fontWeight: 900 }}>{kpis.revenue.toLocaleString()} SYP</div>
+          <div style={{ fontSize: 11, opacity: 0.75, marginTop: 8 }}>من {kpis.done} طلب مكتمل</div>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10, marginBottom: 16 }}>
+          <div style={{ background: '#fff', borderRadius: 14, padding: 14, border: '1px solid #e5e7eb' }}>
+            <div style={{ fontSize: 10, color: '#64748b', marginBottom: 6 }}>مكتملة</div>
+            <div style={{ fontSize: 22, fontWeight: 900, color: '#10b981' }}>{kpis.done}</div>
+          </div>
+          <div style={{ background: '#fff', borderRadius: 14, padding: 14, border: '1px solid #e5e7eb' }}>
+            <div style={{ fontSize: 10, color: '#64748b', marginBottom: 6 }}>قيد التنفيذ</div>
+            <div style={{ fontSize: 22, fontWeight: 900, color: '#f59e0b' }}>{kpis.pending}</div>
+          </div>
+          <div style={{ background: '#fff', borderRadius: 14, padding: 14, border: '1px solid #e5e7eb' }}>
+            <div style={{ fontSize: 10, color: '#64748b', marginBottom: 6 }}>ملغاة</div>
+            <div style={{ fontSize: 22, fontWeight: 900, color: '#ef4444' }}>{kpis.cancelled}</div>
+          </div>
+          <div style={{ background: '#fff', borderRadius: 14, padding: 14, border: '1px solid #e5e7eb' }}>
+            <div style={{ fontSize: 10, color: '#64748b', marginBottom: 6 }}>متوسط الطلب</div>
+            <div style={{ fontSize: 18, fontWeight: 900, color: '#3b82f6' }}>{Math.round(kpis.avgOrder).toLocaleString()}</div>
+          </div>
+        </div>
+
+        <div style={{ background: '#fff', borderRadius: 16, padding: 16, border: '1px solid #e5e7eb', marginBottom: 16 }}>
+          <div style={{ fontSize: 14, fontWeight: 900, marginBottom: 16 }}>📈 آخر 7 أيام</div>
+          <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', height: 140, gap: 6 }}>
+            {chartData.map((d, i) => {
+              const h = (d.value / maxChart) * 100;
+              return (
+                <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+                  <div style={{ flex: 1, width: '100%', display: 'flex', alignItems: 'flex-end' }}>
+                    <div style={{ width: '100%', height: `${Math.max(h, 4)}%`, background: 'linear-gradient(180deg,#10b981,#059669)', borderRadius: '6px 6px 0 0', minHeight: 4 }} />
+                  </div>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: '#64748b' }}>{d.label}</div>
                 </div>
-              ))}
-            </div>
+              );
+            })}
           </div>
+        </div>
 
-          <div className="report-chart">
-            <div className="report-chart-title">توزيع المحتوى</div>
-            <div className="donut">
-              <svg width="160" height="160" viewBox="0 0 160 160">
-                {donutParts.map((p, i) => {
-                  const pct = (p.val / total) * 100;
-                  const dash = (pct / 100) * 2 * Math.PI * 60;
-                  const gap = 2 * Math.PI * 60 - dash;
-                  const el = (
-                    <circle
-                      key={i}
-                      cx="80"
-                      cy="80"
-                      r="60"
-                      fill="none"
-                      stroke={p.color}
-                      strokeWidth="20"
-                      strokeDasharray={`${dash} ${gap}`}
-                      strokeDashoffset={-offset}
-                      strokeLinecap="round"
-                    />
-                  );
-                  offset += dash;
-                  return el;
-                })}
-              </svg>
-              <div className="donut-center">
-                <div className="donut-val">{stats.products + stats.services}</div>
-                <div className="donut-lbl">إجمالي العناصر</div>
+        {topProducts.length > 0 && (
+          <div style={{ background: '#fff', borderRadius: 16, padding: 16, border: '1px solid #e5e7eb', marginBottom: 16 }}>
+            <div style={{ fontSize: 14, fontWeight: 900, marginBottom: 14 }}>🔥 الأكثر مبيعاً</div>
+            {topProducts.map((p, i) => (
+              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: i < topProducts.length - 1 ? '1px solid #f1f5f9' : 'none' }}>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 800 }}>{p.title}</div>
+                  <div style={{ fontSize: 10, color: '#64748b' }}>{p.qty} مبيع</div>
+                </div>
+                <div style={{ fontSize: 13, fontWeight: 900, color: '#0f4d3a' }}>{p.revenue.toLocaleString()}</div>
               </div>
-            </div>
-            <div className="legend">
-              {donutParts.map((p) => (
-                <div key={p.label} className="legend-item">
-                  <span className="legend-dot" style={{ background: p.color }} />
-                  {p.label}: {p.val}
-                </div>
-              ))}
-            </div>
+            ))}
           </div>
-        </>
-      )}
+        )}
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10 }}>
+          <div style={{ background: '#fff', borderRadius: 14, padding: 14, border: '1px solid #e5e7eb', textAlign: 'center' }}>
+            <div style={{ fontSize: 20, fontWeight: 900 }}>{products.length}</div>
+            <div style={{ fontSize: 10, color: '#64748b' }}>منتج</div>
+          </div>
+          <div style={{ background: '#fff', borderRadius: 14, padding: 14, border: '1px solid #e5e7eb', textAlign: 'center' }}>
+            <div style={{ fontSize: 20, fontWeight: 900 }}>{customers.length}</div>
+            <div style={{ fontSize: 10, color: '#64748b' }}>عميل</div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

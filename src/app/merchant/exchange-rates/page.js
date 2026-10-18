@@ -1,264 +1,190 @@
 'use client';
-
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
-import { getSession } from '@/lib/auth';
+import { useCurrentUser } from '@/lib/useCurrentUser';
+import { useToast } from '@/components/Toast';
+import { SkeletonList } from '@/components/Skeleton';
+import EmptyState from '@/components/EmptyState';
 
-const CURRENCIES = [
-  { code: 'USD', name: 'دولار أمريكي', flag: '🇺🇸' },
-  { code: 'EUR', name: 'يورو', flag: '🇪🇺' },
-  { code: 'TRY', name: 'ليرة تركية', flag: '🇹🇷' },
-  { code: 'SAR', name: 'ريال سعودي', flag: '🇸🇦' },
-  { code: 'AED', name: 'درهم إماراتي', flag: '🇦🇪' },
-  { code: 'SYP', name: 'ليرة سورية', flag: '🇸🇾' },
+const DEFAULT_CURRENCIES = [
+  { code: 'USD', name_ar: 'دولار أمريكي', icon: '🇺🇸' },
+  { code: 'EUR', name_ar: 'يورو', icon: '🇪🇺' },
+  { code: 'TRY', name_ar: 'ليرة تركية', icon: '🇹🇷' },
+  { code: 'SAR', name_ar: 'ريال سعودي', icon: '🇸🇦' },
+  { code: 'AED', name_ar: 'درهم إماراتي', icon: '🇦🇪' },
+  { code: 'JOD', name_ar: 'دينار أردني', icon: '🇯🇴' },
+  { code: 'LBP', name_ar: 'ليرة لبنانية', icon: '🇱🇧' },
+  { code: 'EGP', name_ar: 'جنيه مصري', icon: '🇪🇬' },
 ];
 
-export default function MerchantExchangeRates() {
+export default function ExchangeRatesPage() {
   const router = useRouter();
-  const [entity, setEntity] = useState(null);
+  const { user, loading: uL, dataOwnerName } = useCurrentUser();
+  const { success, error: tE } = useToast();
   const [rates, setRates] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [editing, setEditing] = useState(null);
+  const [modal, setModal] = useState(null);
   const [form, setForm] = useState({});
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    let stored = null;
-    try { stored = getSession(); } catch (e) {}
-    if (!stored) { router.replace('/login'); return; }
-    setEntity(stored);
-    load(stored);
-  }, [router]);
+    if (uL) return;
+    if (!user) { router.replace('/login'); return; }
+    load();
+  }, [user, uL]);
 
-  async function load(ent) {
-    if (!supabase) { setLoading(false); return; }
-    const { data } = await supabase
-      .from('exchange_rates')
-      .select('*')
-      .eq('office_name', ent.display_name)
-      .order('currency');
-    setRates(Array.isArray(data) ? data : []);
+  async function load() {
+    if (!supabase || !dataOwnerName) { setLoading(false); return; }
+    const { data } = await supabase.from('exchange_rates').select('*').eq('entity_name', dataOwnerName).order('code');
+    setRates(data || []);
     setLoading(false);
   }
 
-  function openEdit(r) {
-    setEditing(r.id);
-    setForm({ ...r });
+  function openAdd() {
+    const availableCurrencies = DEFAULT_CURRENCIES.filter(
+      c => !rates.some(r => r.code === c.code)
+    );
+    if (availableCurrencies.length === 0) { tE('جميع العملات مضافة بالفعل'); return; }
+    setForm({ code: availableCurrencies[0].code, name_ar: availableCurrencies[0].name_ar, buy_price: '', sell_price: '', is_active: true });
+    setModal('add');
   }
 
-  function openNew(c) {
-    setEditing('new');
-    setForm({
-      currency: c?.code || 'USD',
-      buy_price: 0,
-      sell_price: 0,
-      notes: '',
-      is_active: true,
-    });
+  function openEdit(r) {
+    setForm({ ...r });
+    setModal('edit');
+  }
+
+  function selectCurrency(code) {
+    const c = DEFAULT_CURRENCIES.find(x => x.code === code);
+    if (c) setForm({ ...form, code: c.code, name_ar: c.name_ar });
   }
 
   async function save() {
-    if (!form.currency) { alert('اختر العملة'); return; }
-    if (!form.buy_price || !form.sell_price) { alert('أدخل السعرين'); return; }
+    if (!form.code) { tE('العملة مطلوبة'); return; }
+    if (!form.buy_price || Number(form.buy_price) <= 0) { tE('سعر الشراء مطلوب'); return; }
+    if (!form.sell_price || Number(form.sell_price) <= 0) { tE('سعر البيع مطلوب'); return; }
+    if (Number(form.sell_price) <= Number(form.buy_price)) { tE('سعر البيع يجب أن يكون أكبر من سعر الشراء'); return; }
 
-    const payload = {
-      office_name: entity.display_name,
-      currency: form.currency,
-      buy_price: parseFloat(form.buy_price) || 0,
-      sell_price: parseFloat(form.sell_price) || 0,
-      notes: form.notes?.trim() || null,
-      is_active: form.is_active !== false,
-      updated_at: new Date().toISOString(),
-    };
-
-    let err;
-    if (editing === 'new') {
-      ({ error: err } = await supabase.from('exchange_rates').insert(payload));
-    } else {
-      ({ error: err } = await supabase.from('exchange_rates').update(payload).eq('id', editing));
-    }
-    if (err) { alert('تعذّر: ' + err.message); return; }
-    setEditing(null);
-    load(entity);
+    setSaving(true);
+    try {
+      const payload = {
+        entity_name: dataOwnerName,
+        code: form.code,
+        name_ar: form.name_ar,
+        buy_price: Number(form.buy_price),
+        sell_price: Number(form.sell_price),
+        is_active: form.is_active !== false,
+        updated_at: new Date().toISOString(),
+      };
+      let err;
+      if (modal === 'edit') ({ error: err } = await supabase.from('exchange_rates').update(payload).eq('id', form.id));
+      else ({ error: err } = await supabase.from('exchange_rates').insert(payload));
+      if (err) throw err;
+      success(modal === 'edit' ? '✅ تم التعديل' : '✅ تمت الإضافة');
+      setModal(null); load();
+    } catch (e) { tE('تعذّر: ' + e.message); }
+    setSaving(false);
   }
 
   async function del(r) {
-    if (!confirm('حذف ' + r.currency + '؟')) return;
+    if (!confirm(`حذف ${r.code}؟`)) return;
     await supabase.from('exchange_rates').delete().eq('id', r.id);
-    load(entity);
+    success('✅ تم الحذف'); load();
   }
 
-  async function toggleActive(r) {
-    await supabase.from('exchange_rates')
-      .update({ is_active: !r.is_active, updated_at: new Date().toISOString() })
-      .eq('id', r.id);
-    load(entity);
+  async function toggle(r) {
+    await supabase.from('exchange_rates').update({ is_active: !r.is_active }).eq('id', r.id);
+    load();
   }
 
-  if (!entity) return <div className="sect-empty" style={{ padding: 80 }}><span className="em">⏳</span></div>;
-
-  const existing = new Set(rates.map((r) => r.currency));
-  const missing = CURRENCIES.filter((c) => !existing.has(c.code));
+  if (uL || loading) return <div style={{ padding: 16, background: '#f8fafc', minHeight: '100vh' }}><SkeletonList count={3} /></div>;
 
   return (
-    <div className="sect-page" style={{ paddingBottom: 40 }}>
-      <div className="inv-header">
-        <Link href="/merchant" className="inv-back">→</Link>
-        <span className="inv-title">💱 أسعار الصرف</span>
-        <button className="mng-add-btn" onClick={() => openNew(null)} type="button">+ عملة</button>
+    <div style={{ minHeight: '100vh', background: '#f8fafc', paddingBottom: 80 }}>
+      <div style={{ position: 'sticky', top: 0, zIndex: 10, background: 'linear-gradient(135deg,#ca8a04,#854d0e)', padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
+        <Link href="/merchant" style={{ color: '#fff', textDecoration: 'none', fontSize: 20, width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,.15)', borderRadius: '50%' }}>→</Link>
+        <div style={{ flex: 1 }}>
+          <div style={{ color: '#fff', fontSize: 16, fontWeight: 900 }}>💱 أسعار الصرف</div>
+          <div style={{ color: 'rgba(255,255,255,.8)', fontSize: 11, marginTop: 2 }}>{rates.length} عملة</div>
+        </div>
+        <button onClick={openAdd} style={{ background: '#fff', color: '#854d0e', border: 'none', padding: '8px 14px', borderRadius: 10, fontSize: 12, fontWeight: 900, cursor: 'pointer', fontFamily: 'inherit' }}>+ عملة</button>
       </div>
 
-      {missing.length > 0 && (
-        <div style={{ padding: '12px 16px', background: 'rgba(251,191,36,.08)', borderBottom: '1px solid rgba(251,191,36,.2)' }}>
-          <div style={{ fontSize: 11, color: 'rgba(251,191,36,.9)', fontWeight: 800, marginBottom: 8 }}>
-            ⚠️ عملات لم تُضف بعد — اضغط للإضافة السريعة:
-          </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-            {missing.map((c) => (
-              <button
-                key={c.code}
-                onClick={() => openNew(c)}
-                type="button"
-                className="chip"
-                style={{ background: 'rgba(251,191,36,.15)', border: '1px solid rgba(251,191,36,.3)' }}
-              >
-                {c.flag} {c.name}
-              </button>
-            ))}
-          </div>
+      <div style={{ padding: 16 }}>
+        <div style={{ background: 'rgba(202,138,4,.08)', border: '1px solid rgba(202,138,4,.2)', borderRadius: 12, padding: 12, marginBottom: 16, fontSize: 12, color: '#854d0e', fontWeight: 700, lineHeight: 1.6 }}>
+          💡 سعر الشراء: كم تدفع لشراء العملة من العميل. سعر البيع: كم تأخذ عند بيع العملة للعميل.
         </div>
-      )}
+      </div>
 
-      {loading ? (
-        <div className="sect-empty"><span className="em">⏳</span></div>
-      ) : rates.length === 0 ? (
-        <div className="sect-empty">
-          <span className="em">💱</span>
-          <p>لم تُضف أسعار بعد</p>
-          <button className="mng-btn primary" onClick={() => openNew(null)} type="button" style={{ marginTop: 12 }}>
-            + إضافة أول عملة
-          </button>
-        </div>
-      ) : (
-        <div style={{ padding: 16 }}>
-          {rates.map((r) => {
-            const cur = CURRENCIES.find((c) => c.code === r.currency);
-            return (
-              <div
-                key={r.id}
-                className="debt-card"
-                style={{ borderRightColor: r.is_active !== false ? '#14b8a6' : '#666', opacity: r.is_active !== false ? 1 : 0.5 }}
-              >
-                <div className="debt-customer">
-                  {cur?.flag || '💵'} {cur?.name || r.currency}
-                </div>
-
-                <div style={{ display: 'flex', gap: 12, marginTop: 10 }}>
-                  <div style={{ flex: 1, background: 'rgba(20,184,166,.1)', borderRadius: 10, padding: '8px 12px' }}>
-                    <div style={{ fontSize: 10, color: 'var(--n-500)', fontWeight: 700, marginBottom: 2 }}>شراء (نشتري)</div>
-                    <div style={{ fontSize: 15, fontWeight: 900, color: '#14b8a6', direction: 'ltr', textAlign: 'right' }}>
-                      {Number(r.buy_price || 0).toLocaleString()}
-                    </div>
-                  </div>
-                  <div style={{ flex: 1, background: 'rgba(220,38,38,.1)', borderRadius: 10, padding: '8px 12px' }}>
-                    <div style={{ fontSize: 10, color: 'var(--n-500)', fontWeight: 700, marginBottom: 2 }}>بيع (نبيع)</div>
-                    <div style={{ fontSize: 15, fontWeight: 900, color: '#dc2626', direction: 'ltr', textAlign: 'right' }}>
-                      {Number(r.sell_price || 0).toLocaleString()}
-                    </div>
+      <div style={{ padding: '0 16px' }}>
+        {rates.length === 0 ? (
+          <EmptyState icon="💱" title="لا توجد أسعار" description="أضف عملاتك ليتمكن العملاء من رؤيتها" actionLabel="+ إضافة عملة" onAction={openAdd} />
+        ) : rates.map(r => {
+          const currency = DEFAULT_CURRENCIES.find(c => c.code === r.code);
+          return (
+            <div key={r.id} style={{ background: '#fff', borderRadius: 14, padding: 14, marginBottom: 10, border: '1px solid #e5e7eb', opacity: r.is_active ? 1 : 0.6 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 10 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <div style={{ fontSize: 28 }}>{currency?.icon || '💵'}</div>
+                  <div>
+                    <div style={{ fontSize: 15, fontWeight: 900, color: '#0f172a', direction: 'ltr', textAlign: 'right' }}>{r.code}</div>
+                    <div style={{ fontSize: 11, color: '#64748b' }}>{r.name_ar}</div>
                   </div>
                 </div>
-
-                {r.notes && (
-                  <div style={{ fontSize: 11, color: 'var(--n-500)', marginTop: 8 }}>📝 {r.notes}</div>
-                )}
-
-                <div style={{ fontSize: 10, color: 'var(--n-400)', marginTop: 8, textAlign: 'left', direction: 'ltr' }}>
-                  آخر تحديث: {new Date(r.updated_at).toLocaleString('ar-EG')}
+                <span style={{ background: r.is_active ? 'rgba(16,185,129,.15)' : '#f1f5f9', color: r.is_active ? '#10b981' : '#64748b', padding: '3px 10px', borderRadius: 6, fontSize: 9.5, fontWeight: 900, height: 'fit-content' }}>{r.is_active ? '● نشط' : '○ معطل'}</span>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
+                <div style={{ background: 'rgba(16,185,129,.08)', padding: 10, borderRadius: 8 }}>
+                  <div style={{ fontSize: 10, color: '#64748b', fontWeight: 700, marginBottom: 2 }}>شراء</div>
+                  <div style={{ fontSize: 16, fontWeight: 900, color: '#10b981', direction: 'ltr', textAlign: 'right' }}>{Number(r.buy_price).toLocaleString()}</div>
                 </div>
-
-                <div className="debt-actions">
-                  <button className="debt-action" onClick={() => toggleActive(r)} type="button" title={r.is_active !== false ? 'إخفاء' : 'إظهار'}>
-                    {r.is_active !== false ? '👁️' : '🚫'}
-                  </button>
-                  <button className="debt-action edit" onClick={() => openEdit(r)} type="button">✏️</button>
-                  <button className="debt-action del" onClick={() => del(r)} type="button">🗑️</button>
+                <div style={{ background: 'rgba(239,68,68,.08)', padding: 10, borderRadius: 8 }}>
+                  <div style={{ fontSize: 10, color: '#64748b', fontWeight: 700, marginBottom: 2 }}>بيع</div>
+                  <div style={{ fontSize: 16, fontWeight: 900, color: '#ef4444', direction: 'ltr', textAlign: 'right' }}>{Number(r.sell_price).toLocaleString()}</div>
                 </div>
               </div>
-            );
-          })}
-        </div>
-      )}
-
-      {editing && (
-        <div className="mng-modal-bg" onClick={() => setEditing(null)}>
-          <div className="mng-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="mng-modal-handle" />
-            <h3 className="mng-modal-title">{editing === 'new' ? '➕ عملة جديدة' : '✏️ تعديل السعر'}</h3>
-
-            <div className="new-service-field">
-              <label className="new-service-label">العملة *</label>
-              <select
-                className="new-service-select"
-                value={form.currency || ''}
-                onChange={(e) => setForm({ ...form, currency: e.target.value })}
-                disabled={editing !== 'new'}
-              >
-                {CURRENCIES.map((c) => (
-                  <option key={c.code} value={c.code}>{c.flag} {c.name} ({c.code})</option>
-                ))}
-              </select>
-            </div>
-
-            <div className="new-prod-row">
-              <div className="new-service-field">
-                <label className="new-service-label">سعر الشراء *</label>
-                <input
-                  className="new-service-input"
-                  type="number"
-                  step="any"
-                  value={form.buy_price || ''}
-                  onChange={(e) => setForm({ ...form, buy_price: e.target.value })}
-                  placeholder="كم تشتري بـ 1"
-                />
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button onClick={() => openEdit(r)} style={{ flex: 1, padding: 8, background: '#f1f5f9', color: '#475569', border: 'none', borderRadius: 8, fontSize: 11, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' }}>✏️ تعديل</button>
+                <button onClick={() => toggle(r)} style={{ flex: 1, padding: 8, background: r.is_active ? 'rgba(251,191,36,.1)' : 'rgba(16,185,129,.1)', color: r.is_active ? '#92400e' : '#10b981', border: 'none', borderRadius: 8, fontSize: 11, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' }}>{r.is_active ? '⏸ إيقاف' : '▶ تفعيل'}</button>
+                <button onClick={() => del(r)} style={{ padding: 8, background: 'rgba(220,38,38,.1)', color: '#dc2626', border: 'none', borderRadius: 8, fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>🗑️</button>
               </div>
-              <div className="new-service-field">
-                <label className="new-service-label">سعر البيع *</label>
-                <input
-                  className="new-service-input"
-                  type="number"
-                  step="any"
-                  value={form.sell_price || ''}
-                  onChange={(e) => setForm({ ...form, sell_price: e.target.value })}
-                  placeholder="كم تبيع بـ 1"
-                />
+            </div>
+          );
+        })}
+      </div>
+
+      {modal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 100, display: 'flex', alignItems: 'flex-end' }} onClick={() => setModal(null)}>
+          <div style={{ background: '#fff', borderRadius: '24px 24px 0 0', width: '100%', maxWidth: 500, margin: '0 auto', padding: '24px 20px 30px', maxHeight: '90vh', overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
+            <h3 style={{ fontSize: 18, fontWeight: 900, marginBottom: 16 }}>{modal === 'edit' ? 'تعديل سعر' : 'إضافة عملة'}</h3>
+
+            {modal === 'add' && (
+              <div style={{ marginBottom: 12 }}>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 800, color: '#334155', marginBottom: 6 }}>العملة</label>
+                <select value={form.code || ''} onChange={(e) => selectCurrency(e.target.value)} style={{ width: '100%', padding: 12, border: '1px solid #e5e7eb', borderRadius: 10, fontSize: 14, fontFamily: 'inherit', boxSizing: 'border-box' }}>
+                  {DEFAULT_CURRENCIES.filter(c => !rates.some(r => r.code === c.code)).map(c => (
+                    <option key={c.code} value={c.code}>{c.icon} {c.name_ar} ({c.code})</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 800, color: '#10b981', marginBottom: 6 }}>سعر الشراء (SYP) *</label>
+                <input type="number" value={form.buy_price || ''} onChange={(e) => setForm({ ...form, buy_price: e.target.value })} placeholder="0" style={{ width: '100%', padding: 12, border: '1px solid #e5e7eb', borderRadius: 10, fontSize: 14, fontFamily: 'inherit', boxSizing: 'border-box', outline: 'none' }} />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 800, color: '#ef4444', marginBottom: 6 }}>سعر البيع (SYP) *</label>
+                <input type="number" value={form.sell_price || ''} onChange={(e) => setForm({ ...form, sell_price: e.target.value })} placeholder="0" style={{ width: '100%', padding: 12, border: '1px solid #e5e7eb', borderRadius: 10, fontSize: 14, fontFamily: 'inherit', boxSizing: 'border-box', outline: 'none' }} />
               </div>
             </div>
 
-            <div className="new-service-field">
-              <label className="new-service-label">ملاحظات</label>
-              <textarea
-                className="new-service-input"
-                style={{ minHeight: 60, fontFamily: 'inherit' }}
-                value={form.notes || ''}
-                onChange={(e) => setForm({ ...form, notes: e.target.value })}
-                placeholder="مثال: أسعار اليوم حسب البورصة"
-              />
-            </div>
-
-            <div className="new-service-field" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <input
-                type="checkbox"
-                checked={form.is_active !== false}
-                onChange={(e) => setForm({ ...form, is_active: e.target.checked })}
-                id="exch_act"
-              />
-              <label htmlFor="exch_act" style={{ margin: 0, cursor: 'pointer' }}>مُفعّل (يظهر للزوار)</label>
-            </div>
-
-            <div className="admin-form-actions">
-              <button className="mng-btn ghost" onClick={() => setEditing(null)} type="button">إلغاء</button>
-              <button className="mng-btn primary" onClick={save} type="button">✓ حفظ</button>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button onClick={() => setModal(null)} style={{ flex: 1, padding: 12, background: '#f1f5f9', border: 'none', borderRadius: 10, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' }}>إلغاء</button>
+              <button onClick={save} disabled={saving} style={{ flex: 1, padding: 12, background: 'linear-gradient(135deg,#ca8a04,#854d0e)', color: '#fff', border: 'none', borderRadius: 10, fontWeight: 900, cursor: saving ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>{saving ? '...' : '✓ حفظ'}</button>
             </div>
           </div>
         </div>

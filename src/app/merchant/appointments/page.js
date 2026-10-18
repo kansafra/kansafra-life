@@ -1,214 +1,199 @@
 'use client';
-
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
-import { getSession } from '@/lib/auth';
-import { sendNotification } from '@/lib/notify';
+import { useCurrentUser } from '@/lib/useCurrentUser';
+import { useToast } from '@/components/Toast';
+import { SkeletonList } from '@/components/Skeleton';
+import EmptyState from '@/components/EmptyState';
 
-const STATUS_LABELS = {
-  pending:   { label: 'قيد المراجعة', color: '#f59e0b', icon: '⏳' },
-  confirmed: { label: 'مؤكد',         color: '#22c55e', icon: '✅' },
-  rejected:  { label: 'مرفوض',        color: '#dc2626', icon: '❌' },
-  done:      { label: 'مكتمل',        color: '#0ea5e9', icon: '✔️' },
-  cancelled: { label: 'ملغي',         color: '#666',    icon: '🚫' },
+const STATUS = {
+  pending: { label: 'قيد المراجعة', color: '#f59e0b', icon: '⏳' },
+  confirmed: { label: 'مؤكد', color: '#10b981', icon: '✅' },
+  completed: { label: 'مكتمل', color: '#3b82f6', icon: '✔️' },
+  cancelled: { label: 'ملغي', color: '#ef4444', icon: '❌' },
+  no_show: { label: 'لم يحضر', color: '#94a3b8', icon: '⚠️' },
 };
 
-export default function MerchantAppointments() {
+export default function AppointmentsPage() {
   const router = useRouter();
-  const [session, setSession] = useState(null);
+  const { user, loading: userLoading, isOwner, dataOwnerName } = useCurrentUser();
+  const { success, error: tE } = useToast();
   const [appointments, setAppointments] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState('all');
-  const [selectedDate, setSelectedDate] = useState('');
+  const [filter, setFilter] = useState('today');
+  const [selected, setSelected] = useState(null);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    const s = getSession();
-    if (!s) { router.replace('/login'); return; }
-    setSession(s);
-    load(s);
-  }, [router]);
+    if (userLoading) return;
+    if (!user) { router.replace('/login'); return; }
+    load();
+  }, [user, userLoading]);
 
-  async function load(s) {
-    if (!supabase) { setLoading(false); return; }
-    let query = supabase
-      .from('appointments')
-      .select('*')
-      .eq('doctor_name', s.display_name)
-      .order('appointment_date', { ascending: false });
-    
-    const { data } = await query;
-    setAppointments(Array.isArray(data) ? data : []);
+  async function load() {
+    if (!supabase || !dataOwnerName) { setLoading(false); return; }
+    try {
+      const { data } = await supabase.from('appointments')
+        .select('*')
+        .eq('provider_name', dataOwnerName)
+        .order('appointment_date', { ascending: true })
+        .order('appointment_time', { ascending: true });
+      setAppointments(data || []);
+    } catch (e) { tE('تعذّر التحميل'); }
     setLoading(false);
   }
 
-  async function updateStatus(apt, newStatus, reason = null) {
-    const { error } = await supabase
-      .from('appointments')
-      .update({ 
-        status: newStatus, 
-        approval_status: newStatus === 'confirmed' ? 'approved' : newStatus === 'rejected' ? 'rejected' : undefined,
-        rejection_reason: reason,
-        approved_at: newStatus === 'confirmed' ? new Date().toISOString() : null,
-      })
-      .eq('id', apt.id);
-    
-    if (!error) {
-      setAppointments((arr) => arr.map((a) => a.id === apt.id ? { ...a, status: newStatus } : a));
-      
-      // إشعار المريض
-      try {
-        const titles = {
-          confirmed: '✅ تم تأكيد موعدك',
-          rejected: '❌ تم رفض موعدك',
-          done: '✔️ اكتمل موعدك',
-          cancelled: '🚫 تم إلغاء موعدك',
-        };
-        const bodies = {
-          confirmed: `موعدك مع ${apt.doctor_name} يوم ${apt.appointment_date} الساعة ${apt.appointment_time} تم تأكيده`,
-          rejected: reason ? `سبب الرفض: ${reason}` : 'يرجى حجز موعد آخر',
-          done: 'شكراً لزيارتك — نتمنى لكن الشفاء',
-          cancelled: 'تم إلغاء الموعد من قبل الطبيب',
-        };
-        
-        await sendNotification({
-          recipient: apt.patient_phone,
-          title: titles[newStatus] || '📅 تحديث موعدك',
-          body: bodies[newStatus] || 'تم تحديث حالة موعدك',
-          type: newStatus === 'rejected' || newStatus === 'cancelled' ? 'error' : 'success',
-          targetUrl: '/my-appointments',
-          playAudio: true,
-        });
-      } catch (e) {
-        console.warn('notify patient:', e);
-      }
-    }
+  const today = new Date().toISOString().slice(0, 10);
+
+  const filtered = useMemo(() => {
+    if (filter === 'today') return appointments.filter(a => a.appointment_date === today);
+    if (filter === 'upcoming') return appointments.filter(a => a.appointment_date > today && a.status !== 'cancelled');
+    if (filter === 'pending') return appointments.filter(a => a.status === 'pending');
+    if (filter === 'all') return appointments;
+    return appointments.filter(a => a.status === filter);
+  }, [appointments, filter, today]);
+
+  async function changeStatus(id, newStatus) {
+    setSaving(true);
+    try {
+      const { error } = await supabase.from('appointments').update({ status: newStatus }).eq('id', id);
+      if (error) throw error;
+      success(`✅ تم التحديث إلى "${STATUS[newStatus].label}"`);
+      setAppointments(prev => prev.map(a => a.id === id ? { ...a, status: newStatus } : a));
+      if (selected?.id === id) setSelected({ ...selected, status: newStatus });
+    } catch (e) { tE('تعذّر التحديث'); }
+    setSaving(false);
   }
 
-  const filtered = appointments.filter((a) => {
-    if (filter !== 'all' && a.status !== filter) return false;
-    if (selectedDate && a.appointment_date !== selectedDate) return false;
-    return true;
-  });
+  function call(phone) {
+    if (!phone) return;
+    window.location.href = `tel:${phone}`;
+  }
 
-  const counts = {
-    all: appointments.length,
-    pending: appointments.filter((a) => a.status === 'pending').length,
-    confirmed: appointments.filter((a) => a.status === 'confirmed').length,
-    rejected: appointments.filter((a) => a.status === 'rejected').length,
+  function whatsapp(a) {
+    if (!a.customer_phone) return;
+    const clean = String(a.customer_phone).replace(/\D/g, '');
+    const phone = clean.startsWith('0') ? '963' + clean.slice(1) : clean;
+    const msg = `مرحباً ${a.customer_name}، موعدك يوم ${new Date(a.appointment_date).toLocaleDateString('ar-EG')} الساعة ${a.appointment_time}`;
+    window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, '_blank');
+  }
+
+  if (userLoading || loading) return <div style={{ padding: 16, background: '#f8fafc', minHeight: '100vh' }}><SkeletonList count={4} /></div>;
+
+  const stats = {
+    today: appointments.filter(a => a.appointment_date === today && a.status !== 'cancelled').length,
+    pending: appointments.filter(a => a.status === 'pending').length,
+    confirmed: appointments.filter(a => a.status === 'confirmed').length,
   };
 
   return (
-    <div className="sect-page" style={{ paddingBottom: 60 }}>
-      <div className="inv-header">
-        <Link href="/merchant" className="inv-back">→</Link>
-        <span className="inv-title">📅 المواعيد</span>
-        <span className="inv-count">{counts.pending}</span>
+    <div style={{ minHeight: '100vh', background: '#f8fafc', paddingBottom: 40 }}>
+      <div style={{ position: 'sticky', top: 0, zIndex: 10, background: '#dc2626', padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
+        <Link href="/merchant" style={{ color: '#fff', textDecoration: 'none', fontSize: 20, width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,.15)', borderRadius: '50%' }}>→</Link>
+        <div style={{ flex: 1 }}>
+          <div style={{ color: '#fff', fontSize: 16, fontWeight: 900 }}>📅 المواعيد</div>
+          <div style={{ color: 'rgba(255,255,255,.8)', fontSize: 11, marginTop: 2 }}>{stats.today} اليوم · {stats.pending} معلّق</div>
+        </div>
       </div>
 
-      <div className="chips-scroll" style={{ padding: '12px 16px 8px' }}>
-        <button className={`chip ${filter === 'all' ? 'active' : ''}`} onClick={() => setFilter('all')} type="button">الكل ({counts.all})</button>
-        <button className={`chip ${filter === 'pending' ? 'active' : ''}`} onClick={() => setFilter('pending')} type="button">⏳ قيد المراجعة ({counts.pending})</button>
-        <button className={`chip ${filter === 'confirmed' ? 'active' : ''}`} onClick={() => setFilter('confirmed')} type="button">✅ مؤكد ({counts.confirmed})</button>
+      <div style={{ padding: 16, display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+        <div style={{ background: '#fff', borderRadius: 12, padding: 12, textAlign: 'center', border: '1px solid #e5e7eb' }}>
+          <div style={{ fontSize: 10, color: '#64748b', fontWeight: 700, marginBottom: 4 }}>اليوم</div>
+          <div style={{ fontSize: 18, fontWeight: 900, color: '#0f4d3a' }}>{stats.today}</div>
+        </div>
+        <div style={{ background: '#fff', borderRadius: 12, padding: 12, textAlign: 'center', border: '1px solid #e5e7eb' }}>
+          <div style={{ fontSize: 10, color: '#f59e0b', fontWeight: 700, marginBottom: 4 }}>معلّق</div>
+          <div style={{ fontSize: 18, fontWeight: 900, color: '#f59e0b' }}>{stats.pending}</div>
+        </div>
+        <div style={{ background: '#fff', borderRadius: 12, padding: 12, textAlign: 'center', border: '1px solid #e5e7eb' }}>
+          <div style={{ fontSize: 10, color: '#10b981', fontWeight: 700, marginBottom: 4 }}>مؤكد</div>
+          <div style={{ fontSize: 18, fontWeight: 900, color: '#10b981' }}>{stats.confirmed}</div>
+        </div>
       </div>
 
       <div style={{ padding: '0 16px 12px' }}>
-        <input
-          type="date"
-          value={selectedDate}
-          onChange={(e) => setSelectedDate(e.target.value)}
-          className="new-service-input"
-          placeholder="فلترة بالتاريخ"
-        />
+        <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 4 }}>
+          {[
+            { k: 'today', l: 'اليوم' },
+            { k: 'upcoming', l: 'القادمة' },
+            { k: 'pending', l: 'معلقة' },
+            { k: 'all', l: 'الكل' },
+          ].map(f => (
+            <button key={f.k} onClick={() => setFilter(f.k)} style={{
+              padding: '8px 14px', background: filter === f.k ? '#dc2626' : '#fff',
+              color: filter === f.k ? '#fff' : '#64748b',
+              border: `1px solid ${filter === f.k ? '#dc2626' : '#e5e7eb'}`,
+              borderRadius: 10, fontSize: 11.5, fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'inherit',
+            }}>{f.l}</button>
+          ))}
+        </div>
       </div>
 
-      {loading ? (
-        <div className="sect-empty"><span className="em">⏳</span></div>
-      ) : filtered.length === 0 ? (
-        <div className="sect-empty"><span className="em">📅</span><p>لا توجد مواعيد</p></div>
-      ) : (
-        <div style={{ padding: 16 }}>
-          {filtered.map((apt) => {
-            const st = STATUS_LABELS[apt.status] || STATUS_LABELS.pending;
-            return (
-              <div key={apt.id} className="debt-card" style={{ borderRightColor: st.color, marginBottom: 12 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 15, fontWeight: 900, marginBottom: 4 }}>
-                      👤 {apt.patient_name}
-                    </div>
-                    <div style={{ fontSize: 12, color: 'var(--n-500)' }}>
-                      📞 {apt.patient_phone}
-                      {apt.patient_age && ` · 🎂 ${apt.patient_age} سنة`}
-                    </div>
-                  </div>
-                  <div style={{ padding: '4px 10px', borderRadius: 999, background: st.color + '22', color: st.color, fontSize: 10.5, fontWeight: 900 }}>
-                    {st.icon} {st.label}
-                  </div>
+      <div style={{ padding: '0 16px' }}>
+        {filtered.length === 0 ? (
+          <EmptyState icon="📅" title={filter === 'today' ? 'لا توجد مواعيد اليوم' : 'لا توجد مواعيد'} description="ستظهر هنا حجوزات المرضى" />
+        ) : filtered.map(a => {
+          const s = STATUS[a.status] || STATUS.pending;
+          return (
+            <div key={a.id} style={{ background: '#fff', borderRadius: 14, padding: 14, marginBottom: 10, border: `1px solid ${a.status === 'pending' ? '#f59e0b' : '#e5e7eb'}`, cursor: 'pointer' }} onClick={() => setSelected(a)}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 14, fontWeight: 900, color: '#0f172a' }}>👤 {a.customer_name}</div>
+                  <div style={{ fontSize: 11, color: '#64748b', direction: 'ltr', textAlign: 'right', marginTop: 2 }}>{a.customer_phone}</div>
                 </div>
-
-                <div style={{ display: 'flex', gap: 12, fontSize: 12, padding: '10px 12px', background: 'rgba(255,255,255,.04)', borderRadius: 10, marginBottom: 10 }}>
-                  <span>📅 {new Date(apt.appointment_date).toLocaleDateString('ar-EG', { weekday: 'short', month: 'short', day: 'numeric' })}</span>
-                  <span>⏰ {apt.appointment_time}</span>
-                </div>
-
-                {apt.reason && (
-                  <div style={{ fontSize: 12, color: 'var(--n-400)', marginBottom: 10, padding: '8px 12px', background: 'rgba(255,255,255,.03)', borderRadius: 8, lineHeight: 1.6 }}>
-                    📝 {apt.reason}
-                  </div>
-                )}
-
-                {apt.status === 'pending' && (
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <button
-                      onClick={() => updateStatus(apt, 'confirmed')}
-                      type="button"
-                      style={{ flex: 1, padding: 10, background: 'linear-gradient(135deg, #22c55e, #16a34a)', color: '#fff', border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 900, cursor: 'pointer' }}
-                    >
-                      ✅ تأكيد
-                    </button>
-                    <button
-                      onClick={() => {
-                        const reason = prompt('سبب الرفض:');
-                        updateStatus(apt, 'rejected');
-                      }}
-                      type="button"
-                      style={{ flex: 1, padding: 10, background: 'rgba(220,38,38,.15)', color: '#dc2626', border: '1px solid rgba(220,38,38,.3)', borderRadius: 10, fontSize: 13, fontWeight: 900, cursor: 'pointer' }}
-                    >
-                      ❌ رفض
-                    </button>
-                  </div>
-                )}
-
-                {apt.status === 'confirmed' && (
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <a
-                      href={`tel:${apt.patient_phone}`}
-                      style={{ flex: 1, padding: 10, background: 'rgba(34,197,94,.15)', color: '#22c55e', border: '1px solid rgba(34,197,94,.3)', borderRadius: 10, fontSize: 13, fontWeight: 900, textDecoration: 'none', textAlign: 'center' }}
-                    >
-                      📞 اتصال
-                    </a>
-                    <a
-                      href={`https://wa.me/${apt.patient_phone.replace(/[^0-9]/g, '')}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{ flex: 1, padding: 10, background: 'linear-gradient(135deg, #25D366, #128C7E)', color: '#fff', border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 900, textDecoration: 'none', textAlign: 'center' }}
-                    >
-                      💬 واتساب
-                    </a>
-                    <button
-                      onClick={() => updateStatus(apt, 'done')}
-                      type="button"
-                      style={{ padding: 10, background: 'rgba(14,165,233,.15)', color: '#0ea5e9', border: '1px solid rgba(14,165,233,.3)', borderRadius: 10, fontSize: 13, fontWeight: 900, cursor: 'pointer' }}
-                    >
-                      ✔️
-                    </button>
-                  </div>
-                )}
+                <span style={{ background: `${s.color}20`, color: s.color, padding: '3px 10px', borderRadius: 6, fontSize: 10, fontWeight: 900, height: 'fit-content' }}>{s.icon} {s.label}</span>
               </div>
-            );
-          })}
+              <div style={{ background: '#f8fafc', borderRadius: 8, padding: 10, marginBottom: 8 }}>
+                <div style={{ fontSize: 12, fontWeight: 800, color: '#334155' }}>📅 {new Date(a.appointment_date).toLocaleDateString('ar-EG', { weekday: 'long', day: 'numeric', month: 'long' })} · 🕐 {a.appointment_time}</div>
+              </div>
+              {a.notes && <div style={{ fontSize: 11, color: '#64748b', marginBottom: 8 }}>📝 {a.notes}</div>}
+              {a.status === 'pending' && (
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <button onClick={(e) => { e.stopPropagation(); changeStatus(a.id, 'confirmed'); }} style={{ flex: 1, padding: 8, background: 'rgba(16,185,129,.1)', color: '#10b981', border: '1px solid rgba(16,185,129,.3)', borderRadius: 8, fontSize: 11, fontWeight: 900, cursor: 'pointer', fontFamily: 'inherit' }}>✓ تأكيد</button>
+                  <button onClick={(e) => { e.stopPropagation(); changeStatus(a.id, 'cancelled'); }} style={{ flex: 1, padding: 8, background: 'rgba(220,38,38,.1)', color: '#dc2626', border: '1px solid rgba(220,38,38,.3)', borderRadius: 8, fontSize: 11, fontWeight: 900, cursor: 'pointer', fontFamily: 'inherit' }}>✕ رفض</button>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Modal */}
+      {selected && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 100, display: 'flex', alignItems: 'flex-end' }} onClick={() => setSelected(null)}>
+          <div style={{ background: '#fff', borderRadius: '24px 24px 0 0', width: '100%', maxWidth: 500, margin: '0 auto', padding: '24px 20px 30px' }} onClick={(e) => e.stopPropagation()}>
+            <h3 style={{ fontSize: 16, fontWeight: 900, marginBottom: 16 }}>تفاصيل الموعد</h3>
+            <div style={{ background: '#f8fafc', borderRadius: 10, padding: 14, marginBottom: 16 }}>
+              <div style={{ marginBottom: 8 }}><span style={{ fontSize: 11, color: '#64748b' }}>المريض</span> · <span style={{ fontWeight: 900, fontSize: 13 }}>{selected.customer_name}</span></div>
+              <div style={{ marginBottom: 8 }}><span style={{ fontSize: 11, color: '#64748b' }}>الهاتف</span> · <span style={{ fontWeight: 900, fontSize: 13, direction: 'ltr', display: 'inline-block' }}>{selected.customer_phone}</span></div>
+              <div style={{ marginBottom: 8 }}><span style={{ fontSize: 11, color: '#64748b' }}>التاريخ</span> · <span style={{ fontWeight: 900, fontSize: 13 }}>{selected.appointment_date} · {selected.appointment_time}</span></div>
+              {selected.notes && <div><span style={{ fontSize: 11, color: '#64748b' }}>ملاحظات</span> · <span style={{ fontSize: 12 }}>{selected.notes}</span></div>}
+            </div>
+            
+            <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+              <button onClick={() => call(selected.customer_phone)} style={{ flex: 1, padding: 10, background: 'rgba(59,130,246,.1)', color: '#3b82f6', border: '1px solid rgba(59,130,246,.3)', borderRadius: 8, fontSize: 12, fontWeight: 900, cursor: 'pointer', fontFamily: 'inherit' }}>📞 اتصال</button>
+              <button onClick={() => whatsapp(selected)} style={{ flex: 1, padding: 10, background: 'rgba(37,211,102,.1)', color: '#059669', border: '1px solid rgba(37,211,102,.3)', borderRadius: 8, fontSize: 12, fontWeight: 900, cursor: 'pointer', fontFamily: 'inherit' }}>📱 واتساب</button>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+              {selected.status === 'pending' && (
+                <>
+                  <button onClick={() => { changeStatus(selected.id, 'confirmed'); }} disabled={saving} style={{ padding: 10, background: 'rgba(16,185,129,.15)', color: '#10b981', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 900, cursor: saving ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>✓ تأكيد</button>
+                  <button onClick={() => { changeStatus(selected.id, 'cancelled'); }} disabled={saving} style={{ padding: 10, background: 'rgba(220,38,38,.1)', color: '#dc2626', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 900, cursor: saving ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>✕ إلغاء</button>
+                </>
+              )}
+              {selected.status === 'confirmed' && (
+                <>
+                  <button onClick={() => { changeStatus(selected.id, 'completed'); }} disabled={saving} style={{ padding: 10, background: 'linear-gradient(135deg,#10b981,#059669)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 900, cursor: saving ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>✅ إكمال</button>
+                  <button onClick={() => { changeStatus(selected.id, 'no_show'); }} disabled={saving} style={{ padding: 10, background: 'rgba(100,116,139,.1)', color: '#64748b', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 900, cursor: saving ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>⚠️ لم يحضر</button>
+                </>
+              )}
+            </div>
+
+            <button onClick={() => setSelected(null)} style={{ width: '100%', marginTop: 10, padding: 12, background: '#f1f5f9', color: '#334155', border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' }}>إغلاق</button>
+          </div>
         </div>
       )}
     </div>

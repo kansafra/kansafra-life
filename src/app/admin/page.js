@@ -1,147 +1,183 @@
 'use client';
-
-
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
-import { useT } from '@/lib/useT';
+import { SkeletonList } from '@/components/Skeleton';
 
 export default function AdminDashboard() {
   const router = useRouter();
-  const { t } = useT();
   const [admin, setAdmin] = useState(null);
-  const [stats, setStats] = useState({ entities: 0, services: 0, products: 0, orders: 0, sos: 0, categories: 0, reviews: 0 });
   const [loading, setLoading] = useState(true);
+  const [stats, setStats] = useState({
+    entities: 0, pending_entities: 0, products: 0, orders: 0, revenue: 0,
+    users: 0, open_tickets: 0, sos: 0
+  });
 
   useEffect(() => {
     let stored = null;
     try { stored = JSON.parse(localStorage.getItem('sanad_admin') || 'null'); } catch {}
     if (!stored) { router.replace('/admin/login'); return; }
     setAdmin(stored);
-    loadStats();
+    load();
   }, [router]);
 
-  async function loadStats() {
+  async function load() {
     if (!supabase) { setLoading(false); return; }
     try {
-      const [e, s, p, o, sos, c, r] = await Promise.all([
+      const [
+        eCount, pCount, prodCount, oCount, uCount, tCount, sosCount, revenueRes
+      ] = await Promise.all([
         supabase.from('entities').select('*', { count: 'exact', head: true }),
-        supabase.from('services').select('*', { count: 'exact', head: true }),
+        supabase.from('entities').select('*', { count: 'exact', head: true }).eq('approval_status', 'pending'),
         supabase.from('products').select('*', { count: 'exact', head: true }),
         supabase.from('orders').select('*', { count: 'exact', head: true }),
-        supabase.from('sos_alerts').select('*', { count: 'exact', head: true }),
-        supabase.from('service_categories').select('*', { count: 'exact', head: true }),
-        supabase.from('reviews').select('*', { count: 'exact', head: true }),
+        supabase.from('customers').select('*', { count: 'exact', head: true }),
+        supabase.from('support_tickets').select('*', { count: 'exact', head: true }).eq('status', 'open'),
+        supabase.from('sos_alerts').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
+        supabase.from('orders').select('total').eq('status', 'done')
       ]);
+
+      const revenue = (revenueRes.data || []).reduce((s, o) => s + Number(o.total || 0), 0);
+
       setStats({
-        entities: e.count || 0,
-        services: s.count || 0,
-        products: p.count || 0,
-        orders: o.count || 0,
-        sos: sos.count || 0,
-        categories: c.count || 0,
-        reviews: r.count || 0,
+        entities: eCount.count || 0,
+        pending_entities: pCount.count || 0,
+        products: prodCount.count || 0,
+        orders: oCount.count || 0,
+        revenue,
+        users: uCount.count || 0,
+        open_tickets: tCount.count || 0,
+        sos: sosCount.count || 0,
       });
-    } catch (err) { console.error(err); }
-    finally { setLoading(false); }
+    } catch (e) { console.error(e); }
+    setLoading(false);
   }
 
   function logout() {
-    try { localStorage.removeItem('sanad_admin'); } catch {}
+    if (!confirm('تسجيل الخروج من لوحة الإدارة؟')) return;
+    localStorage.removeItem('sanad_admin');
     router.push('/admin/login');
   }
 
-  if (!admin) return <div className="admin-page">
-      <div style={{ display: 'flex', gap: 8, padding: '12px 16px', background: 'linear-gradient(135deg, rgba(15,77,58,.15), rgba(10,107,80,.1))', borderBottom: '1px solid rgba(15,77,58,.2)' }}>
-        <Link 
-          href="/" 
-          style={{ 
-            flex: 1, padding: '12px 16px', 
-            background: 'linear-gradient(135deg, #22c55e, #16a34a)', 
-            color: '#fff', border: 'none', borderRadius: 12, 
-            fontSize: 13, fontWeight: 900, textDecoration: 'none',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-            boxShadow: '0 2px 8px rgba(34,197,94,.3)'
-          }}
-        >
-          🏠 الواجهة الرئيسية
-        </Link>
-        <Link 
-          href="/merchant" 
-          style={{ 
-            flex: 1, padding: '12px 16px', 
-            background: 'rgba(15,77,58,.2)', 
-            color: '#0f4d3a', border: '1px solid rgba(15,77,58,.3)', borderRadius: 12, 
-            fontSize: 13, fontWeight: 900, textDecoration: 'none',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6
-          }}
-        >
-          💼 لوحة التاجر
-        </Link>
-      </div><div style={{ padding: 80, textAlign: 'center' }}>جارٍ التحقق...</div></div>;
-
-  const MENU = [
-    { icon: '🎛️', title: 'إدارة المحتوى الكامل', desc: 'تحكم بكل جداول النظام', href: '/admin/manage' },
-    
-    { icon: '🏘️', title: 'إدارة البلدات', desc: 'منصات متعددة المجتمعات', href: '/admin/communities' },
-    { icon: '🌳', title: 'الشجرة الجغرافية', desc: 'دولة → محافظة → بلدة → حي', href: '/admin/geography' },
-    { icon: '💱', title: 'أسعار العملات', desc: 'تحديث أسعار الصرف اليومية', href: '/admin/currency' },
-    { icon: '🏢', title: 'إدارة الكيانات', desc: 'متاجر، عيادات، مدارس', href: '/admin/entities' },
-    { icon: '👥', title: 'المستخدمون والصلاحيات', desc: 'المدير، المشرفون', href: '/admin/manage/entities' },
-    { icon: '📊', title: 'التقارير', desc: 'مالية وتشغيلية', href: '/admin/reports' },
-    { icon: '📝', title: 'سجل التدقيق', desc: 'كل العمليات', href: '/admin/audit' },
-    { icon: '🆘', title: 'إدارة SOS', desc: 'البلاغات النشطة', href: '/admin/sos' },
-    { icon: '📞', title: 'أرقام الطوارئ', desc: 'أرقام الإسعاف والدفاع المدني', href: '/admin/emergency-contacts' },
-    { icon: '📁', title: 'إدارة الأقسام', desc: 'إظهار وإخفاء الأقسام', href: '/admin/categories' },
-    { icon: '📿', title: 'الأذكار', desc: 'تعديل الإعدادات والأذكار', href: '/admin/azkar' },
-    { icon: '📢', title: 'الإعلانات', desc: 'موافقة ونشر', href: '/admin/manage/announcements' },
-    { icon: '⭐', title: 'التقييمات', desc: 'مراجعة وردود', href: '/admin/manage/reviews' },
-    { icon: '💰', title: 'الاشتراكات', desc: 'إدارة الخطط', href: '/admin/manage/entities' },
-    { icon: '💎', title: 'الباقات', desc: 'إدارة اشتراكات التجار', href: '/admin/plans' },
-    { icon: '⚙️', title: 'الإعدادات', desc: 'المنصة والألوان', href: '/admin/settings' },
-    { icon: '🔧', title: 'الصيانة', desc: 'النسخ والأمان', href: '/admin/backup' },
+  const MENU_SECTIONS = [
+    {
+      title: 'إدارة المنصة',
+      links: [
+        { href: '/admin/entities', icon: '🏪', label: 'المزودون', badge: stats.pending_entities > 0 ? stats.pending_entities : null, color: '#f59e0b' },
+        { href: '/admin/moderation', icon: '🛡️', label: 'المراجعة', badge: null, color: '#3b82f6' },
+        { href: '/admin/subscriptions', icon: '💎', label: 'الاشتراكات', badge: null, color: '#10b981' },
+        { href: '/admin/plans', icon: '📋', label: 'الباقات', badge: null, color: '#64748b' },
+        { href: '/admin/categories', icon: '🗂️', label: 'الأقسام', badge: null, color: '#8b5cf6' },
+        { href: '/admin/education', icon: '🎓', label: 'التعليم', badge: null, color: '#7c3aed' },
+        { href: '/admin/municipal', icon: '🏢', label: 'البلدية', badge: null, color: '#1e40af' },
+        { href: '/admin/charity', icon: '🤝', label: 'الجمعيات', badge: null, color: '#059669' },
+        { href: '/admin/sports', icon: '🏆', label: 'الرياضة', badge: null, color: '#ea580c' },
+        { href: '/admin/users', icon: '👥', label: 'المستخدمون', badge: null, color: '#06b6d4' },
+      ]
+    },
+    {
+      title: 'الدعم والطوارئ',
+      links: [
+        { href: '/admin/sos', icon: '🚨', label: 'بلاغات SOS', badge: stats.sos > 0 ? stats.sos : null, color: '#ef4444' },
+        { href: '/admin/support', icon: '💬', label: 'تذاكر الدعم', badge: stats.open_tickets > 0 ? stats.open_tickets : null, color: '#f59e0b' },
+        { href: '/admin/announcements', icon: '📢', label: 'الإعلانات', badge: null, color: '#3b82f6' },
+        { href: '/admin/notifications', icon: '🔔', label: 'Push', badge: null, color: '#dc2626' },
+        { href: '/admin/emergency-contacts', icon: '☎️', label: 'أرقام الطوارئ', badge: null, color: '#dc2626' },
+      ]
+    },
+    {
+      title: 'البيانات والتقارير',
+      links: [
+        { href: '/admin/analytics', icon: '📊', label: 'التحليلات', badge: null, color: '#10b981' },
+        { href: '/admin/reports', icon: '📈', label: 'التقارير', badge: null, color: '#3b82f6' },
+        { href: '/admin/backup', icon: '💾', label: 'النسخ الاحتياطي', badge: null, color: '#64748b' },
+        { href: '/admin/audit', icon: '📋', label: 'سجل التدقيق', badge: null, color: '#8b5cf6' },
+      ]
+    },
+    {
+      title: 'إعدادات المنصة',
+      links: [
+        { href: '/admin/settings', icon: '⚙️', label: 'إعدادات عامة', badge: null, color: '#64748b' },
+        { href: '/admin/accounts', icon: '👤', label: 'حسابات الأدمن', badge: null, color: '#0f4d3a' },
+        { href: '/admin/communities', icon: '🏘️', label: 'المجتمعات', badge: null, color: '#06b6d4' },
+        { href: '/admin/geography', icon: '🗺️', label: 'الجغرافيا', badge: null, color: '#3b82f6' },
+        { href: '/admin/currency', icon: '💱', label: 'العملات', badge: null, color: '#f59e0b' },
+        { href: '/admin/azkar', icon: '🕌', label: 'الأذكار', badge: null, color: '#10b981' },
+        { href: '/admin/penalties', icon: '⚠️', label: 'العقوبات', badge: null, color: '#ef4444' },
+        { href: '/admin/maintenance', icon: '🔧', label: 'الصيانة', badge: null, color: '#64748b' },
+      ]
+    }
   ];
 
+  if (loading) return <div style={{ padding: 16, background: '#f8fafc', minHeight: '100vh' }}><SkeletonList count={4} /></div>;
+
   return (
-    <div className="admin-page">
-      <header className="admin-hero">
-        <div className="admin-hero-inner">
-          <div className="admin-brand">
-            <div className="admin-brand-name">
-              <span className="admin-brand-mark">س</span>
-              <span>{t("admin.title")}</span>
-            </div>
-            <button onClick={logout} style={{ color: '#fca5a5', fontSize: 13, fontWeight: 800, padding: 8, background: 'rgba(220,38,38,.1)', borderRadius: 10, border: '1px solid rgba(220,38,38,.2)', cursor: 'pointer' }}>
-              خروج
-            </button>
+    <div style={{ minHeight: '100vh', background: '#f8fafc', paddingBottom: 40 }}>
+      {/* Header */}
+      <div style={{ background: 'linear-gradient(135deg, #0f4d3a, #075640)', padding: '20px 16px', color: '#fff', borderBottomLeftRadius: 24, borderBottomRightRadius: 24 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+          <div>
+            <div style={{ fontSize: 11, opacity: 0.8, fontWeight: 700, marginBottom: 4 }}>مركز القيادة</div>
+            <div style={{ fontSize: 22, fontWeight: 900 }}>أهلاً، {admin?.display_name || 'المدير'}</div>
           </div>
-          <h1 className="admin-title">مرحباً {admin.full_name}</h1>
-          <p className="admin-sub">الصلاحية: {admin.role === 'owner' ? 'المالك' : admin.role} · تحكم كامل</p>
+          <button onClick={logout} style={{ background: 'rgba(220,38,38,.2)', color: '#fecaca', border: '1px solid rgba(220,38,38,.4)', padding: '8px 14px', borderRadius: 10, fontSize: 12, fontWeight: 900, cursor: 'pointer', fontFamily: 'inherit' }}>خروج</button>
         </div>
-      </header>
 
-      <div className="admin-stats">
-        <div className="admin-stat"><div className="admin-stat-val">{stats.entities}</div><div className="admin-stat-lbl">{t("admin.entities") || "كيانات"}</div></div>
-        <div className="admin-stat"><div className="admin-stat-val">{stats.services + stats.products}</div><div className="admin-stat-lbl">{t("admin.services") || "خدمات ومنتجات"}</div></div>
-        <div className="admin-stat"><div className="admin-stat-val">{stats.orders}</div><div className="admin-stat-lbl">{t("orders.title")}</div></div>
-        <div className="admin-stat"><div className="admin-stat-val">{stats.sos}</div><div className="admin-stat-lbl">{t("admin.sos") || "بلاغات SOS"}</div></div>
-        <div className="admin-stat"><div className="admin-stat-val">{stats.categories}</div><div className="admin-stat-lbl">{t("app.categories")}</div></div>
-        <div className="admin-stat"><div className="admin-stat-val">{stats.reviews}</div><div className="admin-stat-lbl">{t("common.reviews")}</div></div>
+        {/* Top KPIs */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          <div style={{ background: 'rgba(255,255,255,.1)', borderRadius: 14, padding: 12, backdropFilter: 'blur(10px)' }}>
+            <div style={{ fontSize: 10, opacity: 0.8, fontWeight: 700, marginBottom: 4 }}>إجمالي الإيرادات</div>
+            <div style={{ fontSize: 18, fontWeight: 900 }}>{stats.revenue.toLocaleString()} <span style={{ fontSize: 11, opacity: 0.7 }}>SYP</span></div>
+          </div>
+          <div style={{ background: 'rgba(255,255,255,.1)', borderRadius: 14, padding: 12, backdropFilter: 'blur(10px)' }}>
+            <div style={{ fontSize: 10, opacity: 0.8, fontWeight: 700, marginBottom: 4 }}>إجمالي الطلبات</div>
+            <div style={{ fontSize: 18, fontWeight: 900 }}>{stats.orders.toLocaleString()}</div>
+          </div>
+        </div>
       </div>
 
-      <div className="admin-menu">
-        {MENU.map((m) => (
-          <Link key={m.href} href={m.href} className="admin-menu-item">
-            <div className="admin-menu-icon">{m.icon}</div>
-            <div className="admin-menu-body">
-              <div className="admin-menu-title">{m.title}</div>
-              <div className="admin-menu-desc">{m.desc}</div>
-            </div>
-            <span className="admin-menu-arrow">←</span>
-          </Link>
-        ))}
+      {/* Platform Stats */}
+      <div style={{ padding: 16, display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginTop: -20 }}>
+        <div style={{ background: '#fff', borderRadius: 12, padding: 12, textAlign: 'center', border: '1px solid #e5e7eb', boxShadow: '0 4px 12px rgba(0,0,0,.03)' }}>
+          <div style={{ fontSize: 18, marginBottom: 4 }}>🏪</div>
+          <div style={{ fontSize: 16, fontWeight: 900, color: '#0f4d3a' }}>{stats.entities}</div>
+          <div style={{ fontSize: 9.5, color: '#64748b', fontWeight: 700 }}>مزود</div>
+        </div>
+        <div style={{ background: '#fff', borderRadius: 12, padding: 12, textAlign: 'center', border: '1px solid #e5e7eb', boxShadow: '0 4px 12px rgba(0,0,0,.03)' }}>
+          <div style={{ fontSize: 18, marginBottom: 4 }}>📦</div>
+          <div style={{ fontSize: 16, fontWeight: 900, color: '#3b82f6' }}>{stats.products}</div>
+          <div style={{ fontSize: 9.5, color: '#64748b', fontWeight: 700 }}>منتج</div>
+        </div>
+        <div style={{ background: '#fff', borderRadius: 12, padding: 12, textAlign: 'center', border: '1px solid #e5e7eb', boxShadow: '0 4px 12px rgba(0,0,0,.03)' }}>
+          <div style={{ fontSize: 18, marginBottom: 4 }}>👥</div>
+          <div style={{ fontSize: 16, fontWeight: 900, color: '#8b5cf6' }}>{stats.users}</div>
+          <div style={{ fontSize: 9.5, color: '#64748b', fontWeight: 700 }}>مستخدم</div>
+        </div>
+        <div style={{ background: '#fff', borderRadius: 12, padding: 12, textAlign: 'center', border: '1px solid #e5e7eb', boxShadow: '0 4px 12px rgba(0,0,0,.03)' }}>
+          <div style={{ fontSize: 18, marginBottom: 4 }}>⏳</div>
+          <div style={{ fontSize: 16, fontWeight: 900, color: '#f59e0b' }}>{stats.pending_entities}</div>
+          <div style={{ fontSize: 9.5, color: '#64748b', fontWeight: 700 }}>طلب موافقة</div>
+        </div>
       </div>
+
+      {/* Menu Sections */}
+      {MENU_SECTIONS.map((section, idx) => (
+        <div key={idx} style={{ padding: '0 16px 16px' }}>
+          <div style={{ fontSize: 13, fontWeight: 900, color: '#0f172a', marginBottom: 10 }}>{section.title}</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+            {section.links.map(link => (
+              <Link key={link.href} href={link.href} style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: '12px 8px', textDecoration: 'none', color: 'inherit', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, position: 'relative', textAlign: 'center' }}>
+                {link.badge && (
+                  <span style={{ position: 'absolute', top: 6, right: 6, background: '#ef4444', color: '#fff', borderRadius: 10, padding: '1px 6px', fontSize: 9, fontWeight: 900 }}>{link.badge}</span>
+                )}
+                <div style={{ fontSize: 22 }}>{link.icon}</div>
+                <div style={{ fontSize: 10, fontWeight: 800, color: '#334155', lineHeight: 1.3 }}>{link.label}</div>
+              </Link>
+            ))}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

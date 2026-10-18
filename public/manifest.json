@@ -1,26 +1,22 @@
 {
-  "name": "سند — خدماتك أقرب",
+  "name": "سند - كل خدمات مجتمعك",
   "short_name": "سند",
-  "description": "منصة رقمية تجمع الخدمات والمتاجر والاحتياجات اليومية لمجتمعك",
+  "description": "منصة سند تجمع الخدمات المحلية، المتاجر، والاحتياجات اليومية في مكان واحد.",
   "start_url": "/",
   "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#0f4d3a",
   "orientation": "portrait",
-  "background_color": "#f5f4f1",
-  "theme_color": "#05402d",
   "lang": "ar",
   "dir": "rtl",
+  "categories": ["shopping", "lifestyle", "business", "health", "education"],
   "icons": [
-    {
-      "src": "/icon-192.svg",
-      "sizes": "192x192",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
-    },
-    {
-      "src": "/icon-512.svg",
-      "sizes": "512x512",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
-    }
+    { "src": "/icons/icon-192.svg", "sizes": "192x192", "type": "image/svg+xml", "purpose": "any maskable" },
+    { "src": "/icons/icon-512.svg", "sizes": "512x512", "type": "image/svg+xml", "purpose": "any maskable" }
+  ],
+  "shortcuts": [
+    { "name": "المتاجر", "url": "/stores", "icons": [{ "src": "/icons/icon-192.svg", "sizes": "192x192" }] },
+    { "name": "الطوارئ", "url": "/sos", "icons": [{ "src": "/icons/icon-192.svg", "sizes": "192x192" }] },
+    { "name": "البحث", "url": "/search", "icons": [{ "src": "/icons/icon-192.svg", "sizes": "192x192" }] }
   ]
 }
