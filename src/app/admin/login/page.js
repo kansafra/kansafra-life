@@ -84,22 +84,21 @@ export default function AdminLoginPage() {
         <div style={{ textAlign: 'center', marginBottom: 32, marginTop: 40 }}>
           <div style={{ width: 88, height: 88, borderRadius: 24, background: 'linear-gradient(135deg, #0f172a, #1e293b)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 40, marginBottom: 16 }}>🛡️</div>
           <h1 style={{ fontSize: 26, fontWeight: 900, color: '#0f172a', margin: 0 }}>لوحة الإدارة</h1>
-          <p style={{ fontSize: 13, color: '#64748b', margin: '8px 0 0' }}>دخول المشرفين فقط</p>
         </div>
         <form onSubmit={handleLogin} style={{ background: '#fff', borderRadius: 20, padding: 28, boxShadow: '0 10px 40px rgba(0,0,0,0.08)' }}>
           <div style={{ marginBottom: 16 }}>
             <label style={labelStyle}>اسم المستخدم</label>
-            <input type="text" value={form.username} onChange={e => setForm({ ...form, username: e.target.value })} placeholder="admin" style={inputStyle} required />
+            <input type="text" value={form.username} onChange={e => setForm({ ...form, username: e.target.value })} style={inputStyle} required />
           </div>
           <div style={{ marginBottom: 24 }}>
             <label style={labelStyle}>كلمة المرور</label>
             <div style={{ position: 'relative' }}>
-              <input type={showPassword ? 'text' : 'password'} value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} placeholder="••••••••" style={{ ...inputStyle, paddingLeft: 44 }} required />
+              <input type={showPassword ? 'text' : 'password'} value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} style={{ ...inputStyle, paddingLeft: 44 }} required />
               <button type="button" onClick={() => setShowPassword(!showPassword)} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', fontSize: 18, cursor: 'pointer', padding: 4 }}>{showPassword ? '🙈' : '👁️'}</button>
             </div>
           </div>
           <button type="submit" disabled={loading} style={{ width: '100%', padding: 16, background: loading ? '#94a3b8' : 'linear-gradient(135deg, #0f172a, #1e293b)', color: '#fff', border: 'none', borderRadius: 14, fontSize: 15, fontWeight: 900, cursor: loading ? 'wait' : 'pointer', fontFamily: 'inherit' }}>
-            {loading ? '⏳ جارٍ الدخول...' : '🛡️ دخول'}
+            {loading ? '⏳' : '🛡️ دخول'}
           </button>
         </form>
       </div>

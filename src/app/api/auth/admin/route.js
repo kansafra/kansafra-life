@@ -36,34 +36,12 @@ export async function POST(req) {
     const admin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, serviceKey, { auth: { persistSession: false } });
     const uname = username.trim().toLowerCase();
 
-    // 1. محاولة admin_accounts (بدون فلترة is_active أولاً)
-    const { data: allAccounts, error: accErr } = await admin.from('admin_accounts').select('*');
-    if (accErr) {
-      console.error('[admin-auth] read error:', accErr.message);
-      return NextResponse.json({ error: 'خطأ في قراءة البيانات' }, { status: 500 });
-    }
-
-    const account = (allAccounts || []).find(a => (a.username || '').toLowerCase() === uname);
-
-    if (account && matches(account.password_hash, password)) {
-      // تحقق من is_active (يقبل true أو null)
-      if (account.is_active === false) {
-        return NextResponse.json({ error: 'الحساب معطّل — تواصل مع الدعم' }, { status: 403 });
-      }
-      return NextResponse.json({
-        ok: true,
-        admin: {
-          id: account.id,
-          username: account.username,
-          display_name: account.display_name || account.username,
-          role: account.role || 'admin',
-        },
-      });
-    }
+    // تم مسح الجزء الخاص بـ admin_accounts لأنه يسبب الخطأ
 
     // 2. محاولة admin_users
     const { data: allUsers } = await admin.from('admin_users').select('*');
     const user = (allUsers || []).find(u => (u.username || '').toLowerCase() === uname);
+    
     if (user && matches(user.password_hash, password)) {
       if (user.is_active === false) {
         return NextResponse.json({ error: 'الحساب معطّل — تواصل مع الدعم' }, { status: 403 });

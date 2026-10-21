@@ -15,7 +15,6 @@ async function hashPassword(password) {
 export default function MerchantLoginPage() {
   const router = useRouter();
   const { success, error: toastError } = useToast();
-
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [form, setForm] = useState({ identifier: '', password: '' });
@@ -39,11 +38,9 @@ export default function MerchantLoginPage() {
       const uname = identifier.toLowerCase();
       const hashed = await hashPassword(form.password);
 
-      // 1. المالك
       let q = supabase.from('entities').select('*');
       if (isPhone) {
-        const suffix = normalizedPhone.slice(-9);
-        q = q.like('phone', '%' + suffix);
+        q = q.like('phone', '%' + normalizedPhone.slice(-9));
       } else {
         q = q.eq('username', uname);
       }
@@ -54,12 +51,8 @@ export default function MerchantLoginPage() {
         if (entity.approval_status === 'rejected') { toastError('حسابك مرفوض'); return; }
         if (entity.is_active === false) { toastError('حسابك موقوف'); return; }
         const session = {
-          id: entity.id,
-          display_name: entity.display_name,
-          entity_type: entity.entity_type,
-          username: entity.username,
-          phone: entity.phone,
-          is_employee: false,
+          id: entity.id, display_name: entity.display_name, entity_type: entity.entity_type,
+          username: entity.username, phone: entity.phone, is_employee: false,
         };
         localStorage.setItem('sanad_entity', JSON.stringify(session));
         document.cookie = `sanad_entity=${encodeURIComponent(JSON.stringify({ id: session.id }))}; path=/; max-age=86400; SameSite=Lax`;
@@ -68,13 +61,9 @@ export default function MerchantLoginPage() {
         return;
       }
 
-      // 2. الموظف
       let eq = supabase.from('employees').select('*').eq('is_active', true);
-      if (isPhone) {
-        eq = eq.like('phone', '%' + normalizedPhone.slice(-9));
-      } else {
-        eq = eq.eq('username', uname);
-      }
+      if (isPhone) eq = eq.like('phone', '%' + normalizedPhone.slice(-9));
+      else eq = eq.eq('username', uname);
       const { data: empMatches } = await eq;
       const emp = (empMatches || []).find(e => e.password_hash === hashed);
 
@@ -83,16 +72,10 @@ export default function MerchantLoginPage() {
         if (!parent) { toastError('المتجر غير موجود'); return; }
         if (parent.approval_status !== 'approved') { toastError('متجرك غير معتمد'); return; }
         const session = {
-          id: emp.id,
-          display_name: parent.display_name,
-          entity_type: parent.entity_type,
-          username: emp.username,
-          phone: emp.phone,
-          is_employee: true,
-          parent_entity_id: parent.id,
-          role: emp.role,
-          permissions: emp.permissions || [],
-          full_name: emp.full_name,
+          id: emp.id, display_name: parent.display_name, entity_type: parent.entity_type,
+          username: emp.username, phone: emp.phone, is_employee: true,
+          parent_entity_id: parent.id, role: emp.role,
+          permissions: emp.permissions || [], full_name: emp.full_name,
         };
         localStorage.setItem('sanad_entity', JSON.stringify(session));
         document.cookie = `sanad_entity=${encodeURIComponent(JSON.stringify({ id: session.id }))}; path=/; max-age=86400; SameSite=Lax`;
@@ -117,27 +100,23 @@ export default function MerchantLoginPage() {
         <div style={{ textAlign: 'center', marginBottom: 24 }}>
           <div style={{ width: 80, height: 80, borderRadius: 22, background: 'linear-gradient(135deg, #0f4d3a, #075640)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 38, marginBottom: 12 }}>🏪</div>
           <h1 style={{ fontSize: 24, fontWeight: 900, color: '#0f172a', margin: 0 }}>بوابة المزودين</h1>
-          <p style={{ fontSize: 13, color: '#64748b', margin: '6px 0 0' }}>دخول المالك أو الموظف</p>
         </div>
         <form onSubmit={handleLogin}>
           <div style={{ marginBottom: 14 }}>
             <label style={labelStyle}>اسم المستخدم أو رقم الهاتف</label>
-            <input type="text" value={form.identifier} onChange={e => setForm({ ...form, identifier: e.target.value })} placeholder="ahmed_123 أو 09xxxxxxxx" style={inputStyle} required />
+            <input type="text" value={form.identifier} onChange={e => setForm({ ...form, identifier: e.target.value })} style={inputStyle} required />
           </div>
           <div style={{ marginBottom: 20 }}>
             <label style={labelStyle}>كلمة المرور</label>
             <div style={{ position: 'relative' }}>
-              <input type={showPassword ? 'text' : 'password'} value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} placeholder="••••••••" style={{ ...inputStyle, paddingLeft: 44 }} required />
+              <input type={showPassword ? 'text' : 'password'} value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} style={{ ...inputStyle, paddingLeft: 44 }} required />
               <button type="button" onClick={() => setShowPassword(!showPassword)} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', fontSize: 18, cursor: 'pointer', padding: 4 }}>{showPassword ? '🙈' : '👁️'}</button>
             </div>
           </div>
           <button type="submit" disabled={loading} style={{ width: '100%', padding: 16, background: loading ? '#94a3b8' : 'linear-gradient(135deg, #10b981, #059669)', color: '#fff', border: 'none', borderRadius: 14, fontSize: 15, fontWeight: 900, cursor: loading ? 'wait' : 'pointer', fontFamily: 'inherit' }}>
-            {loading ? '⏳ جارٍ الدخول...' : 'تسجيل الدخول'}
+            {loading ? '⏳' : 'تسجيل الدخول'}
           </button>
         </form>
-        <div style={{ textAlign: 'center', marginTop: 16 }}>
-          <Link href="/forgot-password" style={{ fontSize: 12, color: '#0ea5e9', fontWeight: 900, textDecoration: 'none' }}>🔑 نسيت كلمة المرور؟</Link>
-        </div>
       </div>
     </div>
   );
