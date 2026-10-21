@@ -3,9 +3,8 @@ const nextConfig = {
   reactStrictMode: false,
   staticPageGenerationTimeout: 10,
   typescript: { ignoreBuildErrors: true },
-  eslint: { ignoreDuringBuilds: true },
+  eslint: { ignoreDuringBuilds: true },  // ← الإضافة الجديدة
   devIndicators: false,
   outputFileTracingRoot: process.cwd(),
-  allowedDevOrigins: ['localhost', '192.168.0.109', '192.168.1.133', '192.168.0.100'],
 };
 export default nextConfig;
