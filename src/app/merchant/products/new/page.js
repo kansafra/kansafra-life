@@ -1,304 +1,179 @@
 'use client';
-
-
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { useCurrentUser } from '@/lib/useCurrentUser';
-import ImageUploader from '@/components/ImageUploader';
-import FileUploader from '@/components/FileUploader';
+import { useToast } from '@/components/Toast';
 
-async function getModerationStatus(supabase, entity) {
-  try {
-    const { data: settings } = await supabase
-      .from('app_settings')
-      .select('key, value')
-      .in('key', ['moderation_enabled', 'auto_publish_all', 'auto_publish_products']);
-    const s = {};
-    (settings || []).forEach((x) => { s[x.key] = x.value; });
-    if (s.moderation_enabled === 'false' || s.moderation_enabled === undefined) {
-      return { status: 'approved' };
-    }
-    if (s.auto_publish_all === 'true' || s.auto_publish_products === 'true') {
-      return { status: 'approved' };
-    }
-    const { data: ent } = await supabase
-      .from('entities')
-      .select('is_trusted')
-      .eq('id', entity.id)
-      .maybeSingle();
-    if (ent?.is_trusted) return { status: 'auto' };
-    return { status: 'pending' };
-  } catch (e) {
-    return { status: 'approved' };
-  }
-}
-
-
-export default function NewProductPage() {
+export default function AddProductPage() {
   const router = useRouter();
-  const { user, loading: userLoading, isOwner, isEmployee, isSectionAdmin, hasPermission, dataOwnerName } = useCurrentUser();
-  const [entity, setEntity] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [done, setDone] = useState(false);
-  const [error, setError] = useState('');
+  const { success, error: toastError } = useToast();
+  const { user, loading: userLoading, dataOwnerName, isEmployee } = useCurrentUser();
 
-  const [f, setF] = useState({
+  const [entityId, setEntityId] = useState(null);
+  const [form, setForm] = useState({
     title: '',
     description: '',
     price: '',
     discount_percent: '0',
-    currency: 'SYP',
+    stock: '10',
     image_url: '',
-    category: 'other',
-    stock: '1',
-    unit: 'قطعة',
   });
-  const [fileUrl, setFileUrl] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    let stored = null;
-    try {
-      const raw = localStorage.getItem('sanad_entity');
-      if (raw) stored = JSON.parse(raw);
-    } catch {}
-    if (!stored) { router.replace('/login'); return; }
-    setEntity(stored);
-  }, [router]);
+    if (userLoading) return;
+    if (!user) { router.replace('/login'); return; }
 
-  const update = (k, v) => setF((old) => ({ ...old, [k]: v }));
-  const finalPrice = Math.round(
-    (Number(f.price) || 0) - ((Number(f.price) || 0) * (Number(f.discount_percent) || 0) / 100)
-  );
+    // جلب معرف المتجر الحقيقي
+    const stored = JSON.parse(localStorage.getItem('sanad_entity') || 'null');
+    if (stored?.parent_entity_id) {
+      setEntityId(stored.parent_entity_id);
+    } else {
+      // البحث بالاسم إذا لم يكن موجوداً
+      async function fetchId() {
+        const { data } = await supabase.from('entities').select('id').eq('display_name', dataOwnerName).maybeSingle();
+        if (data) setEntityId(data.id);
+      }
+      fetchId();
+    }
+  }, [user, userLoading, dataOwnerName, router]);
 
-  async function submit(e) {
-    e.preventDefault();
-    setError('');
-    if (!f.title.trim()) { setError('اسم المنتج مطلوب'); return; }
-    if (!f.price || Number(f.price) <= 0) { setError('السعر مطلوب'); return; }
-    if (!supabase) { setError('قاعدة البيانات غير متصلة'); return; }
-
-    setLoading(true);
-    const payload = {
-      provider_name: dataOwnerName,
-      title: f.title.trim(),
-      description: f.description.trim() || null,
-      price: Number(f.price),
-      discount_percent: Number(f.discount_percent) || 0,
-      currency: f.currency,
-      image_url: f.image_url.trim() || null,
-      file_url: fileUrl || null,
-      category: f.category,
-      stock: Number(f.stock) || 0,
-      unit: f.unit,
-    };
-    const moderation = await getModerationStatus(supabase, entity);
-    const payloadWithStatus = { ...payload, moderation_status: moderation.moderation };
-    const { error: err } = await supabase.from('products').insert({ ...payloadWithStatus, moderation_status: moderation.moderation });
-    setLoading(false);
-
-    if (err) {
-      console.error(err);
-      setError('تعذّر الحفظ: ' + (err.message || 'خطأ'));
+  async function handleImageUpload(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      toastError('حجم الصورة يجب أن يكون أقل من 5 ميجابايت');
       return;
     }
-    setDone(true);
+
+    setUploading(true);
+    try {
+      const fileExt = file.name.split('.').pop();
+      const fileName = `products/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${fileExt}`;
+      
+      const { error: upErr } = await supabase.storage.from('sanad-files').upload(fileName, file, { cacheControl: '3600' });
+      if (upErr) throw upErr;
+
+      const { data: urlData } = supabase.storage.from('sanad-files').getPublicUrl(fileName);
+      setForm({ ...form, image_url: urlData.publicUrl });
+      success('✅ تم رفع الصورة');
+    } catch (err) {
+      console.error(err);
+      toastError('فشل رفع الصورة، تأكد من إعدادات التخزين');
+    } finally {
+      setUploading(false);
+    }
   }
 
-  if (!entity) {
-    return (
-      <div className="new-prod-page">
-        <div className="ol-empty-state" style={{ padding: 60 }}>
-          <span className="em">⏳</span>
-          <p>جارٍ التحميل...</p>
-        </div>
-      </div>
-    );
+  async function handleSubmit(e) {
+    e.preventDefault();
+    if (!entityId) { toastError('لم يتم العثور على بيانات المتجر'); return; }
+    if (!form.title.trim()) { toastError('اسم المنتج مطلوب'); return; }
+    const priceNum = Number(form.price);
+    if (!priceNum || priceNum <= 0) { toastError('السعر يجب أن يكون أكبر من صفر'); return; }
+
+    setSaving(true);
+    try {
+      const payload = {
+        entity_id: entityId,
+        provider_name: dataOwnerName,
+        title: form.title.trim(),
+        description: form.description.trim(),
+        price: priceNum,
+        discount_percent: Number(form.discount_percent) || 0,
+        stock: Number(form.stock) || 0,
+        image_url: form.image_url || null,
+        is_active: true,
+        currency: 'SYP', // يمكن تغييرها لاحقاً من الإعدادات
+      };
+
+      const { error } = await supabase.from('products').insert(payload);
+      if (error) throw error;
+
+      success('🎉 تمت إضافة المنتج بنجاح!');
+      router.push('/merchant/products');
+    } catch (err) {
+      console.error(err);
+      toastError('فشل إضافة المنتج: ' + (err.message || 'خطأ'));
+    } finally {
+      setSaving(false);
+    }
   }
 
-  if (done) {
-    return (
-      <div className="new-prod-page">
-        <div className="prod-header">
-          <Link href="/merchant/products" className="prod-back">→</Link>
-          <span className="prod-header-title">تمت الإضافة</span>
-        </div>
-        <div className="new-service-success">
-          <div className="chk-circle">✓</div>
-          <h2>تم إضافة المنتج</h2>
-          <p>منتجك ظاهر الآن يوجد قائمة منتجاتك</p>
-          <Link href="/merchant/products" className="new-service-submit" style={{ display: 'block', textAlign: 'center', textDecoration: 'none' }}>
-            عرض المنتجات
-          </Link>
-        </div>
-      </div>
-    );
-  }
+  if (userLoading) return <div style={{ padding: 80, textAlign: 'center' }}>⏳</div>;
 
   return (
-    <div className="new-prod-page">
-      <div className="prod-header">
-        <Link href="/merchant/products" className="prod-back">→</Link>
-        <span className="prod-header-title">منتج جديد</span>
+    <div style={{ minHeight: '100vh', background: '#f8fafc', paddingBottom: 100 }}>
+      {/* Header */}
+      <div style={{ background: '#0f4d3a', padding: '16px 20px', position: 'sticky', top: 0, zIndex: 20, display: 'flex', alignItems: 'center', gap: 12 }}>
+        <button onClick={() => router.back()} style={{ background: 'none', border: 'none', color: '#fff', fontSize: 20, cursor: 'pointer' }}>←</button>
+        <h1 style={{ color: '#fff', fontSize: 18, fontWeight: 900, margin: 0 }}>➕ إضافة منتج جديد</h1>
       </div>
 
-      <form className="new-prod-form" onSubmit={submit}>
-
-        {f.image_url && (
-          <div className="new-prod-preview">
-            <div className="new-prod-preview-img">
-              <img src={f.image_url} alt="preview" onError={(e) => { e.target.style.display = 'none'; }} />
-            </div>
-            <div className="new-prod-preview-info">
-              <div className="new-prod-preview-name">{f.title || 'اسم المنتج'}</div>
-              <div className="new-prod-preview-price">
-                {finalPrice.toLocaleString()}
-                {Number(f.discount_percent) > 0 && (
-                  <span className="old">{Number(f.price).toLocaleString()}</span>
-                )}
-                <span className="prod-currency">{f.currency}</span>
+      <form onSubmit={handleSubmit} style={{ padding: 16, maxWidth: 600, margin: '0 auto' }}>
+        
+        {/* صورة المنتج */}
+        <div style={{ background: '#fff', borderRadius: 16, padding: 16, marginBottom: 16, border: '1px solid #e2e8f0', textAlign: 'center' }}>
+          <label style={{ cursor: uploading ? 'wait' : 'pointer', display: 'block' }}>
+            <input type="file" accept="image/*" onChange={handleImageUpload} style={{ display: 'none' }} disabled={uploading} />
+            {form.image_url ? (
+              <div style={{ position: 'relative', width: '100%', height: 200, borderRadius: 12, overflow: 'hidden', border: '1px solid #e2e8f0' }}>
+                <img src={form.image_url} alt="preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                <div style={{ position: 'absolute', bottom: 8, right: 8, background: 'rgba(0,0,0,0.6)', color: '#fff', padding: '4px 10px', borderRadius: 8, fontSize: 11, fontWeight: 900 }}>🔄 تغيير الصورة</div>
               </div>
+            ) : (
+              <div style={{ width: '100%', height: 200, background: '#f8fafc', borderRadius: 12, border: '2px dashed #cbd5e1', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                <div style={{ fontSize: 40 }}>{uploading ? '⏳' : '📸'}</div>
+                <div style={{ fontSize: 13, fontWeight: 900, color: '#64748b' }}>{uploading ? 'جارٍ الرفع...' : 'اضغط لاختيار صورة'}</div>
+                <div style={{ fontSize: 10, color: '#94a3b8' }}>الحد الأقصى 5MB</div>
+              </div>
+            )}
+          </label>
+        </div>
+
+        {/* تفاصيل المنتج */}
+        <div style={{ background: '#fff', borderRadius: 16, padding: 20, marginBottom: 16, border: '1px solid #e2e8f0' }}>
+          <h2 style={{ fontSize: 14, fontWeight: 900, color: '#0f172a', marginTop: 0, marginBottom: 16 }}>📝 تفاصيل المنتج</h2>
+          
+          <div style={{ marginBottom: 12 }}>
+            <label style={labelStyle}>اسم المنتج *</label>
+            <input value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} required style={inputStyle} placeholder="مثال: شاحن آيفون أصلي" />
+          </div>
+
+          <div style={{ marginBottom: 12 }}>
+            <label style={labelStyle}>الوصف (اختياري)</label>
+            <textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} style={{ ...inputStyle, height: 80, resize: 'none' }} placeholder="تفاصيل المنتج، المواصفات..." />
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+            <div>
+              <label style={labelStyle}>السعر (ل.س) *</label>
+              <input type="number" value={form.price} onChange={e => setForm({ ...form, price: e.target.value })} required style={inputStyle} placeholder="0" />
+            </div>
+            <div>
+              <label style={labelStyle}>الخصم %</label>
+              <input type="number" value={form.discount_percent} onChange={e => setForm({ ...form, discount_percent: e.target.value })} min={0} max={99} style={inputStyle} />
             </div>
           </div>
-        )}
 
-        <div className="new-service-field">
-          <label className="new-service-label">اسم المنتج <span className="req">*</span></label>
-          <input
-            className="new-service-input"
-            type="text"
-            placeholder="مثال: ماء معدني 1.5L"
-            value={f.title}
-            onChange={(e) => update('title', e.target.value)}
-          />
-        </div>
-
-        <div className="new-prod-row">
-          <div className="new-service-field">
-            <label className="new-service-label">السعر <span className="req">*</span></label>
-            <input
-              className="new-service-input"
-              type="number"
-              inputMode="decimal"
-              placeholder="0"
-              value={f.price}
-              onChange={(e) => update('price', e.target.value)}
-            />
-          </div>
-          <div className="new-service-field">
-            <label className="new-service-label">الخصم %</label>
-            <input
-              className="new-service-input"
-              type="number"
-              inputMode="numeric"
-              min="0" max="100"
-              placeholder="0"
-              value={f.discount_percent}
-              onChange={(e) => update('discount_percent', e.target.value)}
-            />
+          <div>
+            <label style={labelStyle}>المخزون المتاح</label>
+            <input type="number" value={form.stock} onChange={e => setForm({ ...form, stock: e.target.value })} min={0} style={inputStyle} />
+            <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 4 }}>الكمية التي يمكن للزبائن شراؤها</div>
           </div>
         </div>
 
-        {Number(f.discount_percent) > 0 && Number(f.price) > 0 && (
-          <div className="new-prod-hint">
-            💰 السعر بعد الخصم: <strong style={{ color: 'var(--f-700)' }}>{finalPrice.toLocaleString()} {f.currency}</strong>
-          </div>
-        )}
-
-        <div className="new-prod-row">
-          <div className="new-service-field">
-            <label className="new-service-label">العملة</label>
-            <select className="new-service-select" value={f.currency} onChange={(e) => update('currency', e.target.value)}>
-              <option value="SYP">ليرة سورية (SYP)</option>
-              <option value="USD">دولار (USD)</option>
-              <option value="TRY">ليرة تركية (TRY)</option>
-              <option value="EUR">يورو (EUR)</option>
-              <option value="SAR">ريال سعودي (SAR)</option>
-              <option value="AED">درهم إماراتي (AED)</option>
-            </select>
-          </div>
-          <div className="new-service-field">
-            <label className="new-service-label">الفئة</label>
-            <select className="new-service-select" value={f.category} onChange={(e) => update('category', e.target.value)}>
-              <option value="food">🍽️ طعام</option>
-              <option value="drink">🥤 شراب</option>
-              <option value="grocery">🛒 بقالة</option>
-              <option value="medicine">💊 دواء</option>
-              <option value="clothes">👕 ملابس</option>
-              <option value="electronics">📱 إلكترونيات</option>
-              <option value="home">🏠 منزل</option>
-              <option value="beauty">💄 تجميل</option>
-              <option value="stationery">📚 قرطاسية</option>
-              <option value="other">📦 أخرى</option>
-            </select>
-          </div>
-        </div>
-
-        <div className="new-prod-row">
-          <div className="new-service-field">
-            <label className="new-service-label">الكمية</label>
-            <input
-              className="new-service-input"
-              type="number"
-              inputMode="numeric"
-              placeholder="1"
-              value={f.stock}
-              onChange={(e) => update('stock', e.target.value)}
-            />
-          </div>
-          <div className="new-service-field">
-            <label className="new-service-label">الوحدة</label>
-            <select className="new-service-select" value={f.unit} onChange={(e) => update('unit', e.target.value)}>
-              <option value="قطعة">قطعة</option>
-              <option value="كيلو">كيلو</option>
-              <option value="علبة">علبة</option>
-              <option value="حزمة">حزمة</option>
-              <option value="لتر">لتر</option>
-            </select>
-          </div>
-        </div>
-
-        <div className="new-service-field">
-          <ImageUploader
-            label="📸 صورة المنتج"
-            folder="products"
-            value={f.image_url}
-            onUpload={(url) => update('image_url', url)}
-            aspect="1/1"
-          />
-        </div>
-
-        <div className="new-service-field">
-          <label className="new-service-label">الوصف</label>
-          <textarea
-            className="new-service-textarea"
-            placeholder="وصف مختصر..."
-            value={f.description}
-            onChange={(e) => update('description', e.target.value)}
-          />
-        </div>
-
-        {error && (
-          <div style={{ padding: '14px 16px', background: 'rgba(220,38,38,.14)', border: '1px solid rgba(220,38,38,.35)', borderRadius: 14, color: '#dc2626', fontSize: 13, fontWeight: 600 }}>
-            {error}
-          </div>
-        )}
-
-                <div className="new-service-field">
-          <FileUploader
-            label="📎 ملف / كتالوج PDF"
-            folder="products-files"
-            value={fileUrl}
-            onUpload={(url) => setFileUrl(url)}
-            maxSize={20}
-          />
-        </div>
-
-        <button className="new-service-submit" type="submit" disabled={loading}>
-          {loading ? '... جارٍ الحفظ' : '+ إضافة المنتج'}
+        {/* Save Button */}
+        <button type="submit" disabled={saving || uploading} style={{ width: '100%', padding: 16, background: (saving || uploading) ? '#94a3b8' : 'linear-gradient(135deg, #10b981, #059669)', color: '#fff', border: 'none', borderRadius: 14, fontWeight: 900, fontSize: 16, cursor: (saving || uploading) ? 'wait' : 'pointer', fontFamily: 'inherit', boxShadow: '0 6px 20px rgba(16,185,129,0.3)' }}>
+          {saving ? '⏳ جارٍ الحفظ...' : '✓ نشر المنتج'}
         </button>
       </form>
     </div>
   );
 }
+
+const labelStyle = { display: 'block', fontSize: 12, fontWeight: 800, color: '#475569', marginBottom: 6 };
+const inputStyle = { width: '100%', padding: '12px 14px', borderRadius: 10, border: '1px solid #cbd5e1', fontSize: 14, fontFamily: 'inherit', boxSizing: 'border-box', outline: 'none', background: '#f8fafc' };

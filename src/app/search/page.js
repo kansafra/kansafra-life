@@ -1,280 +1,201 @@
 'use client';
-import { useState, useEffect, useRef, Suspense } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useState, useEffect, useMemo } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
-import { globalSearch, POPULAR_SEARCHES, normalizeArabic } from '@/lib/search';
-import { SkeletonList } from '@/components/Skeleton';
-import EmptyState from '@/components/EmptyState';
+import { detectIntent, rankResults, getTimeBasedSuggestions } from '@/lib/smartSearch';
 
-const CATEGORIES = [
+const TYPE_LABELS = {
+  merchant: '🏪 متجر', restaurant: '🍽️ مطعم', doctor: '👨‍⚕️ طبيب',
+  pharmacy: '💊 صيدلية', school: '🏫 مدرسة', mosque: '🕌 جامع',
+  charity: '🤝 جمعية', sports: '⚽ نادي', hotel: '🏨 فندق',
+  office: '📁 مكتب', exchange: '💱 صرافة', transport: '🚗 مواصلات',
+  memory: '📸 ذاكرة', municipality: '🏢 بلدية', craftsman: '🛠️ حرفي',
+  workshop: '🏭 ورشة', isp: '📡 إنترنت', council: '🏛️ مجلس',
+};
+
+const TABS = [
   { key: 'all', label: 'الكل', icon: '🔍' },
-  { key: 'products', label: 'منتجات', icon: '📦' },
-  { key: 'entities', label: 'متاجر', icon: '🏪' },
-  { key: 'services', label: 'خدمات', icon: '🛠️' },
-  { key: 'realestate', label: 'عقارات', icon: '🏠' },
-  { key: 'jobs', label: 'وظائف', icon: '💼' },
-  { key: 'lostfound', label: 'مفقودات', icon: '🔍' },
+  { key: 'stores', label: 'المتاجر', icon: '🏪' },
+  { key: 'products', label: 'المنتجات', icon: '📦' },
 ];
 
-function SearchContent() {
+export default function SearchPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const initialQuery = searchParams.get('q') || '';
 
   const [query, setQuery] = useState(initialQuery);
-  const [results, setResults] = useState({ products: [], services: [], entities: [], realestate: [], jobs: [], lostfound: [] });
-  const [loading, setLoading] = useState(false);
-  const [hasSearched, setHasSearched] = useState(false);
-  const [category, setCategory] = useState('all');
-  const [showSuggestions, setShowSuggestions] = useState(false);
-  const inputRef = useRef(null);
+  const [activeTab, setActiveTab] = useState('all');
+  const [allStores, setAllStores] = useState([]);
+  const [allProducts, setAllProducts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [intent, setIntent] = useState(null);
 
   useEffect(() => {
-    if (initialQuery) {
-      runSearch(initialQuery);
-    }
+    loadData();
+  }, []);
+
+  useEffect(() => {
+    setQuery(initialQuery);
+    setIntent(detectIntent(initialQuery));
   }, [initialQuery]);
 
-  // اقتراحات فورية أثناء الكتابة
-  const suggestions = query.trim().length > 0
-    ? POPULAR_SEARCHES.filter(s => normalizeArabic(s).includes(normalizeArabic(query))).slice(0, 5)
-    : POPULAR_SEARCHES.slice(0, 6);
-
-  async function runSearch(q) {
-    if (!q.trim()) return;
+  async function loadData() {
+    if (!supabase) return;
     setLoading(true);
-    setHasSearched(true);
     try {
-      const res = await globalSearch(supabase, q, { limit: 30 });
-      setResults(res);
+      const [ents, prods] = await Promise.all([
+        supabase.from('entities').select('*').eq('approval_status', 'approved').eq('is_active', true),
+        supabase.from('products').select('*').eq('is_active', true),
+      ]);
+      setAllStores(ents.data || []);
+      setAllProducts(prods.data || []);
     } catch (e) { console.error(e); }
-    setLoading(false);
+    finally { setLoading(false); }
   }
+
+  const { stores, products } = useMemo(() => {
+    if (!initialQuery.trim()) return { stores: [], products: [] };
+    const rankedStores = rankResults(allStores, initialQuery, ['display_name', 'description', 'city', 'entity_type', 'address']);
+    const rankedProducts = rankResults(allProducts, initialQuery, ['title', 'description']);
+    return { stores: rankedStores.slice(0, 30), products: rankedProducts.slice(0, 30) };
+  }, [allStores, allProducts, initialQuery]);
 
   function handleSubmit(e) {
     e.preventDefault();
     if (!query.trim()) return;
-    setShowSuggestions(false);
     router.push(`/search?q=${encodeURIComponent(query.trim())}`);
-    runSearch(query.trim());
   }
 
-  function pickSuggestion(s) {
-    setQuery(s);
-    setShowSuggestions(false);
-    router.push(`/search?q=${encodeURIComponent(s)}`);
-    runSearch(s);
-  }
-
-  const totals = {
-    all: results.products.length + results.services.length + results.entities.length + results.realestate.length + results.jobs.length + results.lostfound.length,
-    products: results.products.length,
-    entities: results.entities.length,
-    services: results.services.length,
-    realestate: results.realestate.length,
-    jobs: results.jobs.length,
-    lostfound: results.lostfound.length,
-  };
-
-  const renderResults = () => {
-    if (loading) return <SkeletonList count={4} />;
-    if (!hasSearched) return null;
-    if (totals.all === 0) {
-      return <EmptyState icon="🔍" title="لا توجد نتائج" description={`لم نجد أي نتائج لـ "${query}"`} actionLabel="← الرئيسية" actionHref="/" />;
-    }
-
-    const items = [];
-
-    // Products
-    if ((category === 'all' || category === 'products') && results.products.length > 0) {
-      items.push(
-        <div key="products" style={{ marginBottom: 24 }}>
-          <h2 style={{ fontSize: 16, fontWeight: 900, color: '#0f172a', marginBottom: 12 }}>📦 منتجات ({results.products.length})</h2>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 10 }}>
-            {results.products.map(p => {
-              const price = Number(p.price) || 0;
-              return (
-                <Link key={p.id} href={`/product/${p.id}`} style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, overflow: 'hidden', textDecoration: 'none', color: 'inherit' }}>
-                  {p.image_url ? <img src={p.image_url} alt="" loading="lazy" style={{ width: '100%', height: 100, objectFit: 'cover' }} /> : <div style={{ height: 100, background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28 }}>📦</div>}
-                  <div style={{ padding: 10 }}>
-                    <div style={{ fontSize: 12, fontWeight: 900, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', marginBottom: 4 }}>{p.title}</div>
-                    <div style={{ fontSize: 13, fontWeight: 900, color: '#0f4d3a' }}>{price.toLocaleString()} <span style={{ fontSize: 9 }}>{p.currency || 'SYP'}</span></div>
-                  </div>
-                </Link>
-              );
-            })}
-          </div>
-        </div>
-      );
-    }
-
-    // Entities
-    if ((category === 'all' || category === 'entities') && results.entities.length > 0) {
-      items.push(
-        <div key="entities" style={{ marginBottom: 24 }}>
-          <h2 style={{ fontSize: 16, fontWeight: 900, color: '#0f172a', marginBottom: 12 }}>🏪 متاجر ومزودون ({results.entities.length})</h2>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 10 }}>
-            {results.entities.map(e => (
-              <Link key={e.id} href={`/store/${encodeURIComponent(e.display_name)}`} style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 12, padding: 12, textDecoration: 'none', color: 'inherit', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 6 }}>
-                {e.logo_url ? <img src={e.logo_url} alt="" style={{ width: 48, height: 48, borderRadius: 12, objectFit: 'cover' }} /> : <div style={{ width: 48, height: 48, borderRadius: 12, background: 'linear-gradient(135deg,#0f4d3a,#075640)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>🏪</div>}
-                <div style={{ fontSize: 12, fontWeight: 900, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>{e.is_verified && '✅ '}{e.display_name}</div>
-                {e.city && <div style={{ fontSize: 10, color: '#64748b' }}>📍 {e.city}</div>}
-              </Link>
-            ))}
-          </div>
-        </div>
-      );
-    }
-
-    // Services
-    if ((category === 'all' || category === 'services') && results.services.length > 0) {
-      items.push(
-        <div key="services" style={{ marginBottom: 24 }}>
-          <h2 style={{ fontSize: 16, fontWeight: 900, color: '#0f172a', marginBottom: 12 }}>🛠️ خدمات ({results.services.length})</h2>
-          {results.services.map(s => (
-            <Link key={s.id} href={`/service/${s.id}`} style={{ display: 'flex', gap: 12, background: '#fff', borderRadius: 12, padding: 12, marginBottom: 8, border: '1px solid #e5e7eb', textDecoration: 'none', color: 'inherit' }}>
-              {s.image_url ? <img src={s.image_url} alt="" style={{ width: 56, height: 56, borderRadius: 10, objectFit: 'cover', flexShrink: 0 }} /> : <div style={{ width: 56, height: 56, borderRadius: 10, background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, flexShrink: 0 }}>🛠️</div>}
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 900, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.title}</div>
-                <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>🏪 {s.provider_name}</div>
-              </div>
-            </Link>
-          ))}
-        </div>
-      );
-    }
-
-    // Real Estate
-    if ((category === 'all' || category === 'realestate') && results.realestate.length > 0) {
-      items.push(
-        <div key="realestate" style={{ marginBottom: 24 }}>
-          <h2 style={{ fontSize: 16, fontWeight: 900, color: '#0f172a', marginBottom: 12 }}>🏠 عقارات ({results.realestate.length})</h2>
-          {results.realestate.map(r => (
-            <div key={r.id} style={{ background: '#fff', borderRadius: 12, padding: 12, marginBottom: 8, border: '1px solid #e5e7eb' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                <div style={{ fontSize: 13, fontWeight: 900 }}>{r.title}</div>
-                <div style={{ fontSize: 13, fontWeight: 900, color: '#ea580c' }}>{Number(r.price).toLocaleString()} {r.currency}</div>
-              </div>
-              <div style={{ fontSize: 11, color: '#64748b' }}>📍 {r.location_text} · {r.property_type} · {r.deal_type}</div>
-            </div>
-          ))}
-        </div>
-      );
-    }
-
-    // Jobs
-    if ((category === 'all' || category === 'jobs') && results.jobs.length > 0) {
-      items.push(
-        <div key="jobs" style={{ marginBottom: 24 }}>
-          <h2 style={{ fontSize: 16, fontWeight: 900, color: '#0f172a', marginBottom: 12 }}>💼 وظائف ({results.jobs.length})</h2>
-          {results.jobs.map(j => (
-            <div key={j.id} style={{ background: '#fff', borderRadius: 12, padding: 12, marginBottom: 8, border: '1px solid #e5e7eb' }}>
-              <div style={{ fontSize: 13, fontWeight: 900 }}>{j.title}</div>
-              <div style={{ fontSize: 11, color: '#64748b', marginTop: 4 }}>🏢 {j.employer_name} · 📍 {j.location}</div>
-            </div>
-          ))}
-        </div>
-      );
-    }
-
-    // Lost & Found
-    if ((category === 'all' || category === 'lostfound') && results.lostfound.length > 0) {
-      items.push(
-        <div key="lostfound" style={{ marginBottom: 24 }}>
-          <h2 style={{ fontSize: 16, fontWeight: 900, color: '#0f172a', marginBottom: 12 }}>🔍 مفقودات ({results.lostfound.length})</h2>
-          {results.lostfound.map(l => (
-            <div key={l.id} style={{ background: '#fff', borderRadius: 12, padding: 12, marginBottom: 8, border: '1px solid #e5e7eb' }}>
-              <div style={{ fontSize: 13, fontWeight: 900 }}>{l.title}</div>
-              <div style={{ fontSize: 11, color: '#64748b', marginTop: 4 }}>📍 {l.location_text} · {l.item_type}</div>
-            </div>
-          ))}
-        </div>
-      );
-    }
-
-    return <div>{items}</div>;
-  };
+  const totalResults = stores.length + products.length;
+  const suggestions = getTimeBasedSuggestions();
 
   return (
     <div style={{ minHeight: '100vh', background: '#f8fafc', paddingBottom: 40 }}>
-      {/* Header */}
-      <div style={{ position: 'sticky', top: 0, zIndex: 10, background: '#0f4d3a', padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
-        <Link href="/" style={{ color: '#fff', textDecoration: 'none', fontSize: 20, width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,.1)', borderRadius: '50%' }}>→</Link>
-        <div style={{ flex: 1, color: '#fff', fontSize: 16, fontWeight: 900 }}>🔍 البحث الذكي</div>
-      </div>
+      <div style={{ background: 'linear-gradient(135deg, #0f4d3a, #075640)', padding: '16px 20px', color: '#fff', borderBottomLeftRadius: 24, borderBottomRightRadius: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+          <button onClick={() => router.push('/')} style={{ color: '#fff', background: 'rgba(255,255,255,0.15)', border: 'none', width: 40, height: 40, borderRadius: '50%', fontSize: 18, cursor: 'pointer' }}>←</button>
+          <h1 style={{ fontSize: 20, fontWeight: 900, margin: 0, flex: 1 }}>🔍 البحث الذكي</h1>
+        </div>
 
-      {/* Search Box */}
-      <div style={{ padding: 16, background: '#fff', borderBottom: '1px solid #e5e7eb', position: 'relative' }}>
-        <form onSubmit={handleSubmit} style={{ display: 'flex', gap: 8 }}>
-          <div style={{ flex: 1, display: 'flex', alignItems: 'center', background: '#f8fafc', border: '2px solid #0f4d3a', borderRadius: 12, padding: '4px 4px 4px 14px' }}>
-            <span style={{ fontSize: 18, color: '#94a3b8' }}>⌕</span>
-            <input
-              ref={inputRef}
-              type="text"
-              value={query}
-              onChange={(e) => { setQuery(e.target.value); setShowSuggestions(true); }}
-              onFocus={() => setShowSuggestions(true)}
-              placeholder="ابحث في كل شيء..."
-              autoFocus
-              style={{ flex: 1, padding: 12, background: 'none', border: 'none', outline: 'none', fontSize: 14, fontFamily: 'inherit', textAlign: 'right' }}
-            />
-            {query && (
-              <button type="button" onClick={() => { setQuery(''); inputRef.current?.focus(); }} style={{ background: 'none', border: 'none', color: '#94a3b8', fontSize: 16, cursor: 'pointer', padding: 6 }}>✕</button>
-            )}
-          </div>
-          <button type="submit" style={{ padding: '0 20px', background: 'linear-gradient(135deg,#10b981,#059669)', color: '#fff', border: 'none', borderRadius: 12, fontWeight: 900, cursor: 'pointer', fontFamily: 'inherit', fontSize: 14 }}>بحث</button>
+        <form onSubmit={handleSubmit} style={{ display: 'flex', background: '#fff', borderRadius: 12, padding: '6px 6px 6px 16px', alignItems: 'center' }}>
+          <input
+            type="search"
+            placeholder="اسأل بأي طريقة... (بدي مطعم، دكتور، شغل...)"
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            autoFocus
+            style={{ flex: 1, padding: 10, border: 'none', outline: 'none', fontSize: 14, fontFamily: 'inherit', color: '#0f172a', background: 'transparent', textAlign: 'right' }}
+          />
+          <button type="submit" style={{ padding: '10px 18px', background: '#0f4d3a', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 900, cursor: 'pointer', fontFamily: 'inherit' }}>بحث</button>
         </form>
 
-        {/* Suggestions Dropdown */}
-        {showSuggestions && suggestions.length > 0 && (
-          <div style={{ position: 'absolute', top: '100%', left: 16, right: 16, marginTop: 6, background: '#fff', borderRadius: 12, boxShadow: '0 8px 24px rgba(0,0,0,.12)', border: '1px solid #e5e7eb', zIndex: 20, overflow: 'hidden' }}>
-            <div style={{ padding: '8px 12px', fontSize: 10.5, fontWeight: 700, color: '#94a3b8', borderBottom: '1px solid #f1f5f9' }}>
-              {query.trim() ? 'اقتراحات البحث' : '🔥 الأكثر بحثاً'}
-            </div>
-            {suggestions.map((s, i) => (
-              <button key={i} onClick={() => pickSuggestion(s)} style={{ width: '100%', padding: '12px 16px', background: 'none', border: 'none', textAlign: 'right', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, color: '#334155', borderBottom: i < suggestions.length - 1 ? '1px solid #f8fafc' : 'none' }}>
-                🔍 {s}
-              </button>
-            ))}
+        {intent && initialQuery && (
+          <div style={{ marginTop: 12, background: 'rgba(251,191,36,0.2)', border: '1px solid rgba(251,191,36,0.4)', borderRadius: 10, padding: '8px 12px', fontSize: 12, fontWeight: 800 }}>
+            💡 يبدو أنك تبحث عن: <strong style={{ color: '#fbbf24' }}>{intent.icon} {intent.label}</strong>
+          </div>
+        )}
+
+        {!loading && initialQuery && (
+          <div style={{ marginTop: 12, fontSize: 12, opacity: 0.9 }}>
+            نتائج البحث عن "<strong>{initialQuery}</strong>": {totalResults} نتيجة
           </div>
         )}
       </div>
 
-      {/* Categories */}
-      {hasSearched && totals.all > 0 && (
-        <div style={{ padding: '12px 16px 0' }}>
-          <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 4 }}>
-            {CATEGORIES.filter(c => c.key === 'all' || totals[c.key] > 0).map(c => (
-              <button key={c.key} onClick={() => setCategory(c.key)} style={{ padding: '8px 14px', background: category === c.key ? '#0f4d3a' : '#fff', color: category === c.key ? '#fff' : '#64748b', border: `1px solid ${category === c.key ? '#0f4d3a' : '#e5e7eb'}`, borderRadius: 10, fontSize: 11.5, fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'inherit' }}>
-                {c.icon} {c.label} ({c.key === 'all' ? totals.all : totals[c.key]})
-              </button>
-            ))}
+      <div style={{ padding: 16, maxWidth: 800, margin: '0 auto' }}>
+        {loading && <div style={{ textAlign: 'center', padding: 60 }}><div style={{ fontSize: 40, marginBottom: 12 }}>🔍</div><div style={{ color: '#64748b' }}>جارٍ البحث...</div></div>}
+
+        {!loading && !initialQuery && (
+          <div style={{ background: '#fff', borderRadius: 16, padding: 20, border: '1px solid #e2e8f0' }}>
+            <div style={{ textAlign: 'center', marginBottom: 20 }}>
+              <div style={{ fontSize: 48, marginBottom: 8 }}>{suggestions.emoji}</div>
+              <div style={{ fontSize: 18, fontWeight: 900, color: '#0f172a', marginBottom: 4 }}>{suggestions.greeting}</div>
+              <div style={{ fontSize: 13, color: '#64748b' }}>{suggestions.prompt}</div>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8, marginBottom: 20 }}>
+              {suggestions.chips.map((chip, i) => (
+                <Link key={i} href={`/search?q=${encodeURIComponent(chip.query)}`} style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.25)', borderRadius: 12, padding: 12, textAlign: 'center', textDecoration: 'none', color: '#0f4d3a', fontSize: 13, fontWeight: 900 }}>
+                  {chip.label}
+                </Link>
+              ))}
+            </div>
+            <div style={{ textAlign: 'center', fontSize: 12, color: '#64748b', borderTop: '1px solid #f1f5f9', paddingTop: 16 }}>
+              💡 جرب البحث بلغتك العادية: "بدي دكتور أسنان"، "مطعم قريب"، "بدي شغل"
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Results */}
-      <div style={{ padding: 16 }}>
-        {renderResults()}
+        {!loading && initialQuery && totalResults === 0 && (
+          <div style={{ textAlign: 'center', padding: 60, background: '#fff', borderRadius: 16, border: '1px solid #e2e8f0' }}>
+            <div style={{ fontSize: 60, marginBottom: 12 }}>😕</div>
+            <div style={{ fontSize: 18, fontWeight: 900, color: '#0f172a', marginBottom: 6 }}>لا توجد نتائج</div>
+            <div style={{ fontSize: 13, color: '#64748b', marginBottom: 20 }}>جرّب كلمة أخرى أو تصفح الأقسام</div>
+            <Link href="/categories" style={{ display: 'inline-block', background: '#0f4d3a', color: '#fff', padding: '10px 20px', borderRadius: 10, textDecoration: 'none', fontSize: 13, fontWeight: 900 }}>تصفح الأقسام</Link>
+          </div>
+        )}
+
+        {!loading && initialQuery && totalResults > 0 && (
+          <>
+            <div style={{ display: 'flex', gap: 6, marginBottom: 20, overflowX: 'auto', paddingBottom: 4 }}>
+              {TABS.map(tab => {
+                const count = tab.key === 'all' ? totalResults : tab.key === 'stores' ? stores.length : products.length;
+                const isActive = activeTab === tab.key;
+                return (
+                  <button key={tab.key} onClick={() => setActiveTab(tab.key)} style={{ background: isActive ? '#0f4d3a' : '#fff', color: isActive ? '#fff' : '#475569', border: isActive ? '1px solid #0f4d3a' : '1px solid #e2e8f0', padding: '8px 16px', borderRadius: 20, fontSize: 12, fontWeight: 900, cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'inherit' }}>
+                    {tab.icon} {tab.label} ({count})
+                  </button>
+                );
+              })}
+            </div>
+
+            {(activeTab === 'all' || activeTab === 'stores') && stores.length > 0 && (
+              <div style={{ marginBottom: 24 }}>
+                <h2 style={{ fontSize: 15, fontWeight: 900, color: '#0f172a', marginBottom: 12 }}>🏪 المتاجر ({stores.length})</h2>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 10 }}>
+                  {stores.map(s => (
+                    <Link key={s.id} href={`/store/${encodeURIComponent(s.display_name)}`} style={{ background: '#fff', borderRadius: 14, overflow: 'hidden', border: '1px solid #e2e8f0', textDecoration: 'none', color: 'inherit' }}>
+                      <div style={{ position: 'relative', paddingTop: '70%', background: 'linear-gradient(135deg, #f0fdf4, #e0f2fe)' }}>
+                        {s.logo_url ? <img src={s.logo_url} alt="" style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', objectFit: 'cover' }} /> : <div style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 40 }}>{(TYPE_LABELS[s.entity_type] || '🏪').split(' ')[0]}</div>}
+                      </div>
+                      <div style={{ padding: 10 }}>
+                        <div style={{ fontSize: 12, fontWeight: 900, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.display_name}</div>
+                        <div style={{ fontSize: 10, color: '#64748b', marginTop: 4 }}>{TYPE_LABELS[s.entity_type] || s.entity_type}{s.city && ` · 📍 ${s.city}`}</div>
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {(activeTab === 'all' || activeTab === 'products') && products.length > 0 && (
+              <div style={{ marginBottom: 24 }}>
+                <h2 style={{ fontSize: 15, fontWeight: 900, color: '#0f172a', marginBottom: 12 }}>📦 المنتجات ({products.length})</h2>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 10 }}>
+                  {products.map(p => {
+                    const price = Number(p.price) || 0;
+                    const disc = Number(p.discount_percent) || 0;
+                    const finalPrice = Math.round(price - (price * disc / 100));
+                    return (
+                      <Link key={p.id} href={`/product/${p.id}`} style={{ background: '#fff', borderRadius: 14, overflow: 'hidden', border: '1px solid #e2e8f0', textDecoration: 'none', color: 'inherit' }}>
+                        {p.image_url ? <img src={p.image_url} alt="" style={{ width: '100%', height: 110, objectFit: 'cover' }} /> : <div style={{ height: 110, background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 32 }}>📦</div>}
+                        <div style={{ padding: 10 }}>
+                          <div style={{ fontSize: 12, fontWeight: 900, color: '#0f172a', marginBottom: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.title}</div>
+                          <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
+                            <div style={{ fontSize: 13, fontWeight: 900, color: '#0f4d3a' }}>{finalPrice.toLocaleString()}</div>
+                            <div style={{ fontSize: 9, color: '#64748b' }}>{p.currency || 'SYP'}</div>
+                          </div>
+                        </div>
+                      </Link>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </>
+        )}
       </div>
-
-      {/* No search yet */}
-      {!hasSearched && (
-        <div style={{ padding: 40, textAlign: 'center' }}>
-          <div style={{ fontSize: 64, marginBottom: 16, opacity: 0.3 }}>🔍</div>
-          <div style={{ fontSize: 14, color: '#64748b', fontWeight: 700 }}>ابحث في كل شيء:</div>
-          <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 6 }}>منتجات · متاجر · خدمات · عقارات · وظائف · مفقودات</div>
-        </div>
-      )}
     </div>
-  );
-}
-
-export default function SearchPage() {
-  return (
-    <Suspense fallback={<div style={{ padding: 80, textAlign: 'center' }}>⏳</div>}>
-      <SearchContent />
-    </Suspense>
   );
 }

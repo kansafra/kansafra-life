@@ -4,254 +4,224 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { useCurrentUser } from '@/lib/useCurrentUser';
-import ImageUploader from '@/components/ImageUploader';
-import { SkeletonList } from '@/components/Skeleton';
-import EmptyState from '@/components/EmptyState';
-
-const METHOD_TYPES = [
-  { k: 'cash',            l: '💵 نقدي',                icon: '💵' },
-  { k: 'bank',            l: '🏦 تحويل بنكي',           icon: '🏦' },
-  { k: 'wallet',          l: '📱 محفظة إلكترونية',      icon: '📱' },
-  { k: 'sham_cash',       l: '💚 شام كاش',             icon: '💚' },
-  { k: 'syriatel_cash',   l: '💛 سيرياتيل كاش',        icon: '💛' },
-  { k: 'mtn_cash',        l: '💙 MTN كاش',             icon: '💙' },
-  { k: 'al_haram',        l: '🟢 الهرم',               icon: '🟢' },
-  { k: 'other',           l: '🔷 أخرى',                icon: '🔷' },
-];
+import { useToast } from '@/components/Toast';
 
 export default function PaymentMethodsPage() {
   const router = useRouter();
-  const { user, loading: userLoading, isOwner, isSectionAdmin, hasPermission, dataOwnerName } = useCurrentUser();
-  const [methods, setMethods] = useState([]);
+  const { success, error: toastError } = useToast();
+  const { user, loading: userLoading, dataOwnerName } = useCurrentUser();
+
+  const [entity, setEntity] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [mode, setMode] = useState(null);
-  const [editing, setEditing] = useState(null);
-  const [form, setForm] = useState({});
   const [saving, setSaving] = useState(false);
+
+  const [form, setForm] = useState({
+    accepts_cash: true,
+    accepts_transfer: false,
+    accepts_wallet: false,
+    bank_account_info: '',
+    wallet_number: '',
+  });
 
   useEffect(() => {
     if (userLoading) return;
-    if (!user) { router.replace('/login'); return; }
-    load();
-  }, [user, userLoading]);
+    if (!user || !dataOwnerName) { setLoading(false); return; }
+    loadEntity();
+  }, [user, userLoading, dataOwnerName]);
 
-  async function load() {
-    if (!supabase || !dataOwnerName) { setLoading(false); return; }
-    const { data } = await supabase
-      .from('payment_methods')
-      .select('*')
-      .eq('entity_name', dataOwnerName)
-      .order('sort_order', { ascending: true });
-    setMethods(Array.isArray(data) ? data : []);
-    setLoading(false);
+  async function loadEntity() {
+    if (!supabase || !dataOwnerName) return;
+    try {
+      const { data } = await supabase.from('entities').select('*').eq('display_name', dataOwnerName).maybeSingle();
+      if (data) {
+        setEntity(data);
+        setForm({
+          accepts_cash: data.accepts_cash !== false,
+          accepts_transfer: data.accepts_transfer === true,
+          accepts_wallet: data.accepts_wallet === true,
+          bank_account_info: data.bank_account_info || '',
+          wallet_number: data.wallet_number || '',
+        });
+      }
+    } catch (err) { console.error(err); }
+    finally { setLoading(false); }
   }
 
-  function openAdd() {
-    setMode('add');
-    setEditing(null);
-    setForm({
-      name_ar: '',
-      method_type: 'cash',
-      details: '',
-      instructions: '',
-      barcode_image_url: '',
-      is_active: true,
-      sort_order: 0,
-    });
-  }
-
-  function openEdit(m) {
-    setMode('edit');
-    setEditing(m);
-    setForm({
-      name_ar: m.name_ar || '',
-      method_type: m.method_type || 'cash',
-      details: m.details || '',
-      instructions: m.instructions || '',
-      barcode_image_url: m.barcode_image_url || '',
-      is_active: m.is_active !== false,
-      sort_order: m.sort_order || 0,
-    });
-  }
-
-  async function save() {
-    if (!form.name_ar?.trim()) { alert('اسم الطريقة مطلوب'); return; }
-    if (!dataOwnerName) { alert('خطأ: لم يتم التعرف على المتجر'); return; }
-    
-    setSaving(true);
-    const payload = {
-      entity_name: dataOwnerName,
-      name_ar: form.name_ar.trim(),
-      method_type: form.method_type,
-      details: form.details?.trim() || null,
-      instructions: form.instructions?.trim() || null,
-      barcode_image_url: form.barcode_image_url || null,
-      is_active: form.is_active !== false,
-      sort_order: Number(form.sort_order) || 0,
-    };
-    
-    let err;
-    if (mode === 'add') {
-      ({ error: err } = await supabase.from('payment_methods').insert(payload));
-    } else {
-      ({ error: err } = await supabase.from('payment_methods').update(payload).eq('id', editing.id));
+  async function handleSave() {
+    if (!entity?.id) { toastError('لم يتم العثور على المتجر'); return; }
+    if (!form.accepts_cash && !form.accepts_transfer && !form.accepts_wallet) {
+      toastError('يجب تفعيل طريقة دفع واحدة على الأقل');
+      return;
     }
-    
-    setSaving(false);
-    if (err) { alert('تعذّر الحفظ: ' + err.message); return; }
-    setMode(null); setEditing(null);
-    load();
+    if (form.accepts_transfer && !form.bank_account_info.trim()) {
+      toastError('أدخل بيانات الحساب البنكي');
+      return;
+    }
+    if (form.accepts_wallet && !form.wallet_number.trim()) {
+      toastError('أدخل رقم المحفظة');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const payload = {
+        accepts_cash: form.accepts_cash,
+        accepts_transfer: form.accepts_transfer,
+        accepts_wallet: form.accepts_wallet,
+        bank_account_info: form.bank_account_info.trim() || null,
+        wallet_number: form.wallet_number.trim() || null,
+      };
+      const { error } = await supabase.from('entities').update(payload).eq('id', entity.id);
+      if (error) throw error;
+      setEntity({ ...entity, ...payload });
+      success('✅ تم حفظ طرق الدفع');
+    } catch (err) {
+      console.error(err);
+      toastError('فشل الحفظ');
+    } finally { setSaving(false); }
   }
 
-  async function del(m) {
-    if (!confirm(`حذف "${m.name_ar}"؟`)) return;
-    const { error } = await supabase.from('payment_methods').delete().eq('id', m.id);
-    if (error) { alert('تعذّر: ' + error.message); return; }
-    load();
-  }
-
-  async function toggleActive(m) {
-    await supabase.from('payment_methods').update({ is_active: !m.is_active }).eq('id', m.id);
-    load();
-  }
-
-  // فحص الصلاحية
-  if (!userLoading && user && !isOwner && !isSectionAdmin && !hasPermission('settings')) {
-    return (
-      <div style={{ minHeight: '100vh', background: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-        <div style={{ background: '#fff', borderRadius: 16, padding: 40, textAlign: 'center', maxWidth: 400, boxShadow: '0 4px 20px rgba(0,0,0,.1)' }}>
-          <div style={{ fontSize: 56, marginBottom: 16 }}>🔒</div>
-          <div style={{ fontSize: 18, fontWeight: 900, color: '#0f172a', marginBottom: 8 }}>ليس لديك صلاحية</div>
-          <div style={{ fontSize: 13, color: '#64748b', marginBottom: 20 }}>لا يمكنك إدارة طرق الدفع</div>
-          <a href="/merchant" style={{ display: 'inline-block', background: '#0f4d3a', color: '#fff', padding: '10px 20px', borderRadius: 10, textDecoration: 'none', fontWeight: 800 }}>← العودة</a>
-        </div>
-      </div>
-    );
-  }
-
-  if (userLoading || !user) {
-    return <div className="sect-empty" style={{ padding: 80 }}><span className="em">⏳</span></div>;
-  }
+  if (userLoading || loading) return <div style={{ padding: 80, textAlign: 'center' }}>⏳</div>;
 
   return (
-    <div className="sect-page" style={{ paddingBottom: 40, minHeight: '100vh', background: '#f8fafc' }}>
-      <div className="inv-header" style={{ position: 'sticky', top: 0, zIndex: 10, background: '#0f4d3a', padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
-        <Link href="/merchant" style={{ color: '#fff', textDecoration: 'none', fontSize: 20 }}>→</Link>
-        <span style={{ flex: 1, fontSize: 16, fontWeight: 900, color: '#fff' }}>💳 طرق الدفع</span>
-        <button onClick={openAdd} type="button" style={{ background: '#fbbf24', color: '#0f4d3a', border: 'none', padding: '8px 14px', borderRadius: 10, fontSize: 12, fontWeight: 900, cursor: 'pointer', fontFamily: 'inherit' }}>
-          + طريقة
-        </button>
+    <div style={{ minHeight: '100vh', background: '#f8fafc', paddingBottom: 100 }}>
+      <div style={{ background: '#0f4d3a', padding: '16px 20px', position: 'sticky', top: 0, zIndex: 20, display: 'flex', alignItems: 'center', gap: 12 }}>
+        <Link href="/merchant/settings" style={{ color: '#fff', textDecoration: 'none', fontSize: 20 }}>←</Link>
+        <h1 style={{ color: '#fff', fontSize: 18, fontWeight: 900, margin: 0 }}>💳 طرق الدفع</h1>
       </div>
 
-      {loading ? (
-        <div style={{ padding: 16 }}>
-          <SkeletonList count={3} />
-        </div>
-      ) : methods.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: '80px 20px' }}>
-          <div style={{ fontSize: 64, marginBottom: 16, opacity: .5 }}>💳</div>
-          <div style={{ fontSize: 16, fontWeight: 900, color: '#0f172a', marginBottom: 8 }}>لا توجد طرق دفع بعد</div>
-          <div style={{ fontSize: 13, color: '#64748b', marginBottom: 24 }}>أضف طريقة دفع ليتمكن العملاء من الدفع</div>
-          <button onClick={openAdd} type="button" style={{ background: 'linear-gradient(135deg,#10b981,#059669)', color: '#fff', border: 'none', padding: '12px 24px', borderRadius: 12, fontSize: 14, fontWeight: 900, cursor: 'pointer', fontFamily: 'inherit' }}>
-            + أضف أول طريقة
-          </button>
-        </div>
-      ) : (
-        <div style={{ padding: 16 }}>
-          {methods.map((m) => {
-            const typeInfo = METHOD_TYPES.find((t) => t.k === m.method_type);
-            return (
-              <div key={m.id} style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 16, padding: 14, marginBottom: 12, opacity: m.is_active ? 1 : 0.5 }}>
-                <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
-                  <div style={{ width: 48, height: 48, borderRadius: 12, background: 'linear-gradient(135deg, #0f4d3a, #075640)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, flexShrink: 0 }}>
-                    {typeInfo?.icon || '💳'}
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 14, fontWeight: 900, color: '#0f172a', marginBottom: 4 }}>{m.name_ar}</div>
-                    <div style={{ fontSize: 11.5, color: '#64748b', marginBottom: 4 }}>{typeInfo?.l || m.method_type}</div>
-                    {m.details && (
-                      <div style={{ fontSize: 12, color: '#334155', background: '#f1f5f9', padding: '4px 8px', borderRadius: 6, marginTop: 6, fontFamily: 'monospace', direction: 'ltr', textAlign: 'right' }}>
-                        {m.details}
-                      </div>
-                    )}
-                    {m.barcode_image_url && (
-                      <div style={{ marginTop: 8 }}>
-                        <img src={m.barcode_image_url} alt="barcode" style={{ maxWidth: 100, height: 50, borderRadius: 6, objectFit: 'contain', background: '#fff', border: '1px solid #e2e8f0' }} />
-                      </div>
-                    )}
-                    {m.instructions && (
-                      <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 6, lineHeight: 1.5 }}>{m.instructions}</div>
-                    )}
-                  </div>
-                  <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
-                    <button onClick={() => openEdit(m)} type="button" style={{ width: 32, height: 32, borderRadius: 8, background: '#f1f5f9', border: 'none', fontSize: 14, cursor: 'pointer' }}>✏️</button>
-                    <button onClick={() => toggleActive(m)} type="button" style={{ width: 32, height: 32, borderRadius: 8, background: m.is_active ? 'rgba(16,185,129,.15)' : '#f1f5f9', border: 'none', fontSize: 14, cursor: 'pointer' }}>
-                      {m.is_active ? '⏸' : '▶'}
-                    </button>
-                    <button onClick={() => del(m)} type="button" style={{ width: 32, height: 32, borderRadius: 8, background: 'rgba(220,38,38,.1)', color: '#dc2626', border: 'none', fontSize: 14, cursor: 'pointer' }}>✕</button>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {mode && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.5)', zIndex: 100, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={() => { setMode(null); setEditing(null); }}>
-          <div style={{ background: '#fff', borderRadius: '20px 20px 0 0', width: '100%', maxWidth: 500, maxHeight: '90vh', overflow: 'auto', padding: '20px 20px 30px' }} onClick={(e) => e.stopPropagation()}>
-            <div style={{ width: 40, height: 4, background: '#cbd5e1', borderRadius: 2, margin: '0 auto 16px' }} />
-            
-            <h3 style={{ fontSize: 18, fontWeight: 900, color: '#0f172a', marginBottom: 20 }}>
-              {mode === 'add' ? '➕ إضافة طريقة دفع' : '✏️ تعديل طريقة الدفع'}
-            </h3>
-
-            <div style={{ marginBottom: 16 }}>
-              <label style={{ display: 'block', fontSize: 12, fontWeight: 800, color: '#334155', marginBottom: 6 }}>اسم الطريقة *</label>
-              <input type="text" value={form.name_ar || ''} onChange={(e) => setForm({ ...form, name_ar: e.target.value })} placeholder="مثال: شام كاش" style={{ width: '100%', padding: 12, border: '1px solid #cbd5e1', borderRadius: 10, fontSize: 14, fontFamily: 'inherit', boxSizing: 'border-box', outline: 'none' }} />
-            </div>
-
-            <div style={{ marginBottom: 16 }}>
-              <label style={{ display: 'block', fontSize: 12, fontWeight: 800, color: '#334155', marginBottom: 6 }}>النوع</label>
-              <select value={form.method_type || 'cash'} onChange={(e) => setForm({ ...form, method_type: e.target.value })} style={{ width: '100%', padding: 12, border: '1px solid #cbd5e1', borderRadius: 10, fontSize: 14, fontFamily: 'inherit', boxSizing: 'border-box', outline: 'none' }}>
-                {METHOD_TYPES.map((t) => <option key={t.k} value={t.k}>{t.l}</option>)}
-              </select>
-            </div>
-
-            <div style={{ marginBottom: 16 }}>
-              <label style={{ display: 'block', fontSize: 12, fontWeight: 800, color: '#334155', marginBottom: 6 }}>رقم الحساب / التفاصيل</label>
-              <input type="text" value={form.details || ''} onChange={(e) => setForm({ ...form, details: e.target.value })} placeholder="مثال: 0956xxxxxx" style={{ width: '100%', padding: 12, border: '1px solid #cbd5e1', borderRadius: 10, fontSize: 14, fontFamily: 'inherit', boxSizing: 'border-box', outline: 'none' }} />
-            </div>
-
-            <div style={{ marginBottom: 16 }}>
-              <label style={{ display: 'block', fontSize: 12, fontWeight: 800, color: '#334155', marginBottom: 6 }}>📷 صورة الباركود</label>
-              <ImageUploader
-                label="ارفع صورة الباركود"
-                folder="payment-barcodes"
-                value={form.barcode_image_url || ''}
-                onUpload={(url) => setForm({ ...form, barcode_image_url: url })}
-              />
-            </div>
-
-            <div style={{ marginBottom: 16 }}>
-              <label style={{ display: 'block', fontSize: 12, fontWeight: 800, color: '#334155', marginBottom: 6 }}>تعليمات للعميل</label>
-              <textarea value={form.instructions || ''} onChange={(e) => setForm({ ...form, instructions: e.target.value })} placeholder="مثال: أرسل رقم الحوالة على الواتساب" rows={3} style={{ width: '100%', padding: 12, border: '1px solid #cbd5e1', borderRadius: 10, fontSize: 14, fontFamily: 'inherit', boxSizing: 'border-box', outline: 'none', resize: 'vertical' }} />
-            </div>
-
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 12, background: '#f0fdf4', borderRadius: 10, cursor: 'pointer', marginBottom: 20 }}>
-              <input type="checkbox" checked={form.is_active !== false} onChange={(e) => setForm({ ...form, is_active: e.target.checked })} />
-              <span style={{ fontSize: 13, fontWeight: 800, color: '#065f46' }}>نشطة (مرئية للعملاء)</span>
-            </label>
-
-            <div style={{ display: 'flex', gap: 10 }}>
-              <button onClick={() => { setMode(null); setEditing(null); }} type="button" style={{ flex: 1, padding: 14, background: '#f1f5f9', color: '#334155', border: 'none', borderRadius: 12, fontSize: 14, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' }}>إلغاء</button>
-              <button onClick={save} disabled={saving} type="button" style={{ flex: 1, padding: 14, background: 'linear-gradient(135deg,#10b981,#059669)', color: '#fff', border: 'none', borderRadius: 12, fontSize: 14, fontWeight: 900, cursor: saving ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
-                {saving ? '...' : mode === 'add' ? '✓ إضافة' : '✓ حفظ'}
-              </button>
-            </div>
+      <div style={{ padding: 16, maxWidth: 600, margin: '0 auto' }}>
+        
+        <div style={{ background: 'rgba(14,165,233,0.08)', border: '1px solid rgba(14,165,233,0.2)', borderRadius: 12, padding: 14, marginBottom: 16 }}>
+          <div style={{ fontSize: 12, color: '#0284c7', fontWeight: 900, marginBottom: 4 }}>💡 كيف تعمل؟</div>
+          <div style={{ fontSize: 11, color: '#475569', lineHeight: 1.6 }}>
+            الطرق التي تفعّلها هنا ستظهر للزبون في صفحة الدفع. سيرى الزبون فقط الطرق المتاحة لمتجرك.
           </div>
         </div>
-      )}
+
+        {/* Cash */}
+        <PaymentCard
+          active={form.accepts_cash}
+          onToggle={() => setForm({ ...form, accepts_cash: !form.accepts_cash })}
+          icon="💵"
+          title="الدفع عند الاستلام (نقداً)"
+          description="يدفع الزبون نقداً عند استلام الطلب"
+          color="#10b981"
+        />
+
+        {/* Bank Transfer */}
+        <PaymentCard
+          active={form.accepts_transfer}
+          onToggle={() => setForm({ ...form, accepts_transfer: !form.accepts_transfer })}
+          icon="🏦"
+          title="تحويل بنكي"
+          description="يحوّل الزبون المبلغ إلى حسابك البنكي"
+          color="#0ea5e9"
+        >
+          {form.accepts_transfer && (
+            <div style={{ marginTop: 12 }}>
+              <label style={labelStyle}>بيانات الحساب البنكي *</label>
+              <textarea
+                value={form.bank_account_info}
+                onChange={e => setForm({ ...form, bank_account_info: e.target.value })}
+                style={{ ...inputStyle, height: 80, resize: 'none' }}
+                placeholder="اسم البنك، اسم صاحب الحساب، رقم الحساب / IBAN..."
+              />
+            </div>
+          )}
+        </PaymentCard>
+
+        {/* Wallet */}
+        <PaymentCard
+          active={form.accepts_wallet}
+          onToggle={() => setForm({ ...form, accepts_wallet: !form.accepts_wallet })}
+          icon="📱"
+          title="محفظة إلكترونية"
+          description="سيرياتيل كاش، MTN كاش، الهرم، إلخ"
+          color="#f59e0b"
+        >
+          {form.accepts_wallet && (
+            <div style={{ marginTop: 12 }}>
+              <label style={labelStyle}>رقم المحفظة *</label>
+              <input
+                value={form.wallet_number}
+                onChange={e => setForm({ ...form, wallet_number: e.target.value })}
+                style={inputStyle}
+                placeholder="09xxxxxxxx"
+                type="tel"
+              />
+              <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 4 }}>
+                سيرى الزبون هذا الرقم ليحوّل إليه
+              </div>
+            </div>
+          )}
+        </PaymentCard>
+
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          style={{
+            width: '100%', padding: 16, marginTop: 16,
+            background: saving ? '#94a3b8' : 'linear-gradient(135deg, #10b981, #059669)',
+            color: '#fff', border: 'none', borderRadius: 14,
+            fontWeight: 900, fontSize: 15,
+            cursor: saving ? 'wait' : 'pointer', fontFamily: 'inherit',
+            boxShadow: '0 6px 20px rgba(16,185,129,0.3)'
+          }}
+        >
+          {saving ? '⏳ جارٍ الحفظ...' : '💾 حفظ طرق الدفع'}
+        </button>
+      </div>
     </div>
   );
 }
+
+function PaymentCard({ active, onToggle, icon, title, description, color, children }) {
+  return (
+    <div style={{
+      background: '#fff',
+      borderRadius: 16,
+      padding: 16,
+      marginBottom: 12,
+      border: active ? `2px solid ${color}` : '1px solid #e2e8f0',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div style={{
+          width: 48, height: 48, borderRadius: 12,
+          background: `${color}15`, color,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          fontSize: 24, flexShrink: 0
+        }}>{icon}</div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 14, fontWeight: 900, color: '#0f172a' }}>{title}</div>
+          <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>{description}</div>
+        </div>
+        <button
+          onClick={onToggle}
+          type="button"
+          style={{
+            position: 'relative',
+            width: 48, height: 26,
+            background: active ? color : '#cbd5e1',
+            border: 'none', borderRadius: 26,
+            cursor: 'pointer', padding: 0,
+            transition: 'background 0.2s'
+          }}
+        >
+          <div style={{
+            position: 'absolute',
+            top: 3, [active ? 'left' : 'right']: 3,
+            width: 20, height: 20,
+            background: '#fff', borderRadius: '50%',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+            transition: 'all 0.2s'
+          }} />
+        </button>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+const labelStyle = { display: 'block', fontSize: 12, fontWeight: 800, color: '#475569', marginBottom: 6 };
+const inputStyle = { width: '100%', padding: '12px 14px', borderRadius: 10, border: '1px solid #cbd5e1', fontSize: 14, fontFamily: 'inherit', boxSizing: 'border-box', outline: 'none', background: '#f8fafc' };

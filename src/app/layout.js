@@ -6,11 +6,14 @@ import InstallPrompt from '@/components/InstallPrompt';
 import NotificationSetup from '@/components/NotificationSetup';
 import AzkarBar from '@/components/AzkarBar';
 import NotificationListener from '@/components/NotificationListener';
+import NotifEnhancer from '@/components/NotifEnhancer';
 import SubscriptionReminder from '@/components/SubscriptionReminder';
 import DebtReminder from '@/components/DebtReminder';
 import HijriBar from '@/components/HijriBar';
 import PushToggle from '@/components/PushToggle';
-import GlobalBottomNav from '@/components/GlobalBottomNav';
+import BottomNavWrapper from '@/components/BottomNavWrapper';
+import GlobalFloatingMenu from '@/components/GlobalFloatingMenu';
+import LoginMenu from '@/components/LoginMenu';
 import { ToastProvider } from '@/components/Toast';
 
 export const metadata = {
@@ -40,6 +43,9 @@ export default function RootLayout({ children }) {
           href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&display=swap"
           rel="stylesheet"
         />
+        {/* 🌟 هذا السطر ضروري جداً لعرض الخريطة بشكل صحيح */}
+        <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+        
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         <meta name="apple-mobile-web-app-title" content="سند" />
@@ -47,20 +53,23 @@ export default function RootLayout({ children }) {
       </head>
       <body>
         <ToastProvider>
-          
-        <HijriBar />
-        <PushToggle compact />
-        {children}
-        <AzkarBar />
-        <NotificationListener />
-        <SubscriptionReminder />
-        <DebtReminder />
-        <ServiceWorkerRegistrar />
-        <InstallPrompt />
-        <NotificationSetup />
-      
+          <div style={{ position: 'relative', zIndex: 50, background: '#f8fafc' }}>
+            <HijriBar />
+          </div>
+          <PushToggle compact />
+          {children}
+          <AzkarBar />
+          <NotificationListener />
+        <NotifEnhancer />
+          <SubscriptionReminder />
+          <DebtReminder />
+          <ServiceWorkerRegistrar />
+          <InstallPrompt />
+          <NotificationSetup />
         </ToastProvider>
-        <GlobalBottomNav />
+        <BottomNavWrapper />
+        <GlobalFloatingMenu />
+        <LoginMenu />
       </body>
     </html>
   );

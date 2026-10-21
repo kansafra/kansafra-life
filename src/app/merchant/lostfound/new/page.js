@@ -1,95 +1,171 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { useCurrentUser } from '@/lib/useCurrentUser';
 import { useToast } from '@/components/Toast';
-import ImageUploader from '@/components/ImageUploader';
 
-export default function NewLostFound() {
+const CATEGORIES = [
+  { key: 'personal', label: 'أغراض شخصية', icon: '👤' },
+  { key: 'documents', label: 'وثائق', icon: '📄' },
+  { key: 'electronics', label: 'إلكترونيات', icon: '📱' },
+  { key: 'keys', label: 'مفاتيح', icon: '🔑' },
+  { key: 'animals', label: 'حيوانات', icon: '🐾' },
+  { key: 'money', label: 'أموال', icon: '💰' },
+  { key: 'other', label: 'أخرى', icon: '📦' },
+];
+
+export default function MerchantNewLostFoundPage() {
   const router = useRouter();
-  const { dataOwnerName, user } = useCurrentUser();
-  const { success, error: tE } = useToast();
+  const { success, error: toastError } = useToast();
+  const { user, loading: userLoading, dataOwnerName } = useCurrentUser();
+  const [entityId, setEntityId] = useState(null);
+  const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({
-    title: '', description: '', item_type: 'مفقود', category: '',
-    location_text: '', lost_date: new Date().toISOString().slice(0, 10),
-    reporter_phone: user?.phone || '', image_url: '',
-  });
+  const [form, setForm] = useState({ post_type: 'lost', title: '', description: '', category: 'personal', location: '', city: '', contact_phone: '', contact_whatsapp: '', image_url: '' });
 
-  function u(k, v) { setForm(f => ({ ...f, [k]: v })); }
+  useEffect(() => {
+    if (userLoading) return;
+    if (!user) { router.replace('/login'); return; }
+    const stored = JSON.parse(localStorage.getItem('sanad_entity') || 'null');
+    if (stored?.parent_entity_id) setEntityId(stored.parent_entity_id);
+    else if (dataOwnerName) {
+      supabase.from('entities').select('id, phone').eq('display_name', dataOwnerName).maybeSingle().then(({ data }) => {
+        if (data) { setEntityId(data.id); if (data.phone) setForm(f => ({ ...f, contact_phone: data.phone })); }
+      });
+    }
+  }, [user, userLoading, dataOwnerName, router]);
 
-  async function save() {
-    if (form.title.trim().length < 3) { tE('العنوان مطلوب (3 أحرف+)'); return; }
-    if (!form.description.trim()) { tE('الوصف مطلوب'); return; }
-    if (!form.reporter_phone.trim()) { tE('رقم التواصل مطلوب'); return; }
+  async function uploadImage(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) { toastError('حجم الصورة أقل من 5MB'); return; }
+    setUploading(true);
+    try {
+      const ext = file.name.split('.').pop();
+      const name = `lostfound/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+      const { error } = await supabase.storage.from('sanad-files').upload(name, file);
+      if (error) throw error;
+      const { data: url } = supabase.storage.from('sanad-files').getPublicUrl(name);
+      setForm({ ...form, image_url: url.publicUrl });
+      success('✅ تم رفع الصورة');
+    } catch (err) { toastError('فشل الرفع'); }
+    finally { setUploading(false); }
+  }
 
+  async function handleSubmit(e) {
+    e.preventDefault();
+    if (!form.title.trim()) { toastError('العنوان مطلوب'); return; }
+    if (!form.contact_phone.trim() && !form.contact_whatsapp.trim()) { toastError('أدخل رقم تواصل واحد على الأقل'); return; }
     setSaving(true);
     try {
       const { error } = await supabase.from('lost_found').insert({
-        reporter_name: dataOwnerName,
-        reporter_phone: form.reporter_phone.trim(),
-        title: form.title.trim(),
-        description: form.description.trim(),
-        item_type: form.item_type,
-        category: form.category.trim() || null,
-        location_text: form.location_text.trim() || null,
-        lost_date: form.lost_date || null,
-        image_url: form.image_url || null,
+        entity_id: entityId, provider_name: dataOwnerName,
+        post_type: form.post_type, title: form.title.trim(),
+        description: form.description.trim() || null, category: form.category,
+        location: form.location.trim() || null, city: form.city.trim() || null,
+        contact_phone: form.contact_phone.trim() || null, contact_whatsapp: form.contact_whatsapp.trim() || null,
+        image_url: form.image_url || null, is_active: true, is_resolved: false,
       });
       if (error) throw error;
-      success('✅ تم نشر البلاغ');
+      success('🎉 تم نشر البلاغ');
       router.push('/merchant/lostfound');
-    } catch (e) { tE('تعذّر: ' + e.message); }
-    setSaving(false);
+    } catch (err) { console.error(err); toastError('فشل النشر'); }
+    finally { setSaving(false); }
   }
+
+  if (userLoading) return <div style={{ padding: 80, textAlign: 'center' }}>⏳</div>;
 
   return (
     <div style={{ minHeight: '100vh', background: '#f8fafc', paddingBottom: 100 }}>
-      <div style={{ position: 'sticky', top: 0, zIndex: 10, background: '#dc2626', padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
-        <Link href="/merchant/lostfound" style={{ color: '#fff', textDecoration: 'none', fontSize: 20, width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,.15)', borderRadius: '50%' }}>←</Link>
-        <div style={{ color: '#fff', fontSize: 16, fontWeight: 900 }}>🔍 بلاغ جديد</div>
+      <div style={{ background: '#0f4d3a', padding: '16px 20px', position: 'sticky', top: 0, zIndex: 20, display: 'flex', alignItems: 'center', gap: 12 }}>
+        <button onClick={() => router.back()} style={{ background: 'none', border: 'none', color: '#fff', fontSize: 20, cursor: 'pointer' }}>←</button>
+        <h1 style={{ color: '#fff', fontSize: 18, fontWeight: 900, margin: 0 }}>🔍 بلاغ جديد</h1>
       </div>
 
-      <div style={{ padding: 16 }}>
-        <div style={{ background: '#fff', borderRadius: 16, padding: 16, marginBottom: 12, border: '1px solid #e5e7eb' }}>
-          <div style={{ fontSize: 13, fontWeight: 900, color: '#dc2626', marginBottom: 12 }}>📋 نوع البلاغ</div>
-          <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-            {['مفقود', 'وجدته'].map(t => (
-              <button key={t} type="button" onClick={() => u('item_type', t)} style={{ flex: 1, padding: 14, background: form.item_type === t ? '#dc2626' : '#f8fafc', color: form.item_type === t ? '#fff' : '#64748b', border: `2px solid ${form.item_type === t ? '#dc2626' : '#e5e7eb'}`, borderRadius: 12, fontSize: 13, fontWeight: 900, cursor: 'pointer', fontFamily: 'inherit' }}>
-                {t === 'مفقود' ? '🔍 فقدت شيئاً' : '✅ وجدت شيئاً'}
-              </button>
-            ))}
-          </div>
-
-          <label style={{ display: 'block', fontSize: 12, fontWeight: 800, color: '#334155', marginBottom: 6 }}>العنوان *</label>
-          <input type="text" value={form.title} onChange={(e) => u('title', e.target.value)} placeholder="مثال: مفاتيح سوداء" style={{ width: '100%', padding: 12, border: '1px solid #e5e7eb', borderRadius: 10, fontSize: 13, marginBottom: 12, boxSizing: 'border-box', fontFamily: 'inherit', outline: 'none' }} />
-
-          <label style={{ display: 'block', fontSize: 12, fontWeight: 800, color: '#334155', marginBottom: 6 }}>الوصف *</label>
-          <textarea value={form.description} onChange={(e) => u('description', e.target.value)} rows={3} placeholder="اللون، الحجم، علامات مميزة..." style={{ width: '100%', padding: 12, border: '1px solid #e5e7eb', borderRadius: 10, fontSize: 13, marginBottom: 12, boxSizing: 'border-box', fontFamily: 'inherit', outline: 'none', resize: 'vertical' }} />
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 12 }}>
-            <input type="text" value={form.category} onChange={(e) => u('category', e.target.value)} placeholder="التصنيف" style={{ padding: 12, border: '1px solid #e5e7eb', borderRadius: 10, fontSize: 13, boxSizing: 'border-box', fontFamily: 'inherit', outline: 'none' }} />
-            <input type="date" value={form.lost_date} onChange={(e) => u('lost_date', e.target.value)} style={{ padding: 12, border: '1px solid #e5e7eb', borderRadius: 10, fontSize: 13, boxSizing: 'border-box', fontFamily: 'inherit', outline: 'none' }} />
-          </div>
-
-          <input type="text" value={form.location_text} onChange={(e) => u('location_text', e.target.value)} placeholder="الموقع" style={{ width: '100%', padding: 12, border: '1px solid #e5e7eb', borderRadius: 10, fontSize: 13, marginBottom: 12, boxSizing: 'border-box', fontFamily: 'inherit', outline: 'none' }} />
-
-          <label style={{ display: 'block', fontSize: 12, fontWeight: 800, color: '#334155', marginBottom: 6 }}>رقم التواصل *</label>
-          <input type="tel" value={form.reporter_phone} onChange={(e) => u('reporter_phone', e.target.value)} placeholder="09XXXXXXXX" style={{ width: '100%', padding: 12, border: '1px solid #e5e7eb', borderRadius: 10, fontSize: 13, boxSizing: 'border-box', fontFamily: 'inherit', outline: 'none', direction: 'ltr', textAlign: 'right' }} />
+      <form onSubmit={handleSubmit} style={{ padding: 16, maxWidth: 600, margin: '0 auto' }}>
+        <div style={{ background: '#fff', borderRadius: 16, padding: 16, marginBottom: 16, border: '1px solid #e2e8f0', textAlign: 'center' }}>
+          <label style={{ cursor: uploading ? 'wait' : 'pointer', display: 'block' }}>
+            <input type="file" accept="image/*" onChange={uploadImage} style={{ display: 'none' }} disabled={uploading} />
+            {form.image_url ? (
+              <div style={{ position: 'relative', width: '100%', height: 160, borderRadius: 12, overflow: 'hidden' }}>
+                <img src={form.image_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              </div>
+            ) : (
+              <div style={{ width: '100%', height: 160, background: '#f8fafc', borderRadius: 12, border: '2px dashed #cbd5e1', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                <div style={{ fontSize: 32 }}>{uploading ? '⏳' : '📸'}</div>
+                <div style={{ fontSize: 12, fontWeight: 900, color: '#64748b' }}>{uploading ? 'جارٍ الرفع...' : 'صورة (اختياري)'}</div>
+              </div>
+            )}
+          </label>
         </div>
 
-        <div style={{ background: '#fff', borderRadius: 16, padding: 16, border: '1px solid #e5e7eb' }}>
-          <ImageUploader label="📸 صورة (اختياري)" folder="lostfound" value={form.image_url} onUpload={(url) => u('image_url', url)} />
-        </div>
-      </div>
+        <div style={{ background: '#fff', borderRadius: 16, padding: 20, marginBottom: 16, border: '1px solid #e2e8f0' }}>
+          <div style={{ marginBottom: 12 }}>
+            <label style={labelStyle}>نوع البلاغ *</label>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+              <button type="button" onClick={() => setForm({ ...form, post_type: 'lost' })} style={typeBtn(form.post_type === 'lost', '#ef4444')}>🔴 مفقود</button>
+              <button type="button" onClick={() => setForm({ ...form, post_type: 'found' })} style={typeBtn(form.post_type === 'found', '#10b981')}>🟢 موجود</button>
+            </div>
+          </div>
 
-      <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, padding: 12, background: '#fff', borderTop: '1px solid #e5e7eb' }}>
-        <button onClick={save} disabled={saving} style={{ width: '100%', padding: 16, background: saving ? '#94a3b8' : 'linear-gradient(135deg,#dc2626,#991b1b)', color: '#fff', border: 'none', borderRadius: 12, fontSize: 15, fontWeight: 900, cursor: saving ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
-          {saving ? '... جارٍ النشر' : '✓ نشر البلاغ'}
+          <div style={{ marginBottom: 12 }}>
+            <label style={labelStyle}>العنوان *</label>
+            <input value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} required style={inputStyle} placeholder="مثال: محفظة سوداء مفقودة" />
+          </div>
+
+          <div style={{ marginBottom: 12 }}>
+            <label style={labelStyle}>الوصف</label>
+            <textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} style={{ ...inputStyle, height: 80, resize: 'none' }} placeholder="تفاصيل ما حدث، وقت فقدانه، ملامح..." />
+          </div>
+
+          <div style={{ marginBottom: 12 }}>
+            <label style={labelStyle}>التصنيف</label>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
+              {CATEGORIES.map(c => (
+                <button key={c.key} type="button" onClick={() => setForm({ ...form, category: c.key })} style={catBtn(form.category === c.key)}>
+                  <div style={{ fontSize: 18 }}>{c.icon}</div>
+                  <div style={{ fontSize: 10, fontWeight: 900 }}>{c.label}</div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div style={{ background: '#fff', borderRadius: 16, padding: 20, marginBottom: 16, border: '1px solid #e2e8f0' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+            <div>
+              <label style={labelStyle}>المدينة</label>
+              <input value={form.city} onChange={e => setForm({ ...form, city: e.target.value })} style={inputStyle} placeholder="كنصفرة" />
+            </div>
+            <div>
+              <label style={labelStyle}>المكان</label>
+              <input value={form.location} onChange={e => setForm({ ...form, location: e.target.value })} style={inputStyle} placeholder="الحي..." />
+            </div>
+          </div>
+        </div>
+
+        <div style={{ background: '#fff', borderRadius: 16, padding: 20, marginBottom: 16, border: '1px solid #e2e8f0' }}>
+          <h2 style={{ fontSize: 14, fontWeight: 900, marginTop: 0, marginBottom: 12 }}>📞 التواصل</h2>
+          <div style={{ marginBottom: 12 }}>
+            <label style={labelStyle}>رقم الهاتف</label>
+            <input type="tel" value={form.contact_phone} onChange={e => setForm({ ...form, contact_phone: e.target.value })} style={inputStyle} placeholder="09xxxxxxxx" />
+          </div>
+          <div>
+            <label style={labelStyle}>واتساب (اختياري)</label>
+            <input type="tel" value={form.contact_whatsapp} onChange={e => setForm({ ...form, contact_whatsapp: e.target.value })} style={inputStyle} placeholder="09xxxxxxxx" />
+          </div>
+        </div>
+
+        <button type="submit" disabled={saving || uploading} style={{ width: '100%', padding: 16, background: (saving || uploading) ? '#94a3b8' : 'linear-gradient(135deg, #10b981, #059669)', color: '#fff', border: 'none', borderRadius: 14, fontWeight: 900, fontSize: 16, cursor: (saving || uploading) ? 'wait' : 'pointer', fontFamily: 'inherit', boxShadow: '0 6px 20px rgba(16,185,129,0.3)' }}>
+          {saving ? '⏳ جارٍ النشر...' : '🔍 نشر البلاغ'}
         </button>
-      </div>
+      </form>
     </div>
   );
 }
+
+const labelStyle = { display: 'block', fontSize: 12, fontWeight: 800, color: '#475569', marginBottom: 6 };
+const inputStyle = { width: '100%', padding: '12px 14px', borderRadius: 10, border: '1px solid #cbd5e1', fontSize: 14, fontFamily: 'inherit', boxSizing: 'border-box', outline: 'none', background: '#f8fafc' };
+const typeBtn = (active, color) => ({ padding: 12, background: active ? `${color}15` : '#f8fafc', color: active ? color : '#475569', border: active ? `2px solid ${color}` : '1px solid #e2e8f0', borderRadius: 10, fontSize: 13, fontWeight: 900, cursor: 'pointer', fontFamily: 'inherit' });
+const catBtn = (active) => ({ padding: 8, background: active ? 'rgba(16,185,129,0.1)' : '#f8fafc', color: active ? '#059669' : '#475569', border: active ? '2px solid #10b981' : '1px solid #e2e8f0', borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 });

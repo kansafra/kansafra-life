@@ -1,176 +1,111 @@
 'use client';
-
-
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
-import { getSession } from '@/lib/auth';
-import ImageUploader from '@/components/ImageUploader';
-import FileUploader from '@/components/FileUploader';
+import { useCurrentUser } from '@/lib/useCurrentUser';
+import { useToast } from '@/components/Toast';
 
-export default function NewMemory() {
+const TYPES = [
+  { key: 'photo', label: 'صورة', icon: '📷' },
+  { key: 'story', label: 'قصة', icon: '📖' },
+  { key: 'place', label: 'مكان', icon: '🏛️' },
+];
+
+export default function NewMemoryPage() {
   const router = useRouter();
-  const [entity, setEntity] = useState(null);
-  const [tab, setTab] = useState('story');
-  const [loading, setLoading] = useState(false);
-  const [done, setDone] = useState(false);
-  const [error, setError] = useState('');
-
-  const [story, setStory] = useState({ title: '', body: '', author_name: '', decade: '', image_url: '' });
-  const [place, setPlace] = useState({ place_name: '', description: '', era: '', image_url: '' });
-  const [item, setItem] = useState({ title: '', description: '', media_url: '', decade: '' });
+  const { success, error: toastError } = useToast();
+  const { user, loading: userLoading, dataOwnerName } = useCurrentUser();
+  const [entityId, setEntityId] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({ type: 'photo', title: '', description: '', image_url: '', location: '', story_text: '' });
 
   useEffect(() => {
-    let stored = null;
-    try { stored = getSession(); } catch (e) {}
-    if (!stored) { router.replace('/login'); return; }
-    setEntity(stored);
-  }, [router]);
+    if (userLoading) return;
+    if (!user) { router.replace('/login'); return; }
+    const stored = JSON.parse(localStorage.getItem('sanad_entity') || 'null');
+    if (stored?.parent_entity_id) setEntityId(stored.parent_entity_id);
+    else if (dataOwnerName) supabase.from('entities').select('id').eq('display_name', dataOwnerName).maybeSingle().then(({ data }) => { if (data) setEntityId(data.id); });
+  }, [user, userLoading, dataOwnerName, router]);
 
-  async function submit(e) {
+  async function uploadImage(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) { toastError('حجم الصورة أقل من 5MB'); return; }
+    setUploading(true);
+    try {
+      const ext = file.name.split('.').pop();
+      const name = `memory/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+      const { error } = await supabase.storage.from('sanad-files').upload(name, file);
+      if (error) throw error;
+      const { data: url } = supabase.storage.from('sanad-files').getPublicUrl(name);
+      setForm({ ...form, image_url: url.publicUrl });
+      success('✅ تم رفع الصورة');
+    } catch (err) { toastError('فشل الرفع'); }
+    finally { setUploading(false); }
+  }
+
+  async function handleSubmit(e) {
     e.preventDefault();
-    setError('');
-    setLoading(true);
-
-    let err = null;
-    if (tab === 'story') {
-      if (!story.title.trim() || !story.body.trim()) { setError('العنوان والنص مطلوبان'); setLoading(false); return; }
-      ({ error: err } = await supabase.from('memory_stories').insert({
-        entity_name: entity.display_name,
-        title: story.title.trim(),
-        body: story.body.trim(),
-        author_name: story.author_name.trim() || null,
-        decade: story.decade.trim() || null,
-        image_url: story.image_url.trim() || null,
-      }));
-    } else if (tab === 'place') {
-      if (!place.place_name.trim()) { setError('اسم المكان مطلوب'); setLoading(false); return; }
-      ({ error: err } = await supabase.from('memory_places').insert({
-        entity_name: entity.display_name,
-        place_name: place.place_name.trim(),
-        description: place.description.trim() || null,
-        era: place.era.trim() || null,
-        image_url: place.image_url.trim() || null,
-      }));
-    } else {
-      if (!item.title.trim() || !item.media_url.trim()) { setError('العنوان والرابط مطلوبان'); setLoading(false); return; }
-      ({ error: err } = await supabase.from('memory_items').insert({
-        entity_name: entity.display_name,
-        title: item.title.trim(),
-        description: item.description.trim() || null,
-        media_url: item.media_url.trim(),
-        decade: item.decade.trim() || null,
-        item_type: 'photo',
-      }));
-    }
-
-    setLoading(false);
-    if (err) { setError('تعذّر الحفظ: ' + err.message); return; }
-    setDone(true);
+    if (!form.title.trim()) { toastError('العنوان مطلوب'); return; }
+    setSaving(true);
+    try {
+      const payload = {
+        entity_id: entityId, provider_name: dataOwnerName,
+        type: form.type, title: form.title.trim(),
+        description: form.description.trim() || null,
+        image_url: form.image_url || null,
+        location: form.location.trim() || null,
+        story_text: form.story_text.trim() || null,
+        is_active: true,
+      };
+      const { error } = await supabase.from('memory_posts').insert(payload);
+      if (error) throw error;
+      success('🎉 تم نشر الذكرى');
+      router.push('/merchant/memory');
+    } catch (err) { console.error(err); toastError('فشل النشر'); }
+    finally { setSaving(false); }
   }
 
-  if (!entity) return <div className="trans-empty" style={{ padding: 80 }}><span className="em">⏳</span></div>;
-
-  if (done) {
-    return (
-      <div className="prod-page">
-        <div className="new-service-success">
-          <div className="chk-circle">✓</div>
-          <h2>تم الإضافة</h2>
-          <Link href="/merchant" className="new-service-submit" style={{ display: 'block', textAlign: 'center', textDecoration: 'none' }}>العودة</Link>
-        </div>
-      </div>
-    );
-  }
+  if (userLoading) return <div style={{ padding: 80, textAlign: 'center' }}>⏳</div>;
 
   return (
-    <div className="new-prod-page">
-      <div className="prod-header">
-        <Link href="/merchant" className="prod-back">→</Link>
-        <span className="prod-header-title">إضافة للذاكرة</span>
+    <div style={{ minHeight: '100vh', background: '#f8fafc', paddingBottom: 100 }}>
+      <div style={{ background: '#0f4d3a', padding: '16px 20px', position: 'sticky', top: 0, zIndex: 20, display: 'flex', alignItems: 'center', gap: 12 }}>
+        <button onClick={() => router.back()} style={{ background: 'none', border: 'none', color: '#fff', fontSize: 20, cursor: 'pointer' }}>←</button>
+        <h1 style={{ color: '#fff', fontSize: 18, fontWeight: 900, margin: 0 }}>📸 ذكرى جديدة</h1>
       </div>
 
-      <div className="store-cat-scroll" style={{ paddingTop: 14 }}>
-        <button className={`store-cat-chip ${tab === 'story' ? 'active' : ''}`} onClick={() => setTab('story')} type="button">📖 حكاية</button>
-        <button className={`store-cat-chip ${tab === 'place' ? 'active' : ''}`} onClick={() => setTab('place')} type="button">📍 مكان</button>
-        <button className={`store-cat-chip ${tab === 'photo' ? 'active' : ''}`} onClick={() => setTab('photo')} type="button">🖼️ صورة</button>
-      </div>
+      <form onSubmit={handleSubmit} style={{ padding: 16, maxWidth: 600, margin: '0 auto' }}>
+        <div style={{ background: '#fff', borderRadius: 16, padding: 16, marginBottom: 16, border: '1px solid #e2e8f0', textAlign: 'center' }}>
+          <label style={{ cursor: uploading ? 'wait' : 'pointer', display: 'block' }}>
+            <input type="file" accept="image/*" onChange={uploadImage} style={{ display: 'none' }} disabled={uploading} />
+            {form.image_url ? <div style={{ position: 'relative', width: '100%', height: 180, borderRadius: 12, overflow: 'hidden' }}><img src={form.image_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /></div> : <div style={{ width: '100%', height: 180, background: '#f8fafc', borderRadius: 12, border: '2px dashed #cbd5e1', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 6 }}><div style={{ fontSize: 32 }}>{uploading ? '⏳' : '📸'}</div><div style={{ fontSize: 12, fontWeight: 900, color: '#64748b' }}>{uploading ? 'جارٍ الرفع...' : 'صورة (اختياري)'}</div></div>}
+          </label>
+        </div>
 
-      <form className="new-prod-form" onSubmit={submit}>
-        {tab === 'story' && (
-          <>
-            <div className="new-service-field">
-              <label className="new-service-label">عنوان الحكاية <span className="req">*</span></label>
-              <input className="new-service-input" value={story.title} onChange={(e) => setStory({ ...story, title: e.target.value })} />
+        <div style={{ background: '#fff', borderRadius: 16, padding: 20, marginBottom: 16, border: '1px solid #e2e8f0' }}>
+          <div style={{ marginBottom: 12 }}>
+            <label style={labelStyle}>النوع</label>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
+              {TYPES.map(t => (
+                <button key={t.key} type="button" onClick={() => setForm({ ...form, type: t.key })} style={{ padding: 10, background: form.type === t.key ? 'rgba(16,185,129,0.1)' : '#f8fafc', color: form.type === t.key ? '#059669' : '#475569', border: form.type === t.key ? '2px solid #10b981' : '1px solid #e2e8f0', borderRadius: 8, fontSize: 11, fontWeight: 900, cursor: 'pointer', fontFamily: 'inherit' }}>{t.icon} {t.label}</button>
+              ))}
             </div>
-            <div className="new-service-field">
-              <label className="new-service-label">النص <span className="req">*</span></label>
-              <textarea className="new-service-textarea" style={{ minHeight: 140 }} value={story.body} onChange={(e) => setStory({ ...story, body: e.target.value })} />
-            </div>
-            <div className="new-prod-row">
-              <div className="new-service-field">
-                <label className="new-service-label">الراوي / المؤلف</label>
-                <input className="new-service-input" value={story.author_name} onChange={(e) => setStory({ ...story, author_name: e.target.value })} />
-              </div>
-              <div className="new-service-field">
-                <label className="new-service-label">العقد</label>
-                <input className="new-service-input" placeholder="1970s / 1980s" value={story.decade} onChange={(e) => setStory({ ...story, decade: e.target.value })} />
-              </div>
-            </div>
-            <div className="new-service-field">
-              <label className="new-service-label">رابط صورة (اختياري)</label>
-              <input className="new-service-input" type="url" value={story.image_url} onChange={(e) => setStory({ ...story, image_url: e.target.value })} />
-            </div>
-          </>
-        )}
-        {tab === 'place' && (
-          <>
-            <div className="new-service-field">
-              <label className="new-service-label">اسم المكان <span className="req">*</span></label>
-              <input className="new-service-input" placeholder="مثال: الجامع القديم" value={place.place_name} onChange={(e) => setPlace({ ...place, place_name: e.target.value })} />
-            </div>
-            <div className="new-service-field">
-              <label className="new-service-label">الوصف</label>
-              <textarea className="new-service-textarea" value={place.description} onChange={(e) => setPlace({ ...place, description: e.target.value })} />
-            </div>
-            <div className="new-service-field">
-              <label className="new-service-label">الحقبة</label>
-              <input className="new-service-input" placeholder="مثال: قبل 1950" value={place.era} onChange={(e) => setPlace({ ...place, era: e.target.value })} />
-            </div>
-            <div className="new-service-field">
-              <label className="new-service-label">رابط صورة</label>
-              <input className="new-service-input" type="url" value={place.image_url} onChange={(e) => setPlace({ ...place, image_url: e.target.value })} />
-            </div>
-          </>
-        )}
-        {tab === 'photo' && (
-          <>
-            <div className="new-service-field">
-              <label className="new-service-label">عنوان الصورة <span className="req">*</span></label>
-              <input className="new-service-input" value={item.title} onChange={(e) => setItem({ ...item, title: e.target.value })} />
-            </div>
-            <div className="new-service-field">
-              <label className="new-service-label">رابط الصورة <span className="req">*</span></label>
-              <input className="new-service-input" type="url" placeholder="https://..." value={item.media_url} onChange={(e) => setItem({ ...item, media_url: e.target.value })} />
-            </div>
-            <div className="new-prod-row">
-              <div className="new-service-field">
-                <label className="new-service-label">العقد</label>
-                <input className="new-service-input" placeholder="1960s" value={item.decade} onChange={(e) => setItem({ ...item, decade: e.target.value })} />
-              </div>
-              <div className="new-service-field">
-                <label className="new-service-label">وصف</label>
-                <input className="new-service-input" value={item.description} onChange={(e) => setItem({ ...item, description: e.target.value })} />
-              </div>
-            </div>
-          </>
-        )}
-        {error && <div style={{ color: '#dc2626', fontSize: 13, fontWeight: 700, padding: 12, background: 'rgba(220,38,38,.1)', borderRadius: 12 }}>{error}</div>}
-        <button className="new-service-submit" type="submit" disabled={loading}>
-          {loading ? '... جارٍ الحفظ' : '✓ إضافة'}
+          </div>
+          <div style={{ marginBottom: 12 }}><label style={labelStyle}>العنوان *</label><input value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} required style={inputStyle} /></div>
+          <div style={{ marginBottom: 12 }}><label style={labelStyle}>الوصف</label><textarea value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} style={{ ...inputStyle, height: 60, resize: 'none' }} /></div>
+          <div style={{ marginBottom: 12 }}><label style={labelStyle}>المكان</label><input value={form.location} onChange={e => setForm({ ...form, location: e.target.value })} style={inputStyle} /></div>
+          <div><label style={labelStyle}>القصة (اختياري)</label><textarea value={form.story_text} onChange={e => setForm({ ...form, story_text: e.target.value })} style={{ ...inputStyle, height: 100, resize: 'none' }} /></div>
+        </div>
+
+        <button type="submit" disabled={saving || uploading} style={{ width: '100%', padding: 16, background: (saving || uploading) ? '#94a3b8' : 'linear-gradient(135deg, #10b981, #059669)', color: '#fff', border: 'none', borderRadius: 14, fontWeight: 900, fontSize: 16, cursor: (saving || uploading) ? 'wait' : 'pointer', fontFamily: 'inherit', boxShadow: '0 6px 20px rgba(16,185,129,0.3)' }}>
+          {saving ? '⏳ جارٍ النشر...' : '✓ نشر الذكرى'}
         </button>
       </form>
     </div>
   );
 }
+
+const labelStyle = { display: 'block', fontSize: 12, fontWeight: 800, color: '#475569', marginBottom: 6 };
+const inputStyle = { width: '100%', padding: '12px 14px', borderRadius: 10, border: '1px solid #cbd5e1', fontSize: 14, fontFamily: 'inherit', boxSizing: 'border-box', outline: 'none', background: '#f8fafc' };

@@ -4,186 +4,226 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { useToast } from '@/components/Toast';
-import { SkeletonList } from '@/components/Skeleton';
-import EmptyState from '@/components/EmptyState';
-import ImageUploader from '@/components/ImageUploader';
 
-const CATEGORIES = { general: 'عام', offer: 'عرض', news: 'خبر', urgent: 'عاجل' };
-const PRIORITIES = {
-  low: { label: 'منخفض', color: '#64748b' },
-  normal: { label: 'عادي', color: '#3b82f6' },
-  high: { label: 'مرتفع', color: '#f59e0b' },
-  urgent: { label: 'عاجل', color: '#ef4444' }
-};
+const FILTERS = [
+  { key: 'all', label: 'الكل' },
+  { key: 'published', label: 'منشور' },
+  { key: 'draft', label: 'مسودة' },
+];
 
 export default function AdminAnnouncementsPage() {
   const router = useRouter();
-  const { success, error: tE } = useToast();
+  const { success, error: toastError } = useToast();
+
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('all');
-  const [modal, setModal] = useState(null);
-  const [form, setForm] = useState({});
+
+  const [showForm, setShowForm] = useState(false);
+  const [editItem, setEditItem] = useState(null);
+  const [form, setForm] = useState({ title: '', content: '', image_url: '', is_published: true });
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(null);
 
   useEffect(() => {
-    let stored = null;
-    try { stored = JSON.parse(localStorage.getItem('sanad_admin') || 'null'); } catch {}
+    const stored = JSON.parse(localStorage.getItem('sanad_admin') || 'null');
     if (!stored) { router.replace('/admin/login'); return; }
-    load();
+    loadItems();
   }, [router]);
 
-  async function load() {
-    if (!supabase) { setLoading(false); return; }
-    const { data } = await supabase.from('announcements').select('*').order('pinned', { ascending: false }).order('created_at', { ascending: false });
-    setItems(data || []);
-    setLoading(false);
+  async function loadItems() {
+    if (!supabase) return;
+    try {
+      const { data } = await supabase.from('announcements').select('*').order('created_at', { ascending: false });
+      setItems(data || []);
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
+  }
+
+  function openAdd() {
+    setForm({ title: '', content: '', image_url: '', is_published: true });
+    setEditItem(null);
+    setShowForm(true);
+  }
+
+  function openEdit(item) {
+    setForm({
+      title: item.title || '',
+      content: item.content || item.body || '',
+      image_url: item.image_url || '',
+      is_published: item.is_published !== false,
+    });
+    setEditItem(item);
+    setShowForm(true);
+  }
+
+  async function handleSave(e) {
+    e.preventDefault();
+    if (!form.title.trim()) { toastError('العنوان مطلوب'); return; }
+    setSaving(true);
+    try {
+      const payload = {
+        title: form.title,
+        content: form.content,
+        body: form.content, 
+        image_url: form.image_url,
+        is_published: form.is_published,
+      };
+
+      if (editItem) {
+        const { error } = await supabase.from('announcements').update(payload).eq('id', editItem.id);
+        if (error) throw error;
+        success('✅ تم تحديث الإعلان');
+      } else {
+        const { error } = await supabase.from('announcements').insert(payload);
+        if (error) throw error;
+        success('✅ تم إضافة الإعلان');
+      }
+      setShowForm(false);
+      loadItems();
+    } catch (err) {
+      console.error(err);
+      toastError('حدث خطأ، تأكد من البيانات');
+    } finally { setSaving(false); }
+  }
+
+  async function handleDelete(item) {
+    if (!confirm(`حذف إعلان "${item.title}"؟`)) return;
+    setDeleting(item.id);
+    const { error } = await supabase.from('announcements').delete().eq('id', item.id);
+    if (error) toastError('فشل الحذف');
+    else { success('🗑️ تم الحذف'); setItems(prev => prev.filter(x => x.id !== item.id)); }
+    setDeleting(null);
   }
 
   const filtered = useMemo(() => {
     let list = items;
-    if (filter !== 'all') list = list.filter(a => a.category === filter);
+    if (filter === 'published') list = list.filter(i => i.is_published !== false);
+    if (filter === 'draft') list = list.filter(i => i.is_published === false);
     if (search.trim()) {
       const q = search.trim().toLowerCase();
-      list = list.filter(a => (a.title || '').toLowerCase().includes(q) || (a.content || '').toLowerCase().includes(q));
+      list = list.filter(i => (i.title || '').toLowerCase().includes(q) || (i.content || i.body || '').toLowerCase().includes(q));
     }
     return list;
-  }, [items, search, filter]);
+  }, [items, filter, search]);
 
-  function openAdd() {
-    setForm({ title: '', content: '', category: 'general', priority: 'normal', image_url: '', is_active: true, pinned: false });
-    setModal('add');
-  }
-
-  function openEdit(a) { setForm({ ...a }); setModal('edit'); }
-
-  async function save() {
-    if (!form.title?.trim()) { tE('العنوان مطلوب'); return; }
-    setSaving(true);
-    try {
-      const payload = {
-        entity_name: form.entity_name || null, // إعلان عام إذا كان فارغاً
-        title: form.title.trim(),
-        content: form.content?.trim() || null,
-        category: form.category || 'general',
-        priority: form.priority || 'normal',
-        image_url: form.image_url || null,
-        is_active: form.is_active !== false,
-        pinned: form.pinned === true,
-      };
-      let err;
-      if (modal === 'edit') ({ error: err } = await supabase.from('announcements').update(payload).eq('id', form.id));
-      else ({ error: err } = await supabase.from('announcements').insert(payload));
-      if (err) throw err;
-      success(modal === 'edit' ? '✅ تم التعديل' : '✅ تم النشر');
-      setModal(null); load();
-    } catch (e) { tE('تعذّر: ' + e.message); }
-    setSaving(false);
-  }
-
-  async function del(a) {
-    if (!confirm(`حذف إعلان "${a.title}"؟`)) return;
-    await supabase.from('announcements').delete().eq('id', a.id);
-    success('✅ تم الحذف'); load();
-  }
-
-  async function toggle(a, field) {
-    await supabase.from('announcements').update({ [field]: !a[field] }).eq('id', a.id);
-    load();
-  }
-
-  if (loading) return <div style={{ padding: 16, background: '#f8fafc', minHeight: '100vh' }}><SkeletonList count={3} /></div>;
+  if (loading) return <div style={{ padding: 80, textAlign: 'center' }}>⏳</div>;
 
   return (
-    <div style={{ minHeight: '100vh', background: '#f8fafc', paddingBottom: 40 }}>
-      <div style={{ position: 'sticky', top: 0, zIndex: 10, background: '#0f4d3a', padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
-        <Link href="/admin" style={{ color: '#fff', textDecoration: 'none', fontSize: 20, width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,.15)', borderRadius: '50%' }}>→</Link>
-        <div style={{ flex: 1 }}>
-          <div style={{ color: '#fff', fontSize: 16, fontWeight: 900 }}>📢 إدارة الإعلانات</div>
-          <div style={{ color: 'rgba(255,255,255,.8)', fontSize: 11, marginTop: 2 }}>{items.length} إعلان</div>
+    <div style={{ minHeight: '100vh', background: '#f8fafc', paddingBottom: 80 }}>
+      <div style={{ background: '#0f172a', padding: '16px 20px', position: 'sticky', top: 0, zIndex: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+          <Link href="/admin" style={{ color: '#fff', textDecoration: 'none', fontSize: 20 }}>→</Link>
+          <h1 style={{ color: '#fff', fontSize: 18, fontWeight: 900, margin: 0, flex: 1 }}>📢 الإعلانات</h1>
+          <button onClick={openAdd} style={{ background: '#fbbf24', color: '#0f172a', border: 'none', padding: '8px 14px', borderRadius: 10, fontSize: 12, fontWeight: 900, cursor: 'pointer', fontFamily: 'inherit' }}>+ جديد</button>
         </div>
-        <button onClick={openAdd} style={{ background: '#fff', color: '#0f4d3a', border: 'none', padding: '8px 14px', borderRadius: 10, fontSize: 12, fontWeight: 900, cursor: 'pointer', fontFamily: 'inherit' }}>+ إعلان</button>
-      </div>
-
-      <div style={{ padding: 16 }}>
-        <input type="text" placeholder="🔍 ابحث..." value={search} onChange={(e) => setSearch(e.target.value)}
-          style={{ width: '100%', padding: '12px 14px', border: '1px solid #e5e7eb', borderRadius: 12, fontSize: 13, fontFamily: 'inherit', boxSizing: 'border-box', outline: 'none', background: '#fff', marginBottom: 10 }} />
-        <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 4 }}>
-          {[['all', 'الكل'], ['general', 'عام'], ['offer', 'عرض'], ['news', 'خبر'], ['urgent', 'عاجل']].map(([k, l]) => (
-            <button key={k} onClick={() => setFilter(k)} style={{ padding: '8px 14px', background: filter === k ? '#0f4d3a' : '#fff', color: filter === k ? '#fff' : '#64748b', border: `1px solid ${filter === k ? '#0f4d3a' : '#e5e7eb'}`, borderRadius: 10, fontSize: 11.5, fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'inherit' }}>{l}</button>
+        <input type="search" placeholder="🔍 ابحث في الإعلانات..." value={search} onChange={e => setSearch(e.target.value)} style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: 'none', fontSize: 13, outline: 'none', boxSizing: 'border-box', background: 'rgba(255,255,255,0.95)' }} />
+        <div style={{ display: 'flex', gap: 6, marginTop: 12, overflowX: 'auto' }}>
+          {FILTERS.map(f => (
+            <button key={f.key} onClick={() => setFilter(f.key)} style={{ background: filter === f.key ? '#fff' : 'rgba(255,255,255,0.1)', color: filter === f.key ? '#0f172a' : '#fff', border: 'none', padding: '6px 14px', borderRadius: 20, fontSize: 12, fontWeight: 900, cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'inherit' }}>
+              {f.label}
+            </button>
           ))}
         </div>
       </div>
 
-      <div style={{ padding: '0 16px' }}>
+      <div style={{ padding: 16 }}>
         {filtered.length === 0 ? (
-          <EmptyState icon="📢" title="لا توجد إعلانات" actionLabel="+ إعلان جديد" onAction={openAdd} />
-        ) : filtered.map(a => {
-          const p = PRIORITIES[a.priority] || PRIORITIES.normal;
-          return (
-            <div key={a.id} style={{ background: '#fff', borderRadius: 14, padding: 14, marginBottom: 10, border: `1px solid ${a.pinned ? '#fbbf24' : '#e5e7eb'}`, opacity: a.is_active ? 1 : 0.6 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 14, fontWeight: 900, color: '#0f172a' }}>{a.pinned && '📌 '}{a.title}</div>
-                  <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
-                    {a.entity_name ? `🏢 ${a.entity_name}` : '🌐 عام'} · 📂 {CATEGORIES[a.category]} · 📅 {new Date(a.created_at).toLocaleDateString('ar-EG')}
+          <div style={{ textAlign: 'center', padding: 40, background: '#fff', borderRadius: 16, color: '#64748b' }}>
+            <div style={{ fontSize: 48, marginBottom: 12 }}>📢</div>
+            <div style={{ fontSize: 15, fontWeight: 900, marginBottom: 8 }}>
+              {items.length === 0 ? 'لا توجد إعلانات بعد' : 'لا توجد نتائج مطابقة'}
+            </div>
+            {items.length === 0 && (
+              <button onClick={openAdd} style={{ display: 'inline-block', background: '#0f172a', color: '#fff', padding: '10px 20px', borderRadius: 10, border: 'none', fontSize: 13, fontWeight: 900, cursor: 'pointer', fontFamily: 'inherit' }}>+ أضف أول إعلان</button>
+            )}
+          </div>
+        ) : (
+          filtered.map(item => (
+            <div key={item.id} style={{ background: '#fff', borderRadius: 16, marginBottom: 12, border: '1px solid #e2e8f0', overflow: 'hidden' }}>
+              <div style={{ padding: 14 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10, gap: 10 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                      <div style={{ fontSize: 14, fontWeight: 900, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.title || 'بدون عنوان'}</div>
+                      {item.is_published !== false ? (
+                        <span style={{ background: 'rgba(16,185,129,0.1)', color: '#10b981', padding: '2px 6px', borderRadius: 4, fontSize: 9, fontWeight: 900 }}>منشور</span>
+                      ) : (
+                        <span style={{ background: 'rgba(148,163,184,0.15)', color: '#64748b', padding: '2px 6px', borderRadius: 4, fontSize: 9, fontWeight: 900 }}>مسودة</span>
+                      )}
+                    </div>
+                    <div style={{ fontSize: 11, color: '#64748b', marginTop: 2, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                      {item.content || item.body || '—'}
+                    </div>
                   </div>
+                  {item.image_url && (
+                    <div style={{ width: 56, height: 56, borderRadius: 8, overflow: 'hidden', background: '#f1f5f9', flexShrink: 0 }}>
+                      <img src={item.image_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    </div>
+                  )}
                 </div>
-                <span style={{ background: `${p.color}20`, color: p.color, padding: '3px 10px', borderRadius: 6, fontSize: 9.5, fontWeight: 900, height: 'fit-content' }}>{p.label}</span>
-              </div>
-              {a.image_url && <img src={a.image_url} alt="" style={{ width: '100%', height: 140, objectFit: 'cover', borderRadius: 10, marginBottom: 8 }} />}
-              {a.content && <div style={{ fontSize: 12, color: '#334155', lineHeight: 1.6, marginBottom: 8 }}>{a.content}</div>}
-              <div style={{ display: 'flex', gap: 6, paddingTop: 10, borderTop: '1px solid #f1f5f9' }}>
-                <button onClick={() => openEdit(a)} style={{ flex: 1, padding: 8, background: '#f1f5f9', border: 'none', borderRadius: 8, fontSize: 11, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' }}>✏️ تعديل</button>
-                <button onClick={() => toggle(a, 'is_active')} style={{ flex: 1, padding: 8, background: a.is_active ? 'rgba(16,185,129,.1)' : '#f1f5f9', color: a.is_active ? '#10b981' : '#64748b', border: 'none', borderRadius: 8, fontSize: 11, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' }}>{a.is_active ? '● نشط' : '○ معطل'}</button>
-                <button onClick={() => toggle(a, 'pinned')} style={{ padding: 8, background: a.pinned ? 'rgba(251,191,36,.15)' : '#f1f5f9', color: a.pinned ? '#92400e' : '#64748b', border: 'none', borderRadius: 8, fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>📌</button>
-                <button onClick={() => del(a)} style={{ padding: 8, background: 'rgba(220,38,38,.1)', color: '#dc2626', border: 'none', borderRadius: 8, fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>🗑️</button>
+                <div style={{ fontSize: 10, color: '#94a3b8', marginBottom: 12 }}>
+                  {item.created_at ? new Date(item.created_at).toLocaleDateString('ar-SY') : '—'}
+                </div>
+
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <button onClick={() => openEdit(item)} style={btnStyle('rgba(14,165,233,0.1)', '#0284c7')}>✏️ تعديل</button>
+                  <button onClick={() => handleDelete(item)} disabled={deleting === item.id} style={btnStyle('rgba(239,68,68,0.1)', '#ef4444')}>{deleting === item.id ? '⏳' : '🗑️ حذف'}</button>
+                </div>
               </div>
             </div>
-          );
-        })}
+          ))
+        )}
       </div>
+      <button onClick={openAdd} style={{
+        position: 'fixed', bottom: 20, left: 20, right: 20,
+        background: 'linear-gradient(135deg, #10b981, #059669)',
+        color: '#fff', padding: 16, borderRadius: 14,
+        border: 'none', fontSize: 15, fontWeight: 900,
+        boxShadow: '0 10px 30px rgba(16,185,129,0.4)',
+        cursor: 'pointer', fontFamily: 'inherit', zIndex: 30
+      }}>
+        + إضافة إعلان جديد
+      </button>
 
-      {modal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 100, display: 'flex', alignItems: 'flex-end' }} onClick={() => setModal(null)}>
-          <div style={{ background: '#fff', borderRadius: '24px 24px 0 0', width: '100%', maxWidth: 500, margin: '0 auto', padding: '24px 20px 30px', maxHeight: '90vh', overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
-            <h3 style={{ fontSize: 18, fontWeight: 900, marginBottom: 16 }}>{modal === 'edit' ? 'تعديل إعلان' : 'إعلان جديد'}</h3>
-
-            <input type="text" placeholder="العنوان *" value={form.title || ''} onChange={(e) => setForm({ ...form, title: e.target.value })} style={{ width: '100%', padding: 12, border: '1px solid #e5e7eb', borderRadius: 10, fontSize: 13, marginBottom: 10, boxSizing: 'border-box', fontFamily: 'inherit' }} />
-            <textarea placeholder="المحتوى..." value={form.content || ''} onChange={(e) => setForm({ ...form, content: e.target.value })} rows={3} style={{ width: '100%', padding: 12, border: '1px solid #e5e7eb', borderRadius: 10, fontSize: 13, marginBottom: 10, boxSizing: 'border-box', fontFamily: 'inherit', resize: 'vertical' }} />
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 10 }}>
-              <select value={form.category || 'general'} onChange={(e) => setForm({ ...form, category: e.target.value })} style={{ padding: 12, border: '1px solid #e5e7eb', borderRadius: 10, fontSize: 13, boxSizing: 'border-box', fontFamily: 'inherit' }}>
-                {Object.entries(CATEGORIES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-              </select>
-              <select value={form.priority || 'normal'} onChange={(e) => setForm({ ...form, priority: e.target.value })} style={{ padding: 12, border: '1px solid #e5e7eb', borderRadius: 10, fontSize: 13, boxSizing: 'border-box', fontFamily: 'inherit' }}>
-                {Object.entries(PRIORITIES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-              </select>
+      {showForm && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 100, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+          <div style={{ background: '#fff', width: '100%', maxWidth: 500, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, maxHeight: '90vh', overflowY: 'auto' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+              <h2 style={{ fontSize: 18, fontWeight: 900, margin: 0 }}>{editItem ? '✏️ تعديل إعلان' : '📢 إعلان جديد'}</h2>
+              <button onClick={() => setShowForm(false)} style={{ background: '#f1f5f9', border: 'none', width: 32, height: 32, borderRadius: '50%', fontSize: 16, cursor: 'pointer' }}>✕</button>
             </div>
-
-            <div style={{ marginBottom: 10 }}>
-              <ImageUploader label="📸 صورة الإعلان" folder="announcements" value={form.image_url || ''} onUpload={(url) => setForm({ ...form, image_url: url })} />
-            </div>
-
-            <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-              <label style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 8, padding: 10, background: '#f0fdf4', borderRadius: 8, cursor: 'pointer' }}>
-                <input type="checkbox" checked={form.is_active !== false} onChange={(e) => setForm({ ...form, is_active: e.target.checked })} />
-                <span style={{ fontSize: 12, fontWeight: 800, color: '#065f46' }}>نشط</span>
-              </label>
-              <label style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 8, padding: 10, background: '#fffbeb', borderRadius: 8, cursor: 'pointer' }}>
-                <input type="checkbox" checked={form.pinned === true} onChange={(e) => setForm({ ...form, pinned: e.target.checked })} />
-                <span style={{ fontSize: 12, fontWeight: 800, color: '#92400e' }}>📌 مثبت</span>
-              </label>
-            </div>
-
-            <div style={{ display: 'flex', gap: 10 }}>
-              <button onClick={() => setModal(null)} style={{ flex: 1, padding: 12, background: '#f1f5f9', border: 'none', borderRadius: 10, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' }}>إلغاء</button>
-              <button onClick={save} disabled={saving} style={{ flex: 1, padding: 12, background: 'linear-gradient(135deg,#0f4d3a,#075640)', color: '#fff', border: 'none', borderRadius: 10, fontWeight: 900, cursor: saving ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>{saving ? '...' : '✓ نشر'}</button>
-            </div>
+            <form onSubmit={handleSave}>
+              <div style={{ marginBottom: 12 }}>
+                <label style={labelStyle}>العنوان *</label>
+                <input value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} required style={inputStyle} placeholder="عنوان الإعلان" />
+              </div>
+              <div style={{ marginBottom: 12 }}>
+                <label style={labelStyle}>المحتوى</label>
+                <textarea value={form.content} onChange={e => setForm({ ...form, content: e.target.value })} style={{ ...inputStyle, height: 120, resize: 'none' }} placeholder="نص الإعلان..." />
+              </div>
+              <div style={{ marginBottom: 12 }}>
+                <label style={labelStyle}>رابط الصورة (اختياري)</label>
+                <input value={form.image_url} onChange={e => setForm({ ...form, image_url: e.target.value })} style={inputStyle} placeholder="https://..." />
+              </div>
+              <div style={{ marginBottom: 20 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 12, background: '#f8fafc', borderRadius: 10, border: '1px solid #e2e8f0', cursor: 'pointer' }}>
+                  <input type="checkbox" checked={form.is_published} onChange={e => setForm({ ...form, is_published: e.target.checked })} style={{ width: 18, height: 18 }} />
+                  <span style={{ fontSize: 13, fontWeight: 800 }}>نشر الإعلان مباشرة</span>
+                </label>
+              </div>
+              <button type="submit" disabled={saving} style={{ width: '100%', padding: 14, background: saving ? '#94a3b8' : '#0f172a', color: '#fff', border: 'none', borderRadius: 10, fontWeight: 900, fontSize: 15, cursor: saving ? 'wait' : 'pointer', fontFamily: 'inherit' }}>
+                {saving ? '⏳ جارٍ الحفظ...' : (editItem ? 'حفظ التغييرات' : 'إضافة الإعلان')}
+              </button>
+            </form>
           </div>
         </div>
       )}
     </div>
   );
 }
+
+const btnStyle = (bg, color) => ({ background: bg, color, border: 'none', padding: '10px 14px', borderRadius: 8, fontSize: 12, fontWeight: 900, cursor: 'pointer', fontFamily: 'inherit', flex: 1 });
+const labelStyle = { display: 'block', fontSize: 12, fontWeight: 800, color: '#475569', marginBottom: 6 };
+const inputStyle = { width: '100%', padding: '12px 14px', borderRadius: 10, border: '1px solid #cbd5e1', fontSize: 14, fontFamily: 'inherit', boxSizing: 'border-box', outline: 'none', background: '#f8fafc' };

@@ -1,184 +1,179 @@
 'use client';
-
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
-import { getSession } from '@/lib/auth';
+import { useCurrentUser } from '@/lib/useCurrentUser';
+import { useToast } from '@/components/Toast';
 
-export default function Page() {
+export default function InternetSubscribersPage() {
   const router = useRouter();
-  const [s, setS] = useState(null);
+  const { success, error: toastError } = useToast();
+  const { user, loading: userLoading, dataOwnerName } = useCurrentUser();
+
+  const [entityId, setEntityId] = useState(null);
   const [subs, setSubs] = useState([]);
   const [plans, setPlans] = useState([]);
-  const [L, setL] = useState(true);
-  const [q, setQ] = useState('');
-  const [fl, setFl] = useState('all');
-  const [ed, setEd] = useState(null);
-  const [f, setF] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [showForm, setShowForm] = useState(false);
+  const [editSub, setEditSub] = useState(null);
+  const [form, setForm] = useState({ name: '', phone: '', address: '', plan_id: '', start_date: new Date().toISOString().split('T')[0], end_date: '', status: 'active', notes: '' });
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(null);
 
   useEffect(() => {
-    const x = getSession();
-    if (!x) { router.replace('/login'); return; }
-    setS(x); load(x);
-  }, [router]);
+    if (userLoading) return;
+    if (!user || !dataOwnerName) { setLoading(false); return; }
+    const stored = JSON.parse(localStorage.getItem('sanad_entity') || 'null');
+    if (stored?.parent_entity_id) setEntityId(stored.parent_entity_id);
+    else if (dataOwnerName) supabase.from('entities').select('id').eq('display_name', dataOwnerName).maybeSingle().then(({ data }) => { if (data) setEntityId(data.id); });
+    loadAll();
+  }, [user, userLoading, dataOwnerName]);
 
-  async function load(x) {
-    if (!supabase) { setL(false); return; }
-    const [a, b] = await Promise.all([
-      supabase.from('isp_subscribers').select('*').eq('entity_name', x.display_name).order('created_at', { ascending: false }),
-      supabase.from('isp_plans').select('*').eq('entity_name', x.display_name).eq('is_active', true),
-    ]);
-    setSubs(Array.isArray(a.data) ? a.data : []);
-    setPlans(Array.isArray(b.data) ? b.data : []);
-    setL(false);
+  async function loadAll() {
+    if (!supabase || !dataOwnerName) return;
+    setLoading(true);
+    try {
+      const [sRes, pRes] = await Promise.all([
+        supabase.from('internet_subscribers').select('*').eq('provider_name', dataOwnerName).order('created_at', { ascending: false }),
+        supabase.from('internet_plans').select('id, name, speed_mbps, price').eq('provider_name', dataOwnerName).eq('is_active', true),
+      ]);
+      setSubs(sRes.data || []);
+      setPlans(pRes.data || []);
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
   }
 
-  function add() {
-    setEd('new');
-    setF({ full_name: '', phone: '', address: '', plan_id: '', router_mac: '', ip_address: '', installation_date: '', status: 'active', notes: '' });
-  }
-  function edit(x) { setEd(x.id); setF({ ...x }); }
-
-  async function save() {
-    if (!f.full_name?.trim()) { alert('الاسم مطلوب'); return; }
-    if (!f.phone?.trim()) { alert('الهاتف مطلوب'); return; }
-    const plan = plans.find((p) => p.id === f.plan_id);
-    const payload = {
-      entity_id: s.id, entity_name: s.display_name,
-      full_name: f.full_name.trim(),
-      phone: f.phone.trim(),
-      address: f.address?.trim() || null,
-      plan_id: f.plan_id || null,
-      plan_name: plan?.plan_name || null,
-      router_mac: f.router_mac?.trim() || null,
-      ip_address: f.ip_address?.trim() || null,
-      installation_date: f.installation_date || null,
-      status: f.status || 'active',
-      notes: f.notes?.trim() || null,
-    };
-    let err;
-    if (ed === 'new') ({ error: err } = await supabase.from('isp_subscribers').insert(payload));
-    else ({ error: err } = await supabase.from('isp_subscribers').update(payload).eq('id', ed));
-    if (err) { alert('تعذّر: ' + err.message); return; }
-    setEd(null); load(s);
+  function openAdd() {
+    setForm({ name: '', phone: '', address: '', plan_id: '', start_date: new Date().toISOString().split('T')[0], end_date: '', status: 'active', notes: '' });
+    setEditSub(null);
+    setShowForm(true);
   }
 
-  async function del(x) {
-    if (!confirm('حذف؟')) return;
-    await supabase.from('isp_subscribers').delete().eq('id', x.id);
-    load(s);
+  function openEdit(s) {
+    setForm({ name: s.name || '', phone: s.phone || '', address: s.address || '', plan_id: s.plan_id || '', start_date: s.start_date || '', end_date: s.end_date || '', status: s.status || 'active', notes: s.notes || '' });
+    setEditSub(s);
+    setShowForm(true);
   }
 
-  const list = subs.filter((x) => {
-    if (fl !== 'all' && x.status !== fl) return false;
-    if (!q.trim()) return true;
-    const z = q.trim().toLowerCase();
-    return (x.full_name || '').toLowerCase().includes(z) || (x.phone || '').includes(z);
-  });
+  async function saveSub(e) {
+    e.preventDefault();
+    if (!form.name.trim() || !form.phone.trim() || !form.plan_id) { toastError('الاسم والهاتف والخطة مطلوبة'); return; }
+    setSaving(true);
+    try {
+      const payload = {
+        entity_id: entityId, provider_name: dataOwnerName,
+        name: form.name.trim(), phone: form.phone.trim(), address: form.address.trim() || null,
+        plan_id: form.plan_id, start_date: form.start_date || null, end_date: form.end_date || null,
+        status: form.status, notes: form.notes.trim() || null,
+      };
+      if (editSub) {
+        const { error } = await supabase.from('internet_subscribers').update(payload).eq('id', editSub.id);
+        if (error) throw error;
+        success('✅ تم التعديل');
+      } else {
+        const { error } = await supabase.from('internet_subscribers').insert(payload);
+        if (error) throw error;
+        success('🎉 تم إضافة المشترك');
+      }
+      setShowForm(false);
+      loadAll();
+    } catch (err) { console.error(err); toastError('فشل الحفظ'); }
+    finally { setSaving(false); }
+  }
+
+  async function deleteSub(s) {
+    if (!confirm(`حذف المشترك "${s.name}"؟`)) return;
+    setDeleting(s.id);
+    const { error } = await supabase.from('internet_subscribers').delete().eq('id', s.id);
+    if (!error) { success('🗑️ تم الحذف'); setSubs(prev => prev.filter(x => x.id !== s.id)); }
+    setDeleting(null);
+  }
+
+  const filtered = useMemo(() => {
+    if (!search.trim()) return subs;
+    const q = search.trim().toLowerCase();
+    return subs.filter(s => (s.name || '').toLowerCase().includes(q) || (s.phone || '').includes(q));
+  }, [subs, search]);
+
+  function getPlanName(id) { return plans.find(p => p.id === id)?.name || '—'; }
+
+  if (userLoading || loading) return <div style={{ padding: 80, textAlign: 'center' }}>⏳</div>;
 
   return (
-    <div className="sect-page" style={{ paddingBottom: 60 }}>
-      <div className="inv-header">
-        <Link href="/merchant/internet" className="inv-back">→</Link>
-        <span className="inv-title">👥 المشتركون</span>
-        <button className="mng-add-btn" onClick={add} type="button">+ مشترك</button>
-      </div>
-
-      <div style={{ padding: '12px 16px' }}>
-        <input className="new-service-input" placeholder="🔍 ابحث..." value={q} onChange={(e) => setQ(e.target.value)} />
-      </div>
-
-      <div className="chips-scroll" style={{ padding: '0 16px 12px' }}>
-        <button className={'chip ' + (fl === 'all' ? 'active' : '')} onClick={() => setFl('all')} type="button">الكل ({subs.length})</button>
-        <button className={'chip ' + (fl === 'active' ? 'active' : '')} onClick={() => setFl('active')} type="button">نشط</button>
-        <button className={'chip ' + (fl === 'suspended' ? 'active' : '')} onClick={() => setFl('suspended')} type="button">موقوف</button>
-      </div>
-
-      {L ? <div className="sect-empty"><span className="em">⏳</span></div>
-       : list.length === 0 ? <div className="sect-empty"><span className="em">👥</span><p>لا يوجد مشتركون</p></div>
-       : <div style={{ padding: 16 }}>
-          {list.map((x) => (
-            <div key={x.id} className="debt-card" style={{ borderRightColor: x.status === 'active' ? '#22c55e' : '#f59e0b', marginBottom: 10 }}>
-              <div style={{ fontSize: 15, fontWeight: 900, marginBottom: 6 }}>👤 {x.full_name}</div>
-              <div style={{ fontSize: 12, color: 'var(--ink-500)', display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 6 }}>
-                <span>📞 {x.phone}</span>
-                {x.plan_name && <span>📶 {x.plan_name}</span>}
-                {x.address && <span>📍 {x.address}</span>}
-              </div>
-              <span className={'admin-badge ' + (x.status === 'active' ? 'active' : 'warn')}>
-                {x.status === 'active' ? 'نشط' : 'موقوف'}
-              </span>
-              <div className="debt-actions">
-                <button className="debt-action edit" onClick={() => edit(x)} type="button">✏️</button>
-                <button className="debt-action del" onClick={() => del(x)} type="button">🗑️</button>
-              </div>
-            </div>
-          ))}
+    <div style={{ minHeight: '100vh', background: '#f8fafc', paddingBottom: 100 }}>
+      <div style={{ background: '#0f4d3a', padding: '16px 20px', position: 'sticky', top: 0, zIndex: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+          <Link href="/merchant" style={{ color: '#fff', textDecoration: 'none', fontSize: 20 }}>←</Link>
+          <div style={{ flex: 1 }}>
+            <h1 style={{ color: '#fff', fontSize: 18, fontWeight: 900, margin: 0 }}>👥 المشتركون</h1>
+            <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: 11, marginTop: 2 }}>{dataOwnerName}</div>
+          </div>
+          <button onClick={openAdd} style={{ background: '#fbbf24', color: '#0f4d3a', border: 'none', padding: '8px 14px', borderRadius: 10, fontSize: 12, fontWeight: 900, cursor: 'pointer', fontFamily: 'inherit' }}>+ جديد</button>
         </div>
-      }
+        <input type="search" placeholder="🔍 ابحث بالاسم أو الهاتف..." value={search} onChange={e => setSearch(e.target.value)} style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: 'none', fontSize: 13, outline: 'none', boxSizing: 'border-box', background: 'rgba(255,255,255,0.95)' }} />
+      </div>
 
-      {ed && (
-        <div className="mng-modal-bg" onClick={() => setEd(null)}>
-          <div className="mng-modal" onClick={(e) => e.stopPropagation()} style={{ maxHeight: '90vh', overflowY: 'auto' }}>
-            <div className="mng-modal-handle" />
-            <h3 className="mng-modal-title">{ed === 'new' ? '➕ مشترك جديد' : '✏️ تعديل'}</h3>
-            <div className="new-service-field">
-              <label className="new-service-label">الاسم *</label>
-              <input className="new-service-input" value={f.full_name || ''} onChange={(e) => setF({ ...f, full_name: e.target.value })} />
-            </div>
-            <div className="new-prod-row">
-              <div className="new-service-field">
-                <label className="new-service-label">📞 الهاتف *</label>
-                <input className="new-service-input" type="tel" value={f.phone || ''} onChange={(e) => setF({ ...f, phone: e.target.value })} style={{ direction: 'ltr' }} />
+      <div style={{ display: 'flex', gap: 6, padding: '10px 16px', background: '#fff', borderBottom: '1px solid #e2e8f0', overflowX: 'auto' }}>
+        <Link href="/merchant/internet/plans" style={navStyle(false)}>📡 الخطط</Link>
+        <Link href="/merchant/internet/subscribers" style={navStyle(true)}>👥 المشتركون</Link>
+        <Link href="/merchant/internet/invoices" style={navStyle(false)}>💰 الفواتير</Link>
+        <Link href="/merchant/internet/tickets" style={navStyle(false)}>🎫 التذاكر</Link>
+      </div>
+
+      <div style={{ padding: 16, maxWidth: 700, margin: '0 auto' }}>
+        {filtered.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: 40, background: '#fff', borderRadius: 16, color: '#64748b' }}>
+            <div style={{ fontSize: 48, marginBottom: 12 }}>👥</div>
+            <div style={{ fontSize: 15, fontWeight: 900, marginBottom: 8 }}>{subs.length === 0 ? 'لا يوجد مشتركون' : 'لا نتائج'}</div>
+            {subs.length === 0 && <button onClick={openAdd} style={{ background: '#0f4d3a', color: '#fff', padding: '10px 20px', borderRadius: 10, border: 'none', fontSize: 13, fontWeight: 900, cursor: 'pointer', fontFamily: 'inherit' }}>+ أضف مشترك</button>}
+          </div>
+        ) : filtered.map(s => (
+          <div key={s.id} style={{ background: '#fff', borderRadius: 14, padding: 14, marginBottom: 10, border: '1px solid #e2e8f0' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 900, color: '#0f172a' }}>{s.name}</div>
+                <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>📱 {s.phone}</div>
+                <div style={{ fontSize: 11, color: '#8b5cf6', marginTop: 2 }}>📡 {getPlanName(s.plan_id)}</div>
               </div>
-              <div className="new-service-field">
-                <label className="new-service-label">📶 الباقة</label>
-                <select className="new-service-select" value={f.plan_id || ''} onChange={(e) => setF({ ...f, plan_id: e.target.value })}>
-                  <option value="">— اختر —</option>
-                  {plans.map((p) => <option key={p.id} value={p.id}>{p.plan_name} - {p.speed_mbps}Mbps</option>)}
-                </select>
-              </div>
-            </div>
-            <div className="new-service-field">
-              <label className="new-service-label">📍 العنوان</label>
-              <input className="new-service-input" value={f.address || ''} onChange={(e) => setF({ ...f, address: e.target.value })} />
-            </div>
-            <div className="new-prod-row">
-              <div className="new-service-field">
-                <label className="new-service-label">MAC الراوتر</label>
-                <input className="new-service-input" value={f.router_mac || ''} onChange={(e) => setF({ ...f, router_mac: e.target.value })} style={{ direction: 'ltr' }} />
-              </div>
-              <div className="new-service-field">
-                <label className="new-service-label">IP</label>
-                <input className="new-service-input" value={f.ip_address || ''} onChange={(e) => setF({ ...f, ip_address: e.target.value })} style={{ direction: 'ltr' }} />
+              <div style={{ background: s.status === 'active' ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)', color: s.status === 'active' ? '#10b981' : '#ef4444', padding: '4px 10px', borderRadius: 8, fontSize: 10, fontWeight: 900 }}>
+                {s.status === 'active' ? '✅ نشط' : '⏸️ موقوف'}
               </div>
             </div>
-            <div className="new-prod-row">
-              <div className="new-service-field">
-                <label className="new-service-label">📅 تاريخ التركيب</label>
-                <input className="new-service-input" type="date" value={f.installation_date || ''} onChange={(e) => setF({ ...f, installation_date: e.target.value })} />
+            <div style={{ display: 'flex', gap: 6 }}>
+              <button onClick={() => openEdit(s)} style={btnStyle('rgba(14,165,233,0.1)', '#0284c7')}>✏️ تعديل</button>
+              <button onClick={() => deleteSub(s)} disabled={deleting === s.id} style={btnStyle('rgba(239,68,68,0.1)', '#ef4444')}>{deleting === s.id ? '⏳' : '🗑️'}</button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {showForm && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 100, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+          <div style={{ background: '#fff', width: '100%', maxWidth: 500, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, maxHeight: '90vh', overflowY: 'auto' }}>
+            <h2 style={{ fontSize: 18, fontWeight: 900, margin: '0 0 20px' }}>{editSub ? '✏️ تعديل مشترك' : '👥 مشترك جديد'}</h2>
+            <form onSubmit={saveSub}>
+              <div style={{ marginBottom: 12 }}><label style={labelStyle}>الاسم *</label><input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} required style={inputStyle} /></div>
+              <div style={{ marginBottom: 12 }}><label style={labelStyle}>الهاتف *</label><input type="tel" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} required style={inputStyle} /></div>
+              <div style={{ marginBottom: 12 }}><label style={labelStyle}>العنوان</label><input value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} style={inputStyle} /></div>
+              <div style={{ marginBottom: 12 }}><label style={labelStyle}>الخطة *</label><select value={form.plan_id} onChange={e => setForm({ ...form, plan_id: e.target.value })} required style={inputStyle}><option value="">— اختر خطة —</option>{plans.map(p => <option key={p.id} value={p.id}>{p.name} ({p.speed_mbps} Mbps - {p.price} ل.س)</option>)}</select></div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+                <div><label style={labelStyle}>تاريخ البدء</label><input type="date" value={form.start_date} onChange={e => setForm({ ...form, start_date: e.target.value })} style={inputStyle} /></div>
+                <div><label style={labelStyle}>تاريخ الانتهاء</label><input type="date" value={form.end_date} onChange={e => setForm({ ...form, end_date: e.target.value })} style={inputStyle} /></div>
               </div>
-              <div className="new-service-field">
-                <label className="new-service-label">الحالة</label>
-                <select className="new-service-select" value={f.status || 'active'} onChange={(e) => setF({ ...f, status: e.target.value })}>
-                  <option value="active">نشط</option>
-                  <option value="suspended">موقوف</option>
-                  <option value="cancelled">ملغي</option>
-                </select>
-              </div>
-            </div>
-            <div className="new-service-field">
-              <label className="new-service-label">ملاحظات</label>
-              <textarea className="new-service-textarea" value={f.notes || ''} onChange={(e) => setF({ ...f, notes: e.target.value })} />
-            </div>
-            <div className="admin-form-actions">
-              <button className="mng-btn ghost" onClick={() => setEd(null)} type="button">إلغاء</button>
-              <button className="mng-btn primary" onClick={save} type="button">✓ حفظ</button>
-            </div>
+              <div style={{ marginBottom: 12 }}><label style={labelStyle}>الحالة</label><select value={form.status} onChange={e => setForm({ ...form, status: e.target.value })} style={inputStyle}><option value="active">نشط</option><option value="suspended">موقوف</option><option value="expired">منتهي</option></select></div>
+              <div style={{ marginBottom: 20 }}><label style={labelStyle}>ملاحظات</label><textarea value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} style={{ ...inputStyle, height: 60, resize: 'none' }} /></div>
+              <button type="submit" disabled={saving} style={{ width: '100%', padding: 14, background: '#0f4d3a', color: '#fff', border: 'none', borderRadius: 10, fontWeight: 900, fontSize: 15, cursor: 'pointer', fontFamily: 'inherit' }}>{saving ? '⏳ جارٍ الحفظ...' : '💾 حفظ'}</button>
+            </form>
           </div>
         </div>
       )}
     </div>
   );
 }
+
+function navStyle(active) { return { background: active ? '#0f4d3a' : '#fff', color: active ? '#fff' : '#64748b', border: active ? '1px solid #0f4d3a' : '1px solid #e2e8f0', padding: '8px 14px', borderRadius: 20, fontSize: 12, fontWeight: 900, textDecoration: 'none', whiteSpace: 'nowrap' }; }
+const btnStyle = (bg, color) => ({ flex: 1, padding: 10, background: bg, color, border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 900, cursor: 'pointer', fontFamily: 'inherit' });
+const labelStyle = { display: 'block', fontSize: 12, fontWeight: 800, color: '#475569', marginBottom: 6 };
+const inputStyle = { width: '100%', padding: '12px 14px', borderRadius: 10, border: '1px solid #cbd5e1', fontSize: 14, fontFamily: 'inherit', boxSizing: 'border-box', outline: 'none', background: '#f8fafc' };

@@ -1,0 +1,237 @@
+'use client';
+import { useState, useEffect, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+import { supabase } from '@/lib/supabase';
+import { getCart, cartTotals, clearCart } from '@/lib/cart';
+import { useToast } from '@/components/Toast';
+
+export default function CheckoutPage() {
+  const router = useRouter();
+  const { success, error: toastError } = useToast();
+  
+  const [cart, setCart] = useState([]);
+  const [totals, setTotals] = useState({ count: 0, subtotal: 0, total: 0, currency: 'SYP' });
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  
+  // بيانات المشتري (حساب الزائر أو المسجل)
+  const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [address, setAddress] = useState('');
+  const [notes, setNotes] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState('cod'); 
+
+  useEffect(() => {
+    // ١. محاولة جلب بيانات المستخدم إذا كان مسجل مسبقاً
+    try {
+      const c = JSON.parse(localStorage.getItem('sanad_customer') || 'null');
+      if (c) {
+        setName(c.name || '');
+        setPhone(c.phone || '');
+        setAddress(c.address || '');
+      }
+    } catch {}
+
+    // ٢. تحميل السلة
+    const currentCart = getCart();
+    if (currentCart.length === 0) {
+      router.push('/cart');
+      return;
+    }
+    setCart(currentCart);
+    setTotals(cartTotals());
+    setLoading(false);
+  }, [router]);
+
+  // تجميع السلة حسب المتجر
+  const byProvider = useMemo(() => {
+    const map = {};
+    cart.forEach(item => {
+      const prov = item.provider_name || 'متجر غير معروف';
+      if (!map[prov]) map[prov] = { items: [], entityId: item.provider_id };
+      map[prov].items.push(item);
+    });
+    return map;
+  }, [cart]);
+
+  async function handlePlaceOrder(e) {
+    e.preventDefault();
+    if (!name.trim() || !phone.trim() || !address.trim()) {
+      toastError('يرجى إدخال الاسم، رقم الهاتف، والعنوان');
+      return;
+    }
+    setSubmitting(true);
+
+    try {
+      // ١. معالجة حساب الزائر (Guest Account)
+      let customerId = null;
+      let existingCustomer = JSON.parse(localStorage.getItem('sanad_customer') || 'null');
+
+      if (!existingCustomer) {
+        // البحث عن الزبون برقم الهاتف
+        const { data: found } = await supabase
+          .from('customers')
+          .select('id, name, phone, address')
+          .eq('phone', phone)
+          .maybeSingle();
+
+        if (found) {
+          customerId = found.id;
+          localStorage.setItem('sanad_customer', JSON.stringify(found));
+        } else {
+          // إنشاء حساب زائر جديد
+          const { data: newCust, error: custErr } = await supabase
+            .from('customers')
+            .insert({
+              name: name,
+              phone: phone,
+              address: address,
+              is_guest: true, // علامة إنه حساب زائر
+              created_at: new Date().toISOString()
+            })
+            .select('id, name, phone, address')
+            .single();
+
+          if (custErr) throw custErr;
+          customerId = newCust.id;
+          localStorage.setItem('sanad_customer', JSON.stringify(newCust));
+        }
+      } else {
+        customerId = existingCustomer.id;
+      }
+
+      // ٢. تجهيز الطلبات لكل متجر (Split Orders)
+      const masterOrderId = crypto.randomUUID();
+      const ordersToInsert = [];
+
+      Object.entries(byProvider).forEach(([providerName, data]) => {
+        const providerSubtotal = data.items.reduce((s, i) => s + i.price * i.qty, 0);
+        const deliveryFee = 2; // يمكن حسابها بالمسافة لاحقاً
+        
+        ordersToInsert.push({
+          master_order_id: masterOrderId,
+          customer_id: customerId,
+          entity_id: data.entityId || null,
+          provider_name: providerName,
+          customer_name: name,
+          customer_phone: phone,
+          customer_address: address,
+          items: data.items, // منتجات هذا المتجر فقط
+          subtotal: providerSubtotal,
+          delivery_fee: deliveryFee,
+          total: providerSubtotal + deliveryFee,
+          currency: totals.currency || 'SYP',
+          status: 'pending',
+          payment_method: paymentMethod,
+          notes: notes,
+          order_code: 'ORD-' + Math.floor(Math.random() * 1000000)
+        });
+      });
+
+      // ٣. إدخال الطلبات في قاعدة البيانات
+      const { error } = await supabase.from('orders').insert(ordersToInsert);
+      if (error) throw error;
+
+      success('✅ تم استلام طلبك بنجاح!');
+      clearCart();
+      
+      // التوجه لصفحة نجاح الطلب
+      router.push(`/order/${masterOrderId}`);
+
+    } catch (err) {
+      console.error(err);
+      toastError('حدث خطأ أثناء إرسال الطلب، يرجى المحاولة لاحقاً.');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  if (loading) return <div style={{ padding: 80, textAlign: 'center' }}>⏳ جارٍ التحضير...</div>;
+
+  return (
+    <div style={{ minHeight: '100vh', background: '#f8fafc', paddingBottom: 40 }}>
+      <div style={{ position: 'sticky', top: 0, zIndex: 10, background: '#0f4d3a', padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
+        <button onClick={() => router.back()} style={{ background: 'none', border: 'none', color: '#fff', fontSize: 20, cursor: 'pointer' }}>→</button>
+        <div style={{ color: '#fff', fontSize: 16, fontWeight: 900 }}>💳 إتمام الطلب</div>
+      </div>
+
+      <form onSubmit={handlePlaceOrder} style={{ padding: 16, maxWidth: 600, margin: '0 auto' }}>
+        
+        {/* بيانات المشتري */}
+        <div style={{ background: '#fff', borderRadius: 16, padding: 20, marginBottom: 16, border: '1px solid #e5e7eb' }}>
+          <h2 style={{ fontSize: 15, fontWeight: 900, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>👤 بيانات المشتري</h2>
+          
+          <div style={{ marginBottom: 12 }}>
+            <label style={{ display: 'block', fontSize: 12, fontWeight: 800, color: '#64748b', marginBottom: 6 }}>الاسم الكامل</label>
+            <input type="text" value={name} onChange={e => setName(e.target.value)} required style={inputStyle} placeholder="مثال: أحمد محمد" />
+          </div>
+
+          <div style={{ marginBottom: 12 }}>
+            <label style={{ display: 'block', fontSize: 12, fontWeight: 800, color: '#64748b', marginBottom: 6 }}>رقم الهاتف</label>
+            <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} required style={inputStyle} placeholder="09xxxxxxxx" />
+            <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 4 }}>سنستخدم هذا الرقم للتواصل معك وتأكيد الطلب.</div>
+          </div>
+
+          <div style={{ marginBottom: 12 }}>
+            <label style={{ display: 'block', fontSize: 12, fontWeight: 800, color: '#64748b', marginBottom: 6 }}>العنوان التفصيلي</label>
+            <textarea value={address} onChange={e => setAddress(e.target.value)} required rows={3} style={{ ...inputStyle, resize: 'none' }} placeholder="الحي، الشارع، رقم البناء..." />
+          </div>
+
+          <div>
+            <label style={{ display: 'block', fontSize: 12, fontWeight: 800, color: '#64748b', marginBottom: 6 }}>ملاحظات (اختياري)</label>
+            <input type="text" value={notes} onChange={e => setNotes(e.target.value)} style={inputStyle} placeholder="أي تفاصيل إضافية للمتجر..." />
+          </div>
+        </div>
+
+        {/* طريقة الدفع */}
+        <div style={{ background: '#fff', borderRadius: 16, padding: 20, marginBottom: 16, border: '1px solid #e5e7eb' }}>
+          <h2 style={{ fontSize: 15, fontWeight: 900, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>💳 طريقة الدفع</h2>
+          
+          <label style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 12, border: '1px solid #10b981', borderRadius: 12, background: 'rgba(16,185,129,0.05)', cursor: 'pointer' }}>
+            <input type="radio" checked={true} readOnly style={{ accentColor: '#10b981' }} />
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 900, color: '#0f172a' }}>الدفع عند الاستلام (COD)</div>
+              <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>ادفع نقداً عند استلام الطلب</div>
+            </div>
+          </label>
+        </div>
+
+        {/* ملخص الطلب */}
+        <div style={{ background: '#fff', borderRadius: 16, padding: 20, border: '1px solid #e5e7eb' }}>
+          <h2 style={{ fontSize: 15, fontWeight: 900, marginBottom: 16 }}>📋 ملخص الفاتورة</h2>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8, fontSize: 13 }}>
+            <span style={{ color: '#64748b' }}>المجموع ({totals.count} منتج)</span>
+            <span style={{ fontWeight: 800 }}>{totals.subtotal.toLocaleString()} {totals.currency}</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8, fontSize: 13 }}>
+            <span style={{ color: '#64748b' }}>التوصيل ({Object.keys(byProvider).length} متجر)</span>
+            <span style={{ fontWeight: 800 }}>{Object.keys(byProvider).length * 2} {totals.currency}</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 12, borderTop: '2px dashed #e2e8f0', marginTop: 12 }}>
+            <span style={{ fontSize: 16, fontWeight: 900 }}>الإجمالي</span>
+            <span style={{ fontSize: 18, fontWeight: 900, color: '#0f4d3a' }}>{(totals.subtotal + (Object.keys(byProvider).length * 2)).toLocaleString()} {totals.currency}</span>
+          </div>
+        </div>
+
+        {/* زر التأكيد */}
+        <button type="submit" disabled={submitting} style={{ width: '100%', padding: 16, background: submitting ? '#94a3b8' : 'linear-gradient(135deg,#10b981,#059669)', color: '#fff', border: 'none', borderRadius: 14, fontWeight: 900, fontSize: 16, marginTop: 24, cursor: submitting ? 'wait' : 'pointer', boxShadow: '0 4px 12px rgba(16,185,129,0.3)' }}>
+          {submitting ? '⏳ جارٍ تأكيد الطلب...' : '✓ تأكيد الطلب'}
+        </button>
+      </form>
+    </div>
+  );
+}
+
+const inputStyle = {
+  width: '100%',
+  padding: '12px 14px',
+  borderRadius: 10,
+  border: '1px solid #e2e8f0',
+  fontSize: 14,
+  fontFamily: 'inherit',
+  outline: 'none',
+  background: '#f8fafc',
+  color: '#0f172a',
+  boxSizing: 'border-box'
+};

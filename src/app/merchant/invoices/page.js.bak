@@ -1,0 +1,216 @@
+'use client';
+import { useState, useEffect, useMemo } from 'react';
+import { supabase } from '@/lib/supabase';
+import { useCurrentUser } from '@/lib/useCurrentUser';
+import { useToast } from '@/components/Toast';
+import Link from 'next/link';
+
+const FILTERS = [
+  { key: 'all', label: 'الكل' },
+  { key: 'paid', label: 'مدفوعة' },
+  { key: 'unpaid', label: 'غير مدفوعة' },
+  { key: 'cancelled', label: 'ملغاة' },
+];
+
+export default function MerchantInvoicesPage() {
+  const { success, error: toastError } = useToast();
+  const { user, loading: userLoading, dataOwnerName } = useCurrentUser();
+
+  const [invoices, setInvoices] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState('all');
+  const [search, setSearch] = useState('');
+  const [expandedId, setExpandedId] = useState(null);
+  const [deleting, setDeleting] = useState(null);
+
+  useEffect(() => {
+    if (userLoading) return;
+    if (!user || !dataOwnerName) { setLoading(false); return; }
+    loadInvoices();
+  }, [user, userLoading, dataOwnerName]);
+
+  async function loadInvoices() {
+    if (!supabase || !dataOwnerName) return;
+    try {
+      const { data } = await supabase.from('orders').select('*').eq('provider_name', dataOwnerName).order('created_at', { ascending: false });
+      setInvoices(data || []);
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
+  }
+
+  const stats = useMemo(() => {
+    const total = invoices.length;
+    const paid = invoices.filter(i => i.payment_confirmed || i.status === 'done');
+    const unpaid = invoices.filter(i => !i.payment_confirmed && i.status !== 'cancelled');
+    const totalAmount = invoices.reduce((s, i) => i.status !== 'cancelled' ? s + Number(i.total || 0) : s, 0);
+    return { total, paidCount: paid.length, unpaidCount: unpaid.length, totalAmount };
+  }, [invoices]);
+
+  function getStatus(i) {
+    if (i.status === 'cancelled') return 'cancelled';
+    if (i.payment_confirmed || i.status === 'done') return 'paid';
+    return 'unpaid';
+  }
+
+  const filtered = useMemo(() => {
+    let list = invoices;
+    if (filter !== 'all') list = list.filter(i => getStatus(i) === filter);
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
+      list = list.filter(i => (i.order_code || '').toLowerCase().includes(q) || (i.customer_name || '').toLowerCase().includes(q) || (i.customer_phone || '').includes(q));
+    }
+    return list;
+  }, [invoices, filter, search]);
+
+  async function togglePayment(inv) {
+    const newState = !inv.payment_confirmed;
+    const { error } = await supabase.from('orders').update({ payment_confirmed: newState, paid_at: newState ? new Date().toISOString() : null }).eq('id', inv.id);
+    if (error) toastError('فشل التحديث');
+    else {
+      success(newState ? '✅ تم تأكيد الدفع' : '⏸️ تم إلغاء تأكيد الدفع');
+      setInvoices(prev => prev.map(i => i.id === inv.id ? { ...i, payment_confirmed: newState } : i));
+    }
+  }
+
+  async function handleDelete(inv) {
+    if (!confirm(`حذف الفاتورة #${inv.order_code} نهائياً؟`)) return;
+    setDeleting(inv.id);
+    const { error } = await supabase.from('orders').delete().eq('id', inv.id);
+    if (error) toastError('فشل الحذف');
+    else { success('🗑️ تم الحذف'); setInvoices(prev => prev.filter(x => x.id !== inv.id)); }
+    setDeleting(null);
+  }
+
+  function printInvoice(inv) {
+    const win = window.open('', '_blank');
+    const itemsHtml = (inv.items || []).map(it => `
+      <tr><td style="border-bottom:1px solid #ddd;padding:10px;">${it.title || ''}</td>
+      <td style="border-bottom:1px solid #ddd;padding:10px;text-align:center;">${it.qty || 0}</td>
+      <td style="border-bottom:1px solid #ddd;padding:10px;text-align:left;">${Number(it.price || 0).toLocaleString()} ${inv.currency || ''}</td></tr>`).join('');
+    win.document.write(`
+      <html dir="rtl" lang="ar"><head><title>فاتورة #${inv.order_code}</title>
+      <style>body{font-family:Cairo,sans-serif;padding:30px;max-width:800px;margin:0 auto}
+      .head{text-align:center;border-bottom:3px solid #0f4d3a;padding-bottom:15px;margin-bottom:20px}
+      h1{margin:0;color:#0f4d3a}.info{font-size:14px;line-height:1.8;margin-bottom:20px;background:#f8fafc;padding:15px;border-radius:10px}
+      table{width:100%;border-collapse:collapse;margin-bottom:20px}th{background:#0f4d3a;color:#fff;padding:10px;text-align:right}
+      .totals{text-align:left;font-size:16px;line-height:2;margin-top:20px}.total{font-size:22px;color:#0f4d3a;font-weight:bold}</style>
+      </head><body><div class="head"><h1>سند</h1><p style="margin:5px 0 0;color:#666">فاتورة</p></div>
+      <div class="info"><strong>رقم:</strong> #${inv.order_code || ''}<br><strong>التاريخ:</strong> ${new Date(inv.created_at || Date.now()).toLocaleString('ar-SY')}<br>
+      <strong>العميل:</strong> ${inv.customer_name || ''} (${inv.customer_phone || ''})<br>
+      <strong>حالة الدفع:</strong> ${inv.payment_confirmed ? '✅ مدفوعة' : '⏳ غير مدفوعة'}</div>
+      <table><thead><tr><th>المنتج</th><th style="text-align:center">الكمية</th><th style="text-align:left">السعر</th></tr></thead><tbody>${itemsHtml}</tbody></table>
+      <div class="totals">الفرعي: ${Number(inv.subtotal || 0).toLocaleString()} ${inv.currency || ''}<br>
+      التوصيل: ${Number(inv.delivery_fee || 0).toLocaleString()} ${inv.currency || ''}<br>
+      <span class="total">الإجمالي: ${Number(inv.total || 0).toLocaleString()} ${inv.currency || ''}</span></div>
+      <script>window.onload=function(){window.print()}</script></body></html>`);
+    win.document.close();
+  }
+
+  if (loading) return <div style={{ padding: 80, textAlign: 'center' }}>⏳</div>;
+
+  return (
+    <div style={{ minHeight: '100vh', background: '#f8fafc', paddingBottom: 40 }}>
+      <div style={{ background: '#0f4d3a', padding: '16px 20px', position: 'sticky', top: 0, zIndex: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+          <Link href="/merchant" style={{ color: '#fff', textDecoration: 'none', fontSize: 20 }}>→</Link>
+          <h1 style={{ color: '#fff', fontSize: 18, fontWeight: 900, margin: 0, flex: 1 }}>🧾 الفواتير</h1>
+        </div>
+        <input type="search" placeholder="🔍 ابحث برقم الفاتورة أو اسم العميل..." value={search} onChange={e => setSearch(e.target.value)} style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: 'none', fontSize: 13, outline: 'none', boxSizing: 'border-box', background: 'rgba(255,255,255,0.95)' }} />
+        <div style={{ display: 'flex', gap: 6, marginTop: 12, overflowX: 'auto' }}>
+          {FILTERS.map(f => (
+            <button key={f.key} onClick={() => setFilter(f.key)} style={{ background: filter === f.key ? '#fff' : 'rgba(255,255,255,0.1)', color: filter === f.key ? '#0f4d3a' : '#fff', border: 'none', padding: '6px 14px', borderRadius: 20, fontSize: 12, fontWeight: 900, cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'inherit' }}>{f.label}</button>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ padding: 16 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8, marginBottom: 16 }}>
+          <StatBox label="إجمالي الفواتير" value={stats.total} color="#0f4d3a" />
+          <StatBox label="المبلغ الكلي" value={stats.totalAmount.toLocaleString()} color="#0ea5e9" suffix="ل.س" />
+          <StatBox label="مدفوعة" value={stats.paidCount} color="#10b981" />
+          <StatBox label="غير مدفوعة" value={stats.unpaidCount} color="#ef4444" />
+        </div>
+
+        {filtered.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: 40, background: '#fff', borderRadius: 16, color: '#64748b' }}>
+            <div style={{ fontSize: 48, marginBottom: 12 }}>🧾</div>
+            <div style={{ fontSize: 15, fontWeight: 900 }}>{invoices.length === 0 ? 'لا توجد فواتير بعد' : 'لا توجد نتائج مطابقة'}</div>
+          </div>
+        ) : (
+          filtered.map(inv => {
+            const status = getStatus(inv);
+            const isExpanded = expandedId === inv.id;
+            const sc = {
+              paid: { bg: 'rgba(16,185,129,0.1)', color: '#10b981', label: '✅ مدفوعة' },
+              unpaid: { bg: 'rgba(239,68,68,0.1)', color: '#ef4444', label: '⏳ غير مدفوعة' },
+              cancelled: { bg: 'rgba(148,163,184,0.1)', color: '#64748b', label: '🚫 ملغاة' },
+            }[status];
+            return (
+              <div key={inv.id} style={{ background: '#fff', borderRadius: 16, marginBottom: 12, border: '1px solid #e2e8f0', overflow: 'hidden' }}>
+                <div style={{ padding: 14, display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }} onClick={() => setExpandedId(isExpanded ? null : inv.id)}>
+                  <div style={{ width: 44, height: 44, borderRadius: 12, background: sc.bg, color: sc.color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>🧾</div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 900, color: '#0f172a', fontFamily: 'monospace' }}>#{inv.order_code || 'INV'}</div>
+                    <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>{inv.customer_name || 'بدون اسم'} · {inv.customer_phone || '—'}</div>
+                    <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 2 }}>{inv.created_at ? new Date(inv.created_at).toLocaleDateString('ar-SY') : '—'}</div>
+                  </div>
+                  <div style={{ textAlign: 'left' }}>
+                    <div style={{ fontSize: 15, fontWeight: 900, color: '#0f4d3a' }}>{Number(inv.total || 0).toLocaleString()}</div>
+                    <div style={{ fontSize: 9.5, color: '#64748b', marginTop: 2 }}>{inv.currency || 'SYP'}</div>
+                    <div style={{ background: sc.bg, color: sc.color, padding: '2px 8px', borderRadius: 6, fontSize: 9.5, fontWeight: 900, marginTop: 4, display: 'inline-block' }}>{sc.label}</div>
+                  </div>
+                </div>
+
+                {isExpanded && (
+                  <div style={{ padding: '0 14px 14px', borderTop: '1px solid #f1f5f9', paddingTop: 14 }}>
+                    {(inv.items || []).map((item, idx) => (
+                      <div key={idx} style={{ display: 'flex', gap: 10, marginBottom: 8 }}>
+                        {item.image ? <img src={item.image} alt="" style={{ width: 40, height: 40, borderRadius: 6, objectFit: 'cover' }} /> : <div style={{ width: 40, height: 40, borderRadius: 6, background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>📦</div>}
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: 12, fontWeight: 800 }}>{item.title}</div>
+                          <div style={{ fontSize: 11, color: '#64748b' }}>{item.qty} × {Number(item.price || 0).toLocaleString()} {inv.currency}</div>
+                        </div>
+                      </div>
+                    ))}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6, margin: '12px 0' }}>
+                      <MiniStat label="الفرعي" value={Number(inv.subtotal || 0).toLocaleString()} color="#475569" />
+                      <MiniStat label="التوصيل" value={Number(inv.delivery_fee || 0).toLocaleString()} color="#475569" />
+                      <MiniStat label="الإجمالي" value={Number(inv.total || 0).toLocaleString()} color="#0f4d3a" />
+                    </div>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      <button onClick={() => printInvoice(inv)} style={{ flex: 1, padding: 10, background: 'rgba(14,165,233,0.1)', color: '#0284c7', border: '1px solid rgba(14,165,233,0.3)', borderRadius: 8, fontSize: 12, fontWeight: 900, cursor: 'pointer', fontFamily: 'inherit' }}>🖨️ طباعة</button>
+                      {inv.status !== 'cancelled' && (
+                        <button onClick={() => togglePayment(inv)} style={{ flex: 1, padding: 10, background: inv.payment_confirmed ? 'rgba(148,163,184,0.1)' : 'rgba(16,185,129,0.1)', color: inv.payment_confirmed ? '#64748b' : '#10b981', border: `1px solid ${inv.payment_confirmed ? 'rgba(148,163,184,0.3)' : 'rgba(16,185,129,0.3)'}`, borderRadius: 8, fontSize: 12, fontWeight: 900, cursor: 'pointer', fontFamily: 'inherit' }}>{inv.payment_confirmed ? '⏸️ إلغاء الدفع' : '✓ تأكيد الدفع'}</button>
+                      )}
+                      <a href={`https://wa.me/${(inv.customer_phone || '').replace(/[^0-9]/g, '')}?text=${encodeURIComponent('فاتورة #' + inv.order_code + ' - الإجمالي: ' + Number(inv.total || 0).toLocaleString() + ' ' + (inv.currency || ''))}`} target="_blank" rel="noreferrer" style={{ flex: 1, textAlign: 'center', padding: 10, background: 'rgba(37,211,102,0.1)', color: '#25D366', border: '1px solid rgba(37,211,102,0.3)', borderRadius: 8, fontSize: 12, fontWeight: 900, textDecoration: 'none' }}>💬 واتساب</a>
+                      <button onClick={() => handleDelete(inv)} disabled={deleting === inv.id} style={{ flex: 1, padding: 10, background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, fontSize: 12, fontWeight: 900, cursor: deleting === inv.id ? 'wait' : 'pointer', fontFamily: 'inherit' }}>{deleting === inv.id ? '⏳' : '🗑️'}</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+}
+
+function StatBox({ label, value, color, suffix }) {
+  return (
+    <div style={{ background: '#fff', borderRadius: 12, padding: 12, textAlign: 'center', border: '1px solid #e2e8f0' }}>
+      <div style={{ fontSize: 18, fontWeight: 900, color, marginBottom: 2 }}>{value}</div>
+      <div style={{ fontSize: 10, color: '#64748b', fontWeight: 800 }}>{label}</div>
+      {suffix && <div style={{ fontSize: 8, color: '#94a3b8', marginTop: 2 }}>{suffix}</div>}
+    </div>
+  );
+}
+
+function MiniStat({ label, value, color }) {
+  return (
+    <div style={{ background: '#f8fafc', borderRadius: 8, padding: 8, textAlign: 'center' }}>
+      <div style={{ fontSize: 12, fontWeight: 900, color }}>{value}</div>
+      <div style={{ fontSize: 9, color: '#64748b', fontWeight: 800, marginTop: 2 }}>{label}</div>
+    </div>
+  );
+}

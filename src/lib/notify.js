@@ -1,114 +1,69 @@
-// ═══════════ مساعد الإشعارات ═══════════
 import { supabase } from './supabase';
-import { showLocalNotification } from './push';
 
-// ═══ تشغيل صوت الإشعار ═══
+// تشغيل صوت بسيط
 export function playSound() {
-  if (typeof window === 'undefined') return;
   try {
-    const audio = new Audio('/sounds/notification.mp3');
-    audio.volume = 0.6;
-    audio.play().catch(() => {
-      // لو المتصفح رفض، جرّب ogg
-      const audio2 = new Audio('/sounds/notification.ogg');
-      audio2.volume = 0.6;
-      audio2.play().catch(() => {});
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const notes = [880, 1174.66, 1567.98];
+    notes.forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.frequency.value = freq;
+      osc.type = 'sine';
+      const start = ctx.currentTime + i * 0.12;
+      gain.gain.setValueAtTime(0, start);
+      gain.gain.linearRampToValueAtTime(0.3, start + 0.03);
+      gain.gain.exponentialRampToValueAtTime(0.01, start + 0.35);
+      osc.start(start);
+      osc.stop(start + 0.4);
     });
-  } catch {}
+    setTimeout(() => ctx.close(), 1500);
+  } catch (e) {}
 }
 
-// ═══ إرسال إشعار (DB + صوت + إشعار نظام) ═══
-export async function sendNotification({ recipient, title, body, type = 'info', targetUrl, playAudio = true }) {
-  // 1) صوت
-  if (playAudio) playSound();
-
-  // 2) إشعار نظام (متصفح)
+// إرسال إشعار (يستخدمه SubscriptionReminder)
+export async function sendNotification(userType, userId, title, body, link = null, icon = '🔔') {
+  if (!supabase || !userId) return { ok: false };
   try {
-    await showLocalNotification(title, {
-      body: body || '',
-      tag: 'sanad-' + (type || 'info'),
+    await supabase.from('notifications').insert({
+      user_type: userType, user_id: userId, title, body, link, icon, is_read: false,
     });
-  } catch {}
-
-  // 3) حفظ يوجد DB
-  if (!supabase) return { ok: false };
-  const { error } = await supabase.from('notifications').insert({
-    recipient_entity: recipient || null,
-    title,
-    body: body || null,
-    type,
-    target_url: targetUrl || null,
-    is_read: false,
-  });
-
-  return { ok: !error };
+    return { ok: true };
+  } catch (e) { return { ok: false }; }
 }
 
-// ═══ الأحداث الجاهزة ═══
-
-export async function notifyNewOrder(providerName, orderCode, customerName) {
-  return sendNotification({
-    recipient: providerName,
-    title: '🛍️ طلب جديد',
-    body: `الطلب ${orderCode} من ${customerName}`,
-    type: 'success',
-    targetUrl: '/merchant/orders',
-  });
+async function triggerPush(userType, userId, title, body, link, icon) {
+  try {
+    await fetch('/api/push/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_type: userType, user_id: userId, title, body, link, icon }),
+    });
+  } catch (e) {}
 }
 
-export async function notifyOrderStatus(customerPhone, orderCode, status) {
-  const STATUS_MSG = {
-    preparing:  { title: '👨‍🍳 طلبك قيد التحضير', body: `الطلب ${orderCode} بدأ التحضير` },
-    delivering: { title: '🚚 طلبك يوجد التوصيل', body: `الطلب ${orderCode} يوجد الطريق إليك` },
-    done:       { title: '✅ اكتمل طلبك', body: `يمكنك الآن عرض الفاتورة ${orderCode}` },
-    cancelled:  { title: '❌ تم إلغاء الطلب', body: `الطلب ${orderCode} ملغي` },
-  };
-  const msg = STATUS_MSG[status] || { title: '📦 تحديث الطلب', body: orderCode };
-  return sendNotification({
-    recipient: customerPhone || null,
-    title: msg.title,
-    body: msg.body,
-    type: status === 'cancelled' ? 'error' : 'success',
-    targetUrl: `/order/${orderCode}`,
-  });
+export async function notifyEntity(entityId, title, body, link = null, icon = '🔔') {
+  if (!supabase || !entityId) return { ok: false };
+  try {
+    await supabase.from('notifications').insert({
+      user_type: 'entity', user_id: entityId, title, body, link, icon, is_read: false,
+    });
+    triggerPush('entity', entityId, title, body, link, icon);
+    return { ok: true };
+  } catch (e) { return { ok: false }; }
 }
 
-export async function notifyNewReview(providerName, rating, reviewerName) {
-  return sendNotification({
-    recipient: providerName,
-    title: `⭐ تقييم جديد: ${rating}/5`,
-    body: `من ${reviewerName}`,
-    type: 'info',
-    targetUrl: '/merchant/reviews',
-  });
-}
-
-export async function notifySOS(fullName, category) {
-  return sendNotification({
-    recipient: null,
-    title: '🚨 بلاغ طوارئ جديد',
-    body: `${fullName} — ${category}`,
-    type: 'error',
-    targetUrl: '/admin/sos',
-  });
-}
-
-export async function notifyNewMessage(entityName, senderName) {
-  return sendNotification({
-    recipient: entityName,
-    title: '💬 رسالة جديدة',
-    body: `من ${senderName}`,
-    type: 'info',
-    targetUrl: '/merchant/chat',
-  });
-}
-
-export async function notifyNewAnnouncement(title, entityName = null) {
-  return sendNotification({
-    recipient: entityName,
-    title: '📢 إعلان جديد',
-    body: title,
-    type: 'info',
-    targetUrl: '/',
-  });
+export async function notifyCustomer(customerId, title, body, link = null, icon = '🔔') {
+  if (!supabase || !customerId) return { ok: false };
+  try {
+    await supabase.from('notifications').insert({
+      user_type: 'customer', user_id: customerId, title, body, link, icon, is_read: false,
+    });
+    triggerPush('customer', customerId, title, body, link, icon);
+    return { ok: true };
+  } catch (e) { return { ok: false }; }
 }

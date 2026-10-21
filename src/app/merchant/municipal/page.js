@@ -1,186 +1,162 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
-import { getSession } from '@/lib/auth';
+import { useCurrentUser } from '@/lib/useCurrentUser';
+import { useToast } from '@/components/Toast';
 
-const SERVICE_TYPES = [
-  { k: 'water', l: '💧 المياه', color: '#0891b2' },
-  { k: 'electricity', l: '⚡ الكهرباء', color: '#f59e0b' },
-  { k: 'waste', l: '🗑️ النفايات', color: '#16a34a' },
-  { k: 'road', l: '🛣️ الطرق', color: '#8b5cf6' },
-  { k: 'certificate', l: '📜 الشهادات', color: '#dc2626' },
-  { k: 'permit', l: '📋 التصاريح', color: '#3b82f6' },
-  { k: 'complaint', l: '📩 الشكاوى', color: '#ea580c' },
-  { k: 'project', l: '🏗️ المشاريع', color: '#0891b2' },
-];
+const STATUS_MAP = {
+  pending: { label: 'معلقة', icon: '⏳', color: '#f59e0b', bg: 'rgba(245,158,11,0.1)' },
+  in_progress: { label: 'قيد المعالجة', icon: '🔄', color: '#0ea5e9', bg: 'rgba(14,165,233,0.1)' },
+  resolved: { label: 'محلولة', icon: '✅', color: '#10b981', bg: 'rgba(16,185,129,0.1)' },
+  rejected: { label: 'مرفوضة', icon: '❌', color: '#ef4444', bg: 'rgba(239,68,68,0.1)' },
+};
 
-export default function MunicipalPage() {
+const CATEGORY_LABELS = {
+  road: '🛣️ طرق', water: '💧 مياه', electricity: '⚡ كهرباء',
+  cleaning: '🧹 نظافة', park: '🌳 حدائق', building: '🏗️ بناء',
+  noise: '🔊 ضوضاء', other: '📌 أخرى',
+};
+
+export default function MerchantMunicipalPage() {
   const router = useRouter();
-  const [entity, setEntity] = useState(null);
-  const [items, setItems] = useState([]);
+  const { success, error: toastError } = useToast();
+  const { user, loading: userLoading, dataOwnerName } = useCurrentUser();
+  const [complaints, setComplaints] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [mode, setMode] = useState(null);
-  const [editing, setEditing] = useState(null);
-  const [form, setForm] = useState({});
-  const [deleting, setDeleting] = useState(null);
+  const [search, setSearch] = useState('');
+  const [filter, setFilter] = useState('all');
+  const [working, setWorking] = useState(null);
+  const [showResponse, setShowResponse] = useState(null);
+  const [responseText, setResponseText] = useState('');
 
   useEffect(() => {
-    let stored = null;
-    try { stored = getSession(); } catch (e) {}
-    if (!stored) { router.replace('/login'); return; }
-    setEntity(stored);
-    load(stored);
-  }, [router]);
+    if (userLoading) return;
+    if (!user || !dataOwnerName) { setLoading(false); return; }
+    loadComplaints();
+  }, [user, userLoading, dataOwnerName]);
 
-  async function load(ent) {
-    if (!supabase) return;
-    const { data } = await supabase.from('municipal_services').select('*').eq('entity_name', ent.display_name).order('created_at', { ascending: false });
-    setItems(Array.isArray(data) ? data : []);
-    setLoading(false);
+  async function loadComplaints() {
+    if (!supabase || !dataOwnerName) return;
+    setLoading(true);
+    try {
+      const { data } = await supabase.from('municipal_complaints').select('*').eq('provider_name', dataOwnerName).order('created_at', { ascending: false });
+      setComplaints(data || []);
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
   }
 
-  function openAdd() {
-    setMode('add');
-    setForm({ service_type: 'water', title: '', description: '', location_text: '', scheduled_at: '', status: 'active' });
-  }
-
-  function openEdit(item) {
-    setMode('edit');
-    setEditing(item);
-    setForm({ ...item });
-  }
-
-  async function save() {
-    if (!form.title?.trim()) { alert('العنوان مطلوب'); return; }
-    const payload = {
-      entity_name: entity.display_name,
-      service_type: form.service_type,
-      title: form.title.trim(),
-      description: form.description?.trim() || null,
-      location_text: form.location_text?.trim() || null,
-      scheduled_at: form.scheduled_at || null,
-      status: form.status || 'active',
-    };
-    let err;
-    if (mode === 'add') {
-      ({ error: err } = await supabase.from('municipal_services').insert(payload));
-    } else {
-      ({ error: err } = await supabase.from('municipal_services').update(payload).eq('id', editing.id));
+  async function updateStatus(id, status) {
+    setWorking(id);
+    const updates = { status };
+    if (status === 'resolved') updates.resolved_at = new Date().toISOString();
+    const { error } = await supabase.from('municipal_complaints').update(updates).eq('id', id);
+    if (error) toastError('فشل التحديث');
+    else {
+      success(status === 'resolved' ? '✅ تم الحل' : '🔄 تم التحديث');
+      setComplaints(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c));
     }
-    if (err) { alert('تعذّر الحفظ: ' + err.message); return; }
-    setMode(null); setEditing(null);
-    load(entity);
+    setWorking(null);
   }
 
-  async function del(item) {
-    if (!confirm('حذف هذا العنصر؟')) return;
-    await supabase.from('municipal_services').delete().eq('id', item.id);
-    setDeleting(null);
-    load(entity);
+  async function sendResponse(id) {
+    if (!responseText.trim()) { toastError('اكتب الرد'); return; }
+    setWorking(id);
+    const { error } = await supabase.from('municipal_complaints').update({ response: responseText.trim(), status: 'in_progress' }).eq('id', id);
+    if (error) toastError('فشل الإرسال');
+    else {
+      success('✅ تم إرسال الرد');
+      setComplaints(prev => prev.map(c => c.id === id ? { ...c, response: responseText.trim(), status: 'in_progress' } : c));
+      setShowResponse(null);
+      setResponseText('');
+    }
+    setWorking(null);
   }
 
-  if (!entity) return <div className="sect-empty" style={{ padding: 80 }}><span className="em">⏳</span></div>;
+  const stats = useMemo(() => ({
+    total: complaints.length,
+    pending: complaints.filter(c => c.status === 'pending').length,
+    inProgress: complaints.filter(c => c.status === 'in_progress').length,
+    resolved: complaints.filter(c => c.status === 'resolved').length,
+  }), [complaints]);
+
+  const filtered = useMemo(() => {
+    let list = complaints;
+    if (filter !== 'all') list = list.filter(c => c.status === filter);
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
+      list = list.filter(c => (c.title || '').toLowerCase().includes(q) || (c.citizen_name || '').toLowerCase().includes(q));
+    }
+    return list;
+  }, [complaints, filter, search]);
+
+  if (userLoading || loading) return <div style={{ padding: 80, textAlign: 'center' }}>⏳</div>;
 
   return (
-    <div className="sect-page" style={{ paddingBottom: 40 }}>
-      <div className="inv-header">
-        <Link href="/merchant" className="inv-back">→</Link>
-        <span className="inv-title">🏛️ خدمات البلدية</span>
-        <button className="mng-add-btn" onClick={openAdd} type="button">+ جديد</button>
+    <div style={{ minHeight: '100vh', background: '#f8fafc', paddingBottom: 40 }}>
+      <div style={{ background: '#0f4d3a', padding: '16px 20px', position: 'sticky', top: 0, zIndex: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+          <Link href="/merchant" style={{ color: '#fff', textDecoration: 'none', fontSize: 20 }}>←</Link>
+          <div style={{ flex: 1 }}><h1 style={{ color: '#fff', fontSize: 18, fontWeight: 900, margin: 0 }}>🏢 شكاوى البلدية</h1></div>
+          <Link href="/complaints/new" style={{ background: '#fbbf24', color: '#0f4d3a', padding: '8px 14px', borderRadius: 10, fontSize: 12, fontWeight: 900, textDecoration: 'none' }}>+ شكوى</Link>
+        </div>
+        <input type="search" placeholder="🔍 ابحث بالعنوان أو الاسم..." value={search} onChange={e => setSearch(e.target.value)} style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: 'none', fontSize: 13, outline: 'none', boxSizing: 'border-box', background: 'rgba(255,255,255,0.95)' }} />
+        <div style={{ display: 'flex', gap: 6, marginTop: 12, overflowX: 'auto' }}>
+          {[{k:'all',l:'الكل'},{k:'pending',l:'⏳ معلقة'},{k:'in_progress',l:'🔄 قيد المعالجة'},{k:'resolved',l:'✅ محلولة'}].map(f => (
+            <button key={f.k} onClick={() => setFilter(f.k)} style={{ background: filter === f.k ? '#fff' : 'rgba(255,255,255,0.1)', color: filter === f.k ? '#0f4d3a' : '#fff', border: 'none', padding: '6px 14px', borderRadius: 20, fontSize: 11, fontWeight: 900, cursor: 'pointer', fontFamily: 'inherit' }}>{f.l}</button>
+          ))}
+        </div>
       </div>
 
-      {loading ? (
-        <div className="sect-empty"><span className="em">⏳</span></div>
-      ) : items.length === 0 ? (
-        <div className="sect-empty">
-          <span className="em">🏛️</span>
-          <p>لا توجد خدمات</p>
-          <button className="mng-add-btn" onClick={openAdd} type="button" style={{ marginTop: 16 }}>+ إضافة خدمة</button>
+      <div style={{ padding: 16, maxWidth: 800, margin: '0 auto' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, marginBottom: 16 }}>
+          <StatBox label="الكل" value={stats.total} color="#0f4d3a" />
+          <StatBox label="معلقة" value={stats.pending} color="#f59e0b" />
+          <StatBox label="قيد المعالجة" value={stats.inProgress} color="#0ea5e9" />
+          <StatBox label="محلولة" value={stats.resolved} color="#10b981" />
         </div>
-      ) : (
-        <div style={{ padding: 20 }}>
-          {items.map((it) => {
-            const cfg = SERVICE_TYPES.find((s) => s.k === it.service_type) || SERVICE_TYPES[0];
-            return (
-              <div key={it.id} className="debt-card" style={{ borderRightColor: cfg.color }}>
-                <div className="debt-head">
-                  <div>
-                    <div className="debt-customer">{cfg.l} — {it.title}</div>
-                    {it.location_text && <div className="debt-phone">📍 {it.location_text}</div>}
-                  </div>
-                  <span className={`debt-badge ${it.status === 'active' ? 'active' : 'paid'}`}>
-                    {it.status === 'active' ? 'نشط' : it.status === 'done' ? 'منجز' : it.status}
-                  </span>
+
+        {filtered.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: 40, background: '#fff', borderRadius: 16, color: '#64748b' }}>
+            <div style={{ fontSize: 48, marginBottom: 12 }}>🏢</div>
+            <div style={{ fontSize: 15, fontWeight: 900 }}>{complaints.length === 0 ? 'لا توجد شكاوى' : 'لا نتائج'}</div>
+          </div>
+        ) : filtered.map(c => {
+          const st = STATUS_MAP[c.status] || STATUS_MAP.pending;
+          return (
+            <div key={c.id} style={{ background: '#fff', borderRadius: 14, padding: 14, marginBottom: 10, border: '1px solid #e2e8f0' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 14, fontWeight: 900, color: '#0f172a' }}>{c.title}</div>
+                  <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>👤 {c.citizen_name} · 📱 {c.citizen_phone}</div>
+                  <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>{CATEGORY_LABELS[c.category] || c.category}</div>
+                  {c.location && <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>📍 {c.location}</div>}
                 </div>
-                {it.description && (
-                  <div style={{ fontSize: 12, color: 'var(--n-500)', marginTop: 8, lineHeight: 1.6 }}>
-                    {it.description}
-                  </div>
-                )}
-                {it.scheduled_at && (
-                  <div style={{ fontSize: 11.5, color: 'var(--n-500)', marginTop: 6, fontWeight: 700 }}>
-                    🕐 {new Date(it.scheduled_at).toLocaleString('ar-EG')}
-                  </div>
-                )}
-                <div className="debt-actions">
-                  <button className="debt-action edit" onClick={() => openEdit(it)} type="button">✏️ تعديل</button>
-                  <button className="debt-action del" onClick={() => del(it)} type="button">🗑️</button>
-                </div>
+                <div style={{ background: st.bg, color: st.color, padding: '4px 10px', borderRadius: 8, fontSize: 10, fontWeight: 900 }}>{st.icon} {st.label}</div>
               </div>
-            );
-          })}
-        </div>
-      )}
-
-      {mode && (
-        <div className="mng-modal-bg" onClick={() => { setMode(null); setEditing(null); }}>
-          <div className="mng-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="mng-modal-handle" />
-            <h3 className="mng-modal-title">{mode === 'add' ? '➕ خدمة جديدة' : '✏️ تعديل'}</h3>
-
-            <div className="new-service-field">
-              <label className="new-service-label">نوع الخدمة</label>
-              <select className="new-service-select" value={form.service_type} onChange={(e) => setForm({ ...form, service_type: e.target.value })}>
-                {SERVICE_TYPES.map((s) => <option key={s.k} value={s.k}>{s.l}</option>)}
-              </select>
-            </div>
-
-            <div className="new-service-field">
-              <label className="new-service-label">العنوان *</label>
-              <input className="new-service-input" value={form.title || ''} onChange={(e) => setForm({ ...form, title: e.target.value })} />
-            </div>
-
-            <div className="new-service-field">
-              <label className="new-service-label">الوصف</label>
-              <textarea className="new-service-textarea" rows={3} value={form.description || ''} onChange={(e) => setForm({ ...form, description: e.target.value })} />
-            </div>
-
-            <div className="new-prod-row">
-              <div className="new-service-field">
-                <label className="new-service-label">الموقع</label>
-                <input className="new-service-input" value={form.location_text || ''} onChange={(e) => setForm({ ...form, location_text: e.target.value })} />
-              </div>
-              <div className="new-service-field">
-                <label className="new-service-label">الموعد</label>
-                <input className="new-service-input" type="datetime-local" value={form.scheduled_at ? form.scheduled_at.slice(0, 16) : ''} onChange={(e) => setForm({ ...form, scheduled_at: e.target.value })} />
+              {c.description && <div style={{ fontSize: 12, color: '#475569', lineHeight: 1.5, marginBottom: 8 }}>{c.description}</div>}
+              {c.response && <div style={{ background: 'rgba(14,165,233,0.08)', border: '1px solid rgba(14,165,233,0.2)', borderRadius: 8, padding: 10, marginBottom: 8, fontSize: 12, color: '#0284c7' }}><strong>رد البلدية:</strong> {c.response}</div>}
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {c.status === 'pending' && <button onClick={() => updateStatus(c.id, 'in_progress')} disabled={working === c.id} style={btnStyle('rgba(14,165,233,0.1)', '#0284c7')}>🔄 بدء المعالجة</button>}
+                {c.status !== 'resolved' && <button onClick={() => updateStatus(c.id, 'resolved')} disabled={working === c.id} style={btnStyle('rgba(16,185,129,0.1)', '#10b981')}>✅ حل</button>}
+                {c.status !== 'rejected' && <button onClick={() => updateStatus(c.id, 'rejected')} disabled={working === c.id} style={btnStyle('rgba(239,68,68,0.1)', '#ef4444')}>❌ رفض</button>}
+                {c.status !== 'resolved' && <button onClick={() => { setShowResponse(c); setResponseText(c.response || ''); }} style={btnStyle('rgba(139,92,246,0.1)', '#8b5cf6')}>💬 رد</button>}
               </div>
             </div>
+          );
+        })}
+      </div>
 
-            <div className="new-service-field">
-              <label className="new-service-label">الحالة</label>
-              <select className="new-service-select" value={form.status || 'active'} onChange={(e) => setForm({ ...form, status: e.target.value })}>
-                <option value="active">نشط</option>
-                <option value="pending">قيد التنفيذ</option>
-                <option value="done">منجز</option>
-                <option value="cancelled">ملغي</option>
-              </select>
-            </div>
-
-            <div className="admin-form-actions">
-              <button className="mng-btn ghost" onClick={() => { setMode(null); setEditing(null); }} type="button">إلغاء</button>
-              <button className="mng-btn primary" onClick={save} type="button">✓ حفظ</button>
+      {showResponse && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 100, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+          <div style={{ background: '#fff', width: '100%', maxWidth: 500, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24 }}>
+            <h2 style={{ fontSize: 18, fontWeight: 900, margin: '0 0 16px' }}>💬 الرد على الشكوى</h2>
+            <div style={{ background: '#f8fafc', borderRadius: 10, padding: 12, marginBottom: 16, fontSize: 12, color: '#475569' }}>{showResponse.title}</div>
+            <textarea value={responseText} onChange={e => setResponseText(e.target.value)} style={{ width: '100%', padding: 12, borderRadius: 10, border: '1px solid #cbd5e1', fontSize: 13, height: 100, resize: 'none', fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box' }} placeholder="اكتب ردك..." />
+            <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+              <button onClick={() => { setShowResponse(null); setResponseText(''); }} style={{ flex: 1, padding: 12, background: '#f1f5f9', color: '#475569', border: 'none', borderRadius: 10, fontWeight: 900, cursor: 'pointer', fontFamily: 'inherit' }}>إلغاء</button>
+              <button onClick={() => sendResponse(showResponse.id)} disabled={working === showResponse.id} style={{ flex: 2, padding: 12, background: '#0f4d3a', color: '#fff', border: 'none', borderRadius: 10, fontWeight: 900, cursor: 'pointer', fontFamily: 'inherit' }}>{working === showResponse.id ? '⏳ جارٍ الإرسال...' : '📤 إرسال الرد'}</button>
             </div>
           </div>
         </div>
@@ -188,3 +164,9 @@ export default function MunicipalPage() {
     </div>
   );
 }
+
+function StatBox({ label, value, color }) {
+  return <div style={{ background: '#fff', borderRadius: 12, padding: 12, textAlign: 'center', border: '1px solid #e2e8f0' }}><div style={{ fontSize: 18, fontWeight: 900, color, marginBottom: 2 }}>{value}</div><div style={{ fontSize: 9.5, color: '#64748b', fontWeight: 800 }}>{label}</div></div>;
+}
+
+const btnStyle = (bg, color) => ({ flex: 1, minWidth: 70, padding: 10, background: bg, color, border: 'none', borderRadius: 8, fontSize: 11, fontWeight: 900, cursor: 'pointer', fontFamily: 'inherit' });

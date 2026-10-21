@@ -4,107 +4,82 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { useToast } from '@/components/Toast';
-import { SkeletonList } from '@/components/Skeleton';
-import EmptyState from '@/components/EmptyState';
 
-const STATUS = {
-  pending: { label: 'جديد', color: '#ef4444', icon: '🚨' },
-  responding: { label: 'قيد الاستجابة', color: '#f59e0b', icon: '🚑' },
-  resolved: { label: 'تم الحل', color: '#10b981', icon: '✅' },
-  false_alarm: { label: 'بلاغ كاذب', color: '#64748b', icon: '⚠️' },
-};
-
-export default function AdminSOS() {
+export default function AdminSOSPage() {
   const router = useRouter();
-  const { success, error: tE } = useToast();
-  const [alerts, setAlerts] = useState([]);
+  const { success } = useToast();
+  const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState('pending');
+  const [filter, setFilter] = useState('active');
 
   useEffect(() => {
-    let stored = null;
-    try { stored = JSON.parse(localStorage.getItem('sanad_admin') || 'null'); } catch {}
-    if (!stored) { router.replace('/admin/login'); return; }
-    load();
+    const admin = JSON.parse(localStorage.getItem('sanad_admin') || 'null');
+    if (!admin) { router.replace('/admin/login'); return; }
+    loadSOS();
   }, [router]);
 
-  async function load() {
-    if (!supabase) { setLoading(false); return; }
-    const { data } = await supabase.from('sos_alerts').select('*').order('created_at', { ascending: false }).limit(100);
-    setAlerts(data || []);
-    setLoading(false);
+  async function loadSOS() {
+    if (!supabase) return;
+    setLoading(true);
+    try {
+      const { data } = await supabase.from('sos_requests').select('*').order('created_at', { ascending: false });
+      setItems(data || []);
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
+  }
+
+  async function resolve(id) {
+    const { error } = await supabase.from('sos_requests').update({ status: 'resolved' }).eq('id', id);
+    if (!error) { success('✅ تم الحل'); setItems(prev => prev.map(x => x.id === id ? { ...x, status: 'resolved' } : x)); }
   }
 
   const filtered = useMemo(() => {
-    if (filter === 'all') return alerts;
-    return alerts.filter(a => a.status === filter);
-  }, [alerts, filter]);
+    if (filter === 'all') return items;
+    return items.filter(i => i.status === filter);
+  }, [items, filter]);
 
-  const counts = useMemo(() => {
-    return {
-      all: alerts.length,
-      pending: alerts.filter(a => a.status === 'pending').length,
-      responding: alerts.filter(a => a.status === 'responding').length,
-      resolved: alerts.filter(a => a.status === 'resolved').length,
-    };
-  }, [alerts]);
+  const activeCount = items.filter(i => i.status === 'active').length;
 
-  async function changeStatus(alert, newStatus) {
-    await supabase.from('sos_alerts').update({ status: newStatus, resolved_at: newStatus === 'resolved' ? new Date().toISOString() : null }).eq('id', alert.id);
-    success('✅ تم');
-    load();
-  }
-
-  async function callPhone(phone) {
-    if (!phone) return;
-    window.location.href = `tel:${phone}`;
-  }
-
-  if (loading) return <div style={{ padding: 16, background: '#f8fafc', minHeight: '100vh' }}><SkeletonList count={4} /></div>;
+  if (loading) return <div style={{ padding: 80, textAlign: 'center' }}>⏳</div>;
 
   return (
     <div style={{ minHeight: '100vh', background: '#f8fafc', paddingBottom: 40 }}>
-      <div style={{ position: 'sticky', top: 0, zIndex: 10, background: 'linear-gradient(135deg,#dc2626,#991b1b)', padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
-        <Link href="/admin" style={{ color: '#fff', textDecoration: 'none', fontSize: 20, width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,.15)', borderRadius: '50%' }}>→</Link>
-        <div style={{ flex: 1, color: '#fff', fontSize: 16, fontWeight: 900 }}>🚨 بلاغات الطوارئ {counts.pending > 0 && <span style={{ background: '#fff', color: '#dc2626', padding: '2px 8px', borderRadius: 10, fontSize: 11, marginRight: 8 }}>{counts.pending}</span>}</div>
-      </div>
-
-      <div style={{ padding: 16 }}>
-        <div style={{ display: 'flex', gap: 6, overflowX: 'auto', paddingBottom: 4 }}>
-          {[['all','الكل',counts.all],['pending','جديد',counts.pending],['responding','استجابة',counts.responding],['resolved','محلول',counts.resolved]].map(([k,l,n]) => (
-            <button key={k} onClick={() => setFilter(k)} style={{ padding: '8px 14px', background: filter === k ? '#0f4d3a' : '#fff', color: filter === k ? '#fff' : '#64748b', border: `1px solid ${filter === k ? '#0f4d3a' : '#e5e7eb'}`, borderRadius: 10, fontSize: 11.5, fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'inherit' }}>{l} ({n})</button>
+      <div style={{ background: '#0f172a', padding: '16px 20px', position: 'sticky', top: 0, zIndex: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <Link href="/admin" style={{ color: '#fff', textDecoration: 'none', fontSize: 20 }}>←</Link>
+          <h1 style={{ color: '#fff', fontSize: 18, fontWeight: 900, margin: 0, flex: 1 }}>🚨 الطوارئ</h1>
+          {activeCount > 0 && <div style={{ background: '#ef4444', color: '#fff', padding: '4px 10px', borderRadius: 8, fontSize: 11, fontWeight: 900 }}>{activeCount}</div>}
+        </div>
+        <div style={{ display: 'flex', gap: 6, marginTop: 12 }}>
+          {['active', 'resolved', 'all'].map(f => (
+            <button key={f} onClick={() => setFilter(f)} style={{ background: filter === f ? '#fff' : 'rgba(255,255,255,0.1)', color: filter === f ? '#0f172a' : '#fff', border: 'none', padding: '6px 14px', borderRadius: 20, fontSize: 11, fontWeight: 900, cursor: 'pointer', fontFamily: 'inherit' }}>
+              {f === 'active' ? 'نشطة' : f === 'resolved' ? 'محلولة' : 'الكل'}
+            </button>
           ))}
         </div>
       </div>
-
-      <div style={{ padding: '0 16px' }}>
-        {filtered.length === 0 ? <EmptyState icon="✅" title="لا توجد بلاغات" description="كل شيء آمن" /> : filtered.map(a => {
-          const s = STATUS[a.status] || STATUS.pending;
-          return (
-            <div key={a.id} style={{ background: '#fff', border: `2px solid ${a.status === 'pending' ? '#ef4444' : '#e5e7eb'}`, borderRadius: 14, padding: 14, marginBottom: 10 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 14, fontWeight: 900, color: '#0f172a' }}>{a.full_name || 'مجهول'}</div>
-                  <div style={{ fontSize: 11, color: '#64748b', direction: 'ltr', textAlign: 'right', marginTop: 2 }}>📞 {a.phone || '—'}</div>
-                </div>
-                <span style={{ background: `${s.color}20`, color: s.color, padding: '3px 8px', borderRadius: 6, fontSize: 10, fontWeight: 900 }}>{s.icon} {s.label}</span>
-              </div>
-              {a.category && <div style={{ fontSize: 12, fontWeight: 800, color: '#dc2626', marginBottom: 6 }}>🔴 {a.category}</div>}
-              {a.description && <div style={{ fontSize: 12, color: '#334155', background: '#f8fafc', padding: 10, borderRadius: 8, marginBottom: 8, lineHeight: 1.6 }}>{a.description}</div>}
-              {a.location_text && <div style={{ fontSize: 11, color: '#64748b', marginBottom: 6 }}>📍 {a.location_text}</div>}
-              {a.lat && a.lng && (
-                <a href={`https://maps.google.com/?q=${a.lat},${a.lng}`} target="_blank" rel="noopener" style={{ display: 'inline-block', fontSize: 11, color: '#3b82f6', fontWeight: 800, textDecoration: 'none', marginBottom: 8 }}>🗺️ عرض على الخريطة</a>
-              )}
-              <div style={{ fontSize: 10, color: '#94a3b8', marginBottom: 8 }}>📅 {new Date(a.created_at).toLocaleString('ar-EG')}</div>
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                {a.phone && <button onClick={() => callPhone(a.phone)} style={{ flex: 1, minWidth: 80, padding: 8, background: 'linear-gradient(135deg,#10b981,#059669)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 11, fontWeight: 900, cursor: 'pointer', fontFamily: 'inherit' }}>📞 اتصال</button>}
-                {a.status === 'pending' && <button onClick={() => changeStatus(a, 'responding')} style={{ flex: 1, minWidth: 80, padding: 8, background: 'rgba(245,158,11,.15)', color: '#f59e0b', border: 'none', borderRadius: 8, fontSize: 11, fontWeight: 900, cursor: 'pointer', fontFamily: 'inherit' }}>🚑 استجابة</button>}
-                {a.status === 'responding' && <button onClick={() => changeStatus(a, 'resolved')} style={{ flex: 1, minWidth: 80, padding: 8, background: 'rgba(16,185,129,.15)', color: '#10b981', border: 'none', borderRadius: 8, fontSize: 11, fontWeight: 900, cursor: 'pointer', fontFamily: 'inherit' }}>✅ حل</button>}
-                {a.status === 'pending' && <button onClick={() => changeStatus(a, 'false_alarm')} style={{ padding: 8, background: '#f1f5f9', color: '#64748b', border: 'none', borderRadius: 8, fontSize: 11, fontWeight: 900, cursor: 'pointer', fontFamily: 'inherit' }}>⚠️</button>}
-              </div>
+      <div style={{ padding: 16, maxWidth: 800, margin: '0 auto' }}>
+        {filtered.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: 40, background: '#fff', borderRadius: 16, color: '#64748b' }}>
+            <div style={{ fontSize: 48, marginBottom: 12 }}>✅</div>
+            <div style={{ fontSize: 15, fontWeight: 900 }}>لا توجد نداءات</div>
+          </div>
+        ) : filtered.map(i => (
+          <div key={i.id} style={{ background: '#fff', borderRadius: 14, padding: 14, marginBottom: 10, border: i.status === 'active' ? '2px solid #ef4444' : '1px solid #e2e8f0' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+              <div style={{ fontSize: 13, fontWeight: 900, color: '#0f172a' }}>🚨 {i.type === 'medical' ? 'إسعاف' : i.type === 'fire' ? 'حريق' : i.type === 'security' ? 'أمن' : 'أخرى'}</div>
+              <div style={{ fontSize: 10, color: i.status === 'active' ? '#ef4444' : '#10b981', fontWeight: 900 }}>{i.status === 'active' ? '🔴 نشط' : '✅ محلول'}</div>
             </div>
-          );
-        })}
+            {i.description && <div style={{ fontSize: 12, color: '#475569', marginBottom: 8 }}>{i.description}</div>}
+            {i.phone && <div style={{ fontSize: 11, color: '#64748b', marginBottom: 4 }}>📱 {i.phone}</div>}
+            {i.address && <div style={{ fontSize: 11, color: '#64748b', marginBottom: 8 }}>📍 {i.address}</div>}
+            <div style={{ display: 'flex', gap: 6 }}>
+              {i.status === 'active' && <button onClick={() => resolve(i.id)} style={{ flex: 1, padding: 10, background: 'rgba(16,185,129,0.1)', color: '#10b981', border: '1px solid rgba(16,185,129,0.3)', borderRadius: 8, fontSize: 12, fontWeight: 900, cursor: 'pointer', fontFamily: 'inherit' }}>✅ حل</button>}
+              {i.phone && <a href={`tel:${i.phone}`} style={{ flex: 1, padding: 10, background: 'rgba(14,165,233,0.1)', color: '#0284c7', border: '1px solid rgba(14,165,233,0.3)', borderRadius: 8, fontSize: 12, fontWeight: 900, textAlign: 'center', textDecoration: 'none' }}>📞</a>}
+              {i.lat && i.lng && <a href={`https://www.google.com/maps?q=${i.lat},${i.lng}`} target="_blank" rel="noreferrer" style={{ flex: 1, padding: 10, background: 'rgba(139,92,246,0.1)', color: '#8b5cf6', border: '1px solid rgba(139,92,246,0.3)', borderRadius: 8, fontSize: 12, fontWeight: 900, textAlign: 'center', textDecoration: 'none' }}>🗺️</a>}
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );

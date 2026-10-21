@@ -1,0 +1,300 @@
+'use client';
+import { useState, useEffect, useMemo } from 'react';
+import { supabase } from '@/lib/supabase';
+import { useCurrentUser } from '@/lib/useCurrentUser';
+import { useToast } from '@/components/Toast';
+import Link from 'next/link';
+
+const ROLES = {
+  manager:    { label: 'مدير',     icon: '👔', color: '#8b5cf6' },
+  sales:      { label: 'مبيعات',   icon: '💼', color: '#3b82f6' },
+  delivery:   { label: 'توصيل',    icon: '🚚', color: '#f59e0b' },
+  accountant: { label: 'محاسب',    icon: '📊', color: '#10b981' },
+  employee:   { label: 'موظف',     icon: '👤', color: '#64748b' },
+};
+
+const FILTERS = [
+  { key: 'all', label: 'الكل' },
+  { key: 'manager', label: 'مدير' },
+  { key: 'sales', label: 'مبيعات' },
+  { key: 'delivery', label: 'توصيل' },
+  { key: 'accountant', label: 'محاسب' },
+  { key: 'employee', label: 'موظف' },
+];
+
+export default function MerchantEmployeesPage() {
+  const { success, error: toastError } = useToast();
+  const { user, loading: userLoading, dataOwnerName } = useCurrentUser();
+
+  const [employees, setEmployees] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState('all');
+  const [search, setSearch] = useState('');
+
+  const [showAdd, setShowAdd] = useState(false);
+  const [editEmployee, setEditEmployee] = useState(null);
+  const [expandedId, setExpandedId] = useState(null);
+  const [deleting, setDeleting] = useState(null);
+
+  const [form, setForm] = useState({ full_name: '', phone: '', role: 'sales' });
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (userLoading) return;
+    if (!user || !dataOwnerName) { setLoading(false); return; }
+    loadEmployees();
+  }, [user, userLoading, dataOwnerName]);
+
+  async function loadEmployees() {
+    if (!supabase || !dataOwnerName) return;
+    try {
+      const { data } = await supabase
+        .from('employees')
+        .select('*')
+        .eq('entity_name', dataOwnerName)
+        .order('created_at', { ascending: false });
+      setEmployees(data || []);
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
+  }
+
+  const stats = useMemo(() => {
+    const total = employees.length;
+    const byRole = {};
+    Object.keys(ROLES).forEach(r => { byRole[r] = employees.filter(e => e.role === r).length; });
+    return { total, byRole };
+  }, [employees]);
+
+  const filtered = useMemo(() => {
+    let list = employees;
+    if (filter !== 'all') list = list.filter(e => e.role === filter);
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
+      list = list.filter(e =>
+        (e.full_name || '').toLowerCase().includes(q) ||
+        (e.phone || '').includes(q)
+      );
+    }
+    return list;
+  }, [employees, filter, search]);
+
+  function openAdd() {
+    setForm({ full_name: '', phone: '', role: 'sales' });
+    setEditEmployee(null);
+    setShowAdd(true);
+  }
+
+  function openEdit(e) {
+    setForm({ full_name: e.full_name || '', phone: e.phone || '', role: e.role || 'employee' });
+    setEditEmployee(e);
+    setShowAdd(true);
+  }
+
+  async function handleSave(e) {
+    e.preventDefault();
+    if (!form.full_name.trim() || !form.phone.trim()) {
+      toastError('الاسم والهاتف مطلوبان');
+      return;
+    }
+    setSaving(true);
+    try {
+      if (editEmployee) {
+        const { error } = await supabase.from('employees').update({
+          full_name: form.full_name, phone: form.phone, role: form.role
+        }).eq('id', editEmployee.id);
+        if (error) throw error;
+        success('✅ تم تحديث بيانات الموظف');
+      } else {
+        const { error } = await supabase.from('employees').insert({
+          full_name: form.full_name, phone: form.phone, role: form.role, entity_name: dataOwnerName
+        });
+        if (error) throw error;
+        success('✅ تمت إضافة الموظف');
+      }
+      setShowAdd(false);
+      loadEmployees();
+    } catch (err) {
+      toastError('حدث خطأ، تأكد من البيانات');
+    } finally { setSaving(false); }
+  }
+
+  async function handleDelete(emp) {
+    if (!confirm(`هل تريد حذف الموظف "${emp.full_name}" نهائياً؟`)) return;
+    setDeleting(emp.id);
+    const { error } = await supabase.from('employees').delete().eq('id', emp.id);
+    if (error) {
+      toastError('فشل الحذف');
+    } else {
+      success('🗑️ تم الحذف');
+      setEmployees(prev => prev.filter(x => x.id !== emp.id));
+    }
+    setDeleting(null);
+  }
+
+  if (loading) return <div style={{ padding: 80, textAlign: 'center' }}>⏳</div>;
+
+  return (
+    <div style={{ minHeight: '100vh', background: '#f8fafc', paddingBottom: 80 }}>
+      
+      {/* Header */}
+      <div style={{ background: '#0f4d3a', padding: '16px 20px', position: 'sticky', top: 0, zIndex: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+          <Link href="/merchant" style={{ color: '#fff', textDecoration: 'none', fontSize: 20 }}>→</Link>
+          <h1 style={{ color: '#fff', fontSize: 18, fontWeight: 900, margin: 0, flex: 1 }}>🧑‍💼 فريق العمل</h1>
+          <button onClick={openAdd} style={{ background: '#fbbf24', color: '#0f4d3a', border: 'none', padding: '8px 14px', borderRadius: 10, fontSize: 12, fontWeight: 900, cursor: 'pointer', fontFamily: 'inherit' }}>+ جديد</button>
+        </div>
+        <input
+          type="search"
+          placeholder="🔍 ابحث بالاسم أو الهاتف..."
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: 'none', fontSize: 13, outline: 'none', boxSizing: 'border-box', background: 'rgba(255,255,255,0.95)' }}
+        />
+        <div style={{ display: 'flex', gap: 6, marginTop: 12, overflowX: 'auto' }}>
+          {FILTERS.map(f => (
+            <button key={f.key} onClick={() => setFilter(f.key)} style={{ background: filter === f.key ? '#fff' : 'rgba(255,255,255,0.1)', color: filter === f.key ? '#0f4d3a' : '#fff', border: 'none', padding: '6px 14px', borderRadius: 20, fontSize: 12, fontWeight: 900, cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'inherit' }}>
+              {f.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ padding: 16 }}>
+        
+        {/* Stats */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 16 }}>
+          <StatBox label="الكل" value={stats.total} color="#0f4d3a" />
+          <StatBox label="مدراء" value={stats.byRole.manager || 0} color="#8b5cf6" />
+          <StatBox label="مبيعات" value={stats.byRole.sales || 0} color="#3b82f6" />
+        </div>
+
+        {/* List */}
+        {filtered.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: 40, background: '#fff', borderRadius: 16, color: '#64748b' }}>
+            <div style={{ fontSize: 48, marginBottom: 12 }}>🧑‍💼</div>
+            <div style={{ fontSize: 15, fontWeight: 900, marginBottom: 8 }}>
+              {employees.length === 0 ? 'لا يوجد موظفون بعد' : 'لا توجد نتائج مطابقة'}
+            </div>
+            {employees.length === 0 && (
+              <button onClick={openAdd} style={{ display: 'inline-block', background: '#0f4d3a', color: '#fff', padding: '10px 20px', borderRadius: 10, border: 'none', fontSize: 13, fontWeight: 900, cursor: 'pointer', fontFamily: 'inherit' }}>+ أضف أول موظف</button>
+            )}
+          </div>
+        ) : (
+          filtered.map(emp => {
+            const role = ROLES[emp.role] || ROLES.employee;
+            const isExpanded = expandedId === emp.id;
+            return (
+              <div key={emp.id} style={{ background: '#fff', borderRadius: 16, marginBottom: 12, border: '1px solid #e2e8f0', overflow: 'hidden' }}>
+                
+                <div style={{ padding: 14, display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }} onClick={() => setExpandedId(isExpanded ? null : emp.id)}>
+                  <div style={{ width: 44, height: 44, borderRadius: '50%', background: `linear-gradient(135deg, ${role.color}, ${role.color}cc)`, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, flexShrink: 0 }}>
+                    {role.icon}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 14, fontWeight: 900, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{emp.full_name || 'بدون اسم'}</div>
+                    <div style={{ fontSize: 12, color: '#64748b', marginTop: 2, fontFamily: 'monospace' }}>{emp.phone || '—'}</div>
+                  </div>
+                  <div style={{ background: `${role.color}15`, color: role.color, padding: '4px 10px', borderRadius: 8, fontSize: 11, fontWeight: 900, whiteSpace: 'nowrap' }}>
+                    {role.label}
+                  </div>
+                </div>
+
+                {isExpanded && (
+                  <div style={{ padding: '0 14px 14px', borderTop: '1px solid #f1f5f9', paddingTop: 14 }}>
+                    <div style={{ fontSize: 11, color: '#94a3b8', marginBottom: 12 }}>
+                      تاريخ الإضافة: {emp.created_at ? new Date(emp.created_at).toLocaleDateString('ar-SY') : '—'}
+                    </div>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <a href={`https://wa.me/${(emp.phone || '').replace(/[^0-9]/g, '')}`} target="_blank" rel="noreferrer" style={{ flex: 1, textAlign: 'center', padding: 10, background: 'rgba(37,211,102,0.1)', color: '#25D366', borderRadius: 8, textDecoration: 'none', fontSize: 12, fontWeight: 900, border: '1px solid rgba(37,211,102,0.3)' }}>💬 واتساب</a>
+                      <a href={`tel:${emp.phone}`} style={{ flex: 1, textAlign: 'center', padding: 10, background: 'rgba(59,130,246,0.1)', color: '#2563eb', borderRadius: 8, textDecoration: 'none', fontSize: 12, fontWeight: 900, border: '1px solid rgba(59,130,246,0.3)' }}>📞 اتصال</a>
+                      <button onClick={() => openEdit(emp)} style={{ flex: 1, padding: 10, background: 'rgba(245,158,11,0.1)', color: '#f59e0b', borderRadius: 8, border: '1px solid rgba(245,158,11,0.3)', fontSize: 12, fontWeight: 900, cursor: 'pointer', fontFamily: 'inherit' }}>✏️ تعديل</button>
+                      <button onClick={() => handleDelete(emp)} disabled={deleting === emp.id} style={{ flex: 1, padding: 10, background: 'rgba(239,68,68,0.1)', color: '#ef4444', borderRadius: 8, border: '1px solid rgba(239,68,68,0.3)', fontSize: 12, fontWeight: 900, cursor: deleting === emp.id ? 'wait' : 'pointer', fontFamily: 'inherit' }}>
+                        {deleting === emp.id ? '⏳' : '🗑️ حذف'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })
+        )}
+      </div>
+
+      <button onClick={openAdd} style={{
+        position: 'fixed', bottom: 20, left: 20, right: 20,
+        background: 'linear-gradient(135deg, #10b981, #059669)',
+        color: '#fff', padding: 16, borderRadius: 14,
+        border: 'none', fontSize: 15, fontWeight: 900,
+        boxShadow: '0 10px 30px rgba(16,185,129,0.4)',
+        cursor: 'pointer', fontFamily: 'inherit', zIndex: 30
+      }}>
+        + إضافة موظف جديد
+      </button>
+
+      {showAdd && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 100, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+          <div style={{ background: '#fff', width: '100%', maxWidth: 500, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, maxHeight: '90vh', overflowY: 'auto' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+              <h2 style={{ fontSize: 18, fontWeight: 900, margin: 0 }}>{editEmployee ? '✏️ تعديل موظف' : '🧑‍💼 موظف جديد'}</h2>
+              <button onClick={() => setShowAdd(false)} style={{ background: '#f1f5f9', border: 'none', width: 32, height: 32, borderRadius: '50%', fontSize: 16, cursor: 'pointer' }}>✕</button>
+            </div>
+            <form onSubmit={handleSave}>
+              <div style={{ marginBottom: 12 }}>
+                <label style={labelStyle}>الاسم الكامل *</label>
+                <input value={form.full_name} onChange={e => setForm({ ...form, full_name: e.target.value })} required style={inputStyle} placeholder="اسم الموظف" />
+              </div>
+              <div style={{ marginBottom: 12 }}>
+                <label style={labelStyle}>رقم الهاتف *</label>
+                <input value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} required type="tel" style={inputStyle} placeholder="09xxxxxxxx" />
+              </div>
+              <div style={{ marginBottom: 16 }}>
+                <label style={labelStyle}>الدور / الصلاحية</label>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8, marginTop: 4 }}>
+                  {Object.entries(ROLES).map(([key, r]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => setForm({ ...form, role: key })}
+                      style={{
+                        padding: '12px 8px',
+                        borderRadius: 10,
+                        border: form.role === key ? `2px solid ${r.color}` : '1px solid #e2e8f0',
+                        background: form.role === key ? `${r.color}10` : '#fff',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        fontFamily: 'inherit',
+                        fontSize: 12,
+                        fontWeight: 900,
+                        color: form.role === key ? r.color : '#475569'
+                      }}
+                    >
+                      <span style={{ fontSize: 16 }}>{r.icon}</span>
+                      <span>{r.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <button type="submit" disabled={saving} style={{ width: '100%', padding: 14, background: saving ? '#94a3b8' : '#0f4d3a', color: '#fff', border: 'none', borderRadius: 10, fontWeight: 900, fontSize: 15, cursor: saving ? 'wait' : 'pointer', fontFamily: 'inherit' }}>
+                {saving ? '⏳ جارٍ الحفظ...' : (editEmployee ? 'حفظ التغييرات' : 'إضافة الموظف')}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StatBox({ label, value, color }) {
+  return (
+    <div style={{ background: '#fff', borderRadius: 12, padding: 12, textAlign: 'center', border: '1px solid #e2e8f0' }}>
+      <div style={{ fontSize: 20, fontWeight: 900, color, marginBottom: 2 }}>{value}</div>
+      <div style={{ fontSize: 10, color: '#64748b', fontWeight: 800 }}>{label}</div>
+    </div>
+  );
+}
+
+const labelStyle = { display: 'block', fontSize: 12, fontWeight: 800, color: '#475569', marginBottom: 6 };
+const inputStyle = { width: '100%', padding: '12px 14px', borderRadius: 10, border: '1px solid #cbd5e1', fontSize: 14, fontFamily: 'inherit', boxSizing: 'border-box', outline: 'none', background: '#f8fafc' };

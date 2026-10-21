@@ -1,0 +1,203 @@
+'use client';
+import { useState, useEffect } from 'react';
+import { useParams, useRouter } from 'next/navigation';
+import Link from 'next/link';
+import { supabase } from '@/lib/supabase';
+import { useToast } from '@/components/Toast';
+import { addToCart } from '@/lib/cart';
+
+// دالة حساب المسافة بين الزبون والمتجر
+function getDistanceFromLatLonInKm(lat1, lon1, lat2, lon2) {
+  if (!lat1 || !lon1 || !lat2 || !lon2) return null;
+  const R = 6371;
+  const dLat = (lat2 - lat1) * (Math.PI / 180);
+  const dLon = (lon2 - lon1) * (Math.PI / 180);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return (R * c).toFixed(1);
+}
+
+export default function ProductPage() {
+  const { id } = useParams();
+  const router = useRouter();
+  const { success } = useToast();
+
+  const [product, setProduct] = useState(null);
+  const [store, setStore] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [qty, setQty] = useState(1);
+  const [distance, setDistance] = useState(null);
+  const [deliveryFee, setDeliveryFee] = useState(0);
+
+  useEffect(() => {
+    async function loadData() {
+      if (!supabase || !id) return;
+      
+      // ١. جلب المنتج
+      const { data: prod } = await supabase.from('products').select('*').eq('id', id).maybeSingle();
+      if (!prod) { setLoading(false); return; }
+      setProduct(prod);
+
+      // ٢. جلب المتجر (المزود)
+      if (prod.entity_id) {
+        const { data: ent } = await supabase.from('entities').select('*').eq('id', prod.entity_id).maybeSingle();
+        if (ent) {
+          setStore(ent);
+          
+          // ٣. حساب المسافة (إذا كان موقع المستخدم والموقع متوفرين)
+          try {
+            const loc = JSON.parse(localStorage.getItem('sanad_location') || 'null');
+            if (loc && ent.lat && ent.lng) {
+              const dist = getDistanceFromLatLonInKm(loc.lat, loc.lng, ent.lat, ent.lng);
+              setDistance(dist);
+              if (dist) {
+                const fee = Math.ceil(dist / 5) * 2; 
+                setDeliveryFee(fee);
+              }
+            }
+          } catch (e) { console.log('Location error', e); }
+        }
+      }
+      setLoading(false);
+    }
+    loadData();
+  }, [id]);
+
+  function handleAddToCart() {
+    if (!product) return;
+    addToCart({
+      id: product.id,
+      title: product.title,
+      price: Number(product.price),
+      currency: product.currency || 'SYP',
+      image: product.image_url,
+      provider_name: store?.display_name || 'متجر',
+      provider_id: store?.id,
+      qty: qty,
+    });
+    success('تمت الإضافة للسلة 🛒');
+  }
+
+  function handleBuyNow() {
+    handleAddToCart();
+    router.push('/cart');
+  }
+
+  if (loading) return <div style={{ padding: 80, textAlign: 'center' }}>⏳ جارٍ التحميل...</div>;
+  if (!product) return <div style={{ padding: 80, textAlign: 'center', fontWeight: 900 }}>المنتج غير موجود</div>;
+
+  const price = Number(product.price) || 0;
+  const disc = Number(product.discount_percent) || 0;
+  const finalPrice = Math.round(price - (price * disc / 100));
+
+  return (
+    <div style={{ minHeight: '100vh', background: '#f8fafc', paddingBottom: 100 }}>
+      
+      {/* صورة المنتج */}
+      <div style={{ position: 'relative', background: '#fff' }}>
+        <div style={{ position: 'absolute', top: 16, left: 16, right: 16, display: 'flex', justifyContent: 'space-between', zIndex: 10 }}>
+          <button onClick={() => router.back()} style={{ width: 40, height: 40, borderRadius: '50%', background: 'rgba(255,255,255,0.9)', border: 'none', fontSize: 18, cursor: 'pointer', boxShadow: '0 2px 10px rgba(0,0,0,0.1)' }}>→</button>
+          <Link href="/cart" style={{ width: 40, height: 40, borderRadius: '50%', background: 'rgba(255,255,255,0.9)', display: 'flex', alignItems: 'center', justifyContent: 'center', textDecoration: 'none', fontSize: 18, boxShadow: '0 2px 10px rgba(0,0,0,0.1)' }}>🛒</Link>
+        </div>
+        {product.image_url ? (
+          <img src={product.image_url} alt={product.title} style={{ width: '100%', height: 350, objectFit: 'cover' }} />
+        ) : (
+          <div style={{ width: '100%', height: 350, background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 60 }}>📦</div>
+        )}
+      </div>
+
+      <div style={{ padding: 16 }}>
+        
+        {/* الاسم والسعر */}
+        <div style={{ background: '#fff', borderRadius: 20, padding: 20, marginTop: -30, position: 'relative', zIndex: 5, boxShadow: '0 4px 20px rgba(0,0,0,0.05)' }}>
+          <h1 style={{ fontSize: 20, fontWeight: 900, color: '#0f172a', margin: '0 0 8px 0', lineHeight: 1.4 }}>{product.title}</h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 24, fontWeight: 900, color: '#0f4d3a' }}>{finalPrice.toLocaleString()} <span style={{ fontSize: 14 }}>{product.currency || 'SYP'}</span></span>
+            {disc > 0 && (
+              <span style={{ fontSize: 14, color: '#94a3b8', textDecoration: 'line-through' }}>{price.toLocaleString()}</span>
+            )}
+          </div>
+        </div>
+
+        {/* بطاقة المتجر (المزود) */}
+        {store && (
+          <div style={{ background: '#fff', borderRadius: 20, padding: 16, marginTop: 12, border: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', gap: 12 }}>
+            {store.logo_url ? (
+              <img src={store.logo_url} alt={store.display_name} style={{ width: 50, height: 50, borderRadius: 12, objectFit: 'cover' }} />
+            ) : (
+              <div style={{ width: 50, height: 50, borderRadius: 12, background: '#0f4d3a', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24 }}>🏪</div>
+            )}
+            <div style={{ flex: 1 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <div style={{ fontSize: 15, fontWeight: 900, color: '#0f172a' }}>{store.display_name}</div>
+                {store.is_verified && <span style={{ fontSize: 12, color: '#10b981' }}>✅ موثق</span>}
+              </div>
+              <div style={{ fontSize: 12, color: '#64748b', marginTop: 4, display: 'flex', gap: 10 }}>
+                {distance && <span>📍 يبعد عنك {distance} كم</span>}
+                {store.city && <span>🏙️ {store.city}</span>}
+              </div>
+            </div>
+            <Link href={`/store/${encodeURIComponent(store.display_name)}`} style={{ background: 'rgba(15,77,58,0.1)', color: '#0f4d3a', padding: '8px 12px', borderRadius: 10, fontSize: 12, fontWeight: 900, textDecoration: 'none' }}>
+              زيارة
+            </Link>
+          </div>
+        )}
+
+        {/* التوصيل */}
+        <div style={{ background: '#fff', borderRadius: 20, padding: 16, marginTop: 12, border: '1px solid #e2e8f0' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ width: 40, height: 40, borderRadius: 10, background: 'rgba(59,130,246,0.1)', color: '#3b82f6', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>🚚</div>
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 900, color: '#0f172a' }}>التوصيل متاح</div>
+              <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
+                {deliveryFee > 0 ? `تكلفة التوصيل المتوقعة: ~${deliveryFee}$` : 'التوصيل يعتمد على موقعك'}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* الوصف */}
+        <div style={{ background: '#fff', borderRadius: 20, padding: 20, marginTop: 12, border: '1px solid #e2e8f0' }}>
+          <h3 style={{ fontSize: 15, fontWeight: 900, marginBottom: 12, color: '#0f172a', display: 'flex', alignItems: 'center', gap: 6 }}>📝 الوصف</h3>
+          <p style={{ fontSize: 14, color: '#475569', lineHeight: 1.8, margin: 0, whiteSpace: 'pre-wrap' }}>
+            {product.description || 'لا يوجد وصف لهذا المنتج.'}
+          </p>
+        </div>
+
+      </div>
+
+      {/* شريط الشراء الثابت (Sticky Bottom Bar) */}
+      <div style={{ 
+        position: 'fixed', 
+        bottom: 0, 
+        left: 0, 
+        right: 0, 
+        background: '#fff', 
+        borderTop: '1px solid #e2e8f0', 
+        padding: '12px 16px', 
+        paddingBottom: 'calc(12px + env(safe-area-inset-bottom))', 
+        display: 'flex', 
+        gap: 10, 
+        zIndex: 50,
+        boxShadow: '0 -10px 20px rgba(0,0,0,0.05)'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', background: '#f1f5f9', borderRadius: 12, padding: '0 8px' }}>
+          <button onClick={() => setQty(Math.max(1, qty - 1))} style={{ width: 32, height: 44, background: 'none', border: 'none', fontSize: 18, cursor: 'pointer' }}>−</button>
+          <div style={{ width: 32, textAlign: 'center', fontSize: 15, fontWeight: 900 }}>{qty}</div>
+          <button onClick={() => setQty(qty + 1)} style={{ width: 32, height: 44, background: 'none', border: 'none', fontSize: 18, cursor: 'pointer' }}>+</button>
+        </div>
+
+        <button onClick={handleAddToCart} style={{ flex: 1, background: '#e0f2fe', color: '#0284c7', border: 'none', borderRadius: 12, fontSize: 14, fontWeight: 900, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+          🛒 أضف للسلة
+        </button>
+
+        <button onClick={handleBuyNow} style={{ flex: 1, background: '#0f4d3a', color: '#fff', border: 'none', borderRadius: 12, fontSize: 14, fontWeight: 900, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, boxShadow: '0 4px 12px rgba(15,77,58,0.3)' }}>
+          ⚡ اشتري الآن
+        </button>
+      </div>
+    </div>
+  );
+}

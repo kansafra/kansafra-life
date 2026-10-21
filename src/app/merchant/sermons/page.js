@@ -5,181 +5,167 @@ import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
 import { useCurrentUser } from '@/lib/useCurrentUser';
 import { useToast } from '@/components/Toast';
-import { SkeletonList } from '@/components/Skeleton';
-import EmptyState from '@/components/EmptyState';
 
-export default function SermonsPage() {
+export default function MerchantSermonsPage() {
   const router = useRouter();
-  const { user, loading: uL, dataOwnerName } = useCurrentUser();
-  const { success, error: tE } = useToast();
+  const { success, error: toastError } = useToast();
+  const { user, loading: userLoading, dataOwnerName } = useCurrentUser();
+  const [entityId, setEntityId] = useState(null);
   const [sermons, setSermons] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [modal, setModal] = useState(null);
-  const [form, setForm] = useState({});
+  const [showForm, setShowForm] = useState(false);
+  const [editSermon, setEditSermon] = useState(null);
+  const [form, setForm] = useState({ title: '', speaker: '', content: '', audio_url: '', video_url: '', sermon_date: '' });
   const [saving, setSaving] = useState(false);
-  const [viewing, setViewing] = useState(null);
+  const [deleting, setDeleting] = useState(null);
 
   useEffect(() => {
-    if (uL) return;
-    if (!user) { router.replace('/login'); return; }
-    load();
-  }, [user, uL]);
+    if (userLoading) return;
+    if (!user || !dataOwnerName) { setLoading(false); return; }
+    const stored = JSON.parse(localStorage.getItem('sanad_entity') || 'null');
+    if (stored?.parent_entity_id) setEntityId(stored.parent_entity_id);
+    else if (dataOwnerName) supabase.from('entities').select('id').eq('display_name', dataOwnerName).maybeSingle().then(({ data }) => { if (data) setEntityId(data.id); });
+    loadSermons();
+  }, [user, userLoading, dataOwnerName]);
 
-  async function load() {
-    if (!supabase || !dataOwnerName) { setLoading(false); return; }
+  async function loadSermons() {
+    if (!supabase || !dataOwnerName) return;
+    setLoading(true);
     try {
-      const { data } = await supabase.from('sermons').select('*').eq('entity_name', dataOwnerName).order('sermon_date', { ascending: false });
+      const { data } = await supabase.from('sermons').select('*').eq('provider_name', dataOwnerName).order('sermon_date', { ascending: false });
       setSermons(data || []);
-    } catch (e) { tE('تعذّر التحميل'); }
-    setLoading(false);
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
+  }
+
+  function openAdd() {
+    setForm({ title: '', speaker: '', content: '', audio_url: '', video_url: '', sermon_date: new Date().toISOString().split('T')[0] });
+    setEditSermon(null);
+    setShowForm(true);
+  }
+
+  function openEdit(s) {
+    setForm({
+      title: s.title || '', speaker: s.speaker || '', content: s.content || '',
+      audio_url: s.audio_url || '', video_url: s.video_url || '',
+      sermon_date: s.sermon_date || '',
+    });
+    setEditSermon(s);
+    setShowForm(true);
+  }
+
+  async function saveSermon(e) {
+    e.preventDefault();
+    if (!form.title.trim()) { toastError('عنوان الخطبة مطلوب'); return; }
+    setSaving(true);
+    try {
+      const payload = {
+        entity_id: entityId, provider_name: dataOwnerName,
+        title: form.title.trim(), speaker: form.speaker.trim() || null,
+        content: form.content.trim() || null,
+        audio_url: form.audio_url.trim() || null,
+        video_url: form.video_url.trim() || null,
+        sermon_date: form.sermon_date || null,
+        is_active: true,
+      };
+      if (editSermon) {
+        const { error } = await supabase.from('sermons').update(payload).eq('id', editSermon.id);
+        if (error) throw error;
+        success('✅ تم التعديل');
+      } else {
+        const { error } = await supabase.from('sermons').insert(payload);
+        if (error) throw error;
+        success('🎉 تم إضافة الخطبة');
+      }
+      setShowForm(false);
+      loadSermons();
+    } catch (err) { console.error(err); toastError('فشل الحفظ'); }
+    finally { setSaving(false); }
+  }
+
+  async function toggleActive(s) {
+    const { error } = await supabase.from('sermons').update({ is_active: !s.is_active }).eq('id', s.id);
+    if (!error) {
+      success(s.is_active ? '🙈 مخفية' : '✅ نشطة');
+      setSermons(prev => prev.map(x => x.id === s.id ? { ...x, is_active: !x.is_active } : x));
+    }
+  }
+
+  async function deleteSermon(s) {
+    if (!confirm(`حذف الخطبة "${s.title}"؟`)) return;
+    setDeleting(s.id);
+    const { error } = await supabase.from('sermons').delete().eq('id', s.id);
+    if (!error) { success('🗑️ تم الحذف'); setSermons(prev => prev.filter(x => x.id !== s.id)); }
+    setDeleting(null);
   }
 
   const filtered = useMemo(() => {
     if (!search.trim()) return sermons;
     const q = search.trim().toLowerCase();
-    return sermons.filter(s =>
-      (s.title || '').toLowerCase().includes(q) ||
-      (s.khatib || '').toLowerCase().includes(q)
-    );
+    return sermons.filter(s => (s.title || '').toLowerCase().includes(q) || (s.speaker || '').toLowerCase().includes(q));
   }, [sermons, search]);
 
-  function openAdd() {
-    setForm({ title: '', khatib: '', content: '', audio_url: '', video_url: '', sermon_date: new Date().toISOString().slice(0, 10), is_published: true });
-    setModal('add');
-  }
-
-  function openEdit(s) { setForm({ ...s, sermon_date: s.sermon_date || '' }); setModal('edit'); }
-
-  async function save() {
-    if (!form.title?.trim()) { tE('العنوان مطلوب'); return; }
-    setSaving(true);
-    try {
-      const payload = {
-        entity_name: dataOwnerName,
-        title: form.title.trim(),
-        khatib: form.khatib?.trim() || null,
-        content: form.content?.trim() || null,
-        audio_url: form.audio_url?.trim() || null,
-        video_url: form.video_url?.trim() || null,
-        sermon_date: form.sermon_date || null,
-        is_published: form.is_published !== false,
-      };
-      let err;
-      if (modal === 'edit') ({ error: err } = await supabase.from('sermons').update(payload).eq('id', form.id));
-      else ({ error: err } = await supabase.from('sermons').insert(payload));
-      if (err) throw err;
-      success(modal === 'edit' ? '✅ تم التعديل' : '✅ تمت الإضافة');
-      setModal(null); load();
-    } catch (e) { tE('تعذّر: ' + e.message); }
-    setSaving(false);
-  }
-
-  async function del(s) {
-    if (!confirm(`حذف خطبة "${s.title}"؟`)) return;
-    await supabase.from('sermons').delete().eq('id', s.id);
-    success('✅ تم الحذف'); load();
-  }
-
-  async function toggle(s) {
-    await supabase.from('sermons').update({ is_published: !s.is_published }).eq('id', s.id);
-    load();
-  }
-
-  if (uL || loading) return <div style={{ padding: 16, background: '#f8fafc', minHeight: '100vh' }}><SkeletonList count={3} /></div>;
+  if (userLoading || loading) return <div style={{ padding: 80, textAlign: 'center' }}>⏳</div>;
 
   return (
-    <div style={{ minHeight: '100vh', background: '#f8fafc', paddingBottom: 80 }}>
-      <div style={{ position: 'sticky', top: 0, zIndex: 10, background: 'linear-gradient(135deg,#0f4d3a,#075640)', padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
-        <Link href="/merchant" style={{ color: '#fff', textDecoration: 'none', fontSize: 20, width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,.15)', borderRadius: '50%' }}>→</Link>
-        <div style={{ flex: 1 }}>
-          <div style={{ color: '#fff', fontSize: 16, fontWeight: 900 }}>📖 الخطب</div>
-          <div style={{ color: 'rgba(255,255,255,.8)', fontSize: 11, marginTop: 2 }}>{sermons.length} خطبة</div>
+    <div style={{ minHeight: '100vh', background: '#f8fafc', paddingBottom: 100 }}>
+      <div style={{ background: '#0f4d3a', padding: '16px 20px', position: 'sticky', top: 0, zIndex: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+          <Link href="/merchant" style={{ color: '#fff', textDecoration: 'none', fontSize: 20 }}>←</Link>
+          <div style={{ flex: 1 }}><h1 style={{ color: '#fff', fontSize: 18, fontWeight: 900, margin: 0 }}>🕌 الخطب</h1></div>
+          <button onClick={openAdd} style={{ background: '#fbbf24', color: '#0f4d3a', border: 'none', padding: '8px 14px', borderRadius: 10, fontSize: 12, fontWeight: 900, cursor: 'pointer', fontFamily: 'inherit' }}>+ جديد</button>
         </div>
-        <button onClick={openAdd} style={{ background: '#fbbf24', color: '#0f4d3a', border: 'none', padding: '8px 14px', borderRadius: 10, fontSize: 12, fontWeight: 900, cursor: 'pointer', fontFamily: 'inherit' }}>+ خطبة</button>
+        <input type="search" placeholder="🔍 ابحث في الخطب..." value={search} onChange={e => setSearch(e.target.value)} style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: 'none', fontSize: 13, outline: 'none', boxSizing: 'border-box', background: 'rgba(255,255,255,0.95)' }} />
       </div>
 
-      <div style={{ padding: 16 }}>
-        <input type="text" placeholder="🔍 ابحث بالعنوان أو الخطيب..." value={search} onChange={(e) => setSearch(e.target.value)}
-          style={{ width: '100%', padding: '12px 14px', border: '1px solid #e5e7eb', borderRadius: 12, fontSize: 13, fontFamily: 'inherit', boxSizing: 'border-box', outline: 'none', background: '#fff' }} />
-      </div>
-
-      <div style={{ padding: '0 16px' }}>
+      <div style={{ padding: 16, maxWidth: 800, margin: '0 auto' }}>
         {filtered.length === 0 ? (
-          <EmptyState icon="📖" title="لا توجد خطب" description="أضف خطب الجمعة للرجوع إليها" actionLabel="+ خطبة جديدة" onAction={openAdd} />
+          <div style={{ textAlign: 'center', padding: 40, background: '#fff', borderRadius: 16, color: '#64748b' }}>
+            <div style={{ fontSize: 48, marginBottom: 12 }}>🕌</div>
+            <div style={{ fontSize: 15, fontWeight: 900, marginBottom: 8 }}>{sermons.length === 0 ? 'لا توجد خطب بعد' : 'لا نتائج'}</div>
+            {sermons.length === 0 && <button onClick={openAdd} style={{ background: '#0f4d3a', color: '#fff', padding: '10px 20px', borderRadius: 10, border: 'none', fontSize: 13, fontWeight: 900, cursor: 'pointer', fontFamily: 'inherit' }}>+ أضف أول خطبة</button>}
+          </div>
         ) : filtered.map(s => (
-          <div key={s.id} style={{ background: '#fff', borderRadius: 14, padding: 14, marginBottom: 10, border: '1px solid #e5e7eb', opacity: s.is_published ? 1 : 0.6 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 14, fontWeight: 900, color: '#0f172a' }}>📖 {s.title}</div>
-                <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
-                  {s.khatib && `👨‍🏫 ${s.khatib}`}
-                  {s.sermon_date && ` · 📅 ${new Date(s.sermon_date).toLocaleDateString('ar-EG')}`}
-                </div>
+          <div key={s.id} style={{ background: '#fff', borderRadius: 14, padding: 14, marginBottom: 10, border: '1px solid #e2e8f0', opacity: s.is_active ? 1 : 0.6 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 14, fontWeight: 900, color: '#0f172a' }}>{s.title}</div>
+                {s.speaker && <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>🎙️ {s.speaker}</div>}
+                {s.sermon_date && <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>📅 {new Date(s.sermon_date).toLocaleDateString('ar-SY')}</div>}
               </div>
-              <span style={{ background: s.is_published ? 'rgba(16,185,129,.15)' : '#f1f5f9', color: s.is_published ? '#10b981' : '#64748b', padding: '3px 10px', borderRadius: 6, fontSize: 9.5, fontWeight: 900, height: 'fit-content' }}>{s.is_published ? '✓ منشورة' : '○ مسودة'}</span>
+              <div style={{ background: s.is_active ? 'rgba(16,185,129,0.1)' : 'rgba(148,163,184,0.15)', color: s.is_active ? '#10b981' : '#64748b', padding: '4px 10px', borderRadius: 8, fontSize: 10, fontWeight: 900 }}>{s.is_active ? '✅' : '⏸️'}</div>
             </div>
-            {s.content && <div style={{ fontSize: 12, color: '#334155', lineHeight: 1.6, marginBottom: 8, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{s.content}</div>}
+            {s.content && <div style={{ fontSize: 12, color: '#475569', lineHeight: 1.5, marginBottom: 10, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{s.content}</div>}
             <div style={{ display: 'flex', gap: 6 }}>
-              <button onClick={() => setViewing(s)} style={{ flex: 1, padding: 8, background: 'rgba(15,77,58,.1)', color: '#0f4d3a', border: 'none', borderRadius: 8, fontSize: 11, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' }}>👁️ عرض</button>
-              {s.audio_url && <a href={s.audio_url} target="_blank" rel="noopener" style={{ padding: 8, background: 'rgba(59,130,246,.1)', color: '#3b82f6', borderRadius: 8, fontSize: 11, fontWeight: 800, textDecoration: 'none' }}>🔊</a>}
-              {s.video_url && <a href={s.video_url} target="_blank" rel="noopener" style={{ padding: 8, background: 'rgba(220,38,38,.1)', color: '#dc2626', borderRadius: 8, fontSize: 11, fontWeight: 800, textDecoration: 'none' }}>▶️</a>}
-              <button onClick={() => openEdit(s)} style={{ padding: 8, background: '#f1f5f9', border: 'none', borderRadius: 8, fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>✏️</button>
-              <button onClick={() => toggle(s)} style={{ padding: 8, background: s.is_published ? 'rgba(251,191,36,.1)' : 'rgba(16,185,129,.1)', color: s.is_published ? '#92400e' : '#10b981', border: 'none', borderRadius: 8, fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>{s.is_published ? '⏸' : '▶'}</button>
-              <button onClick={() => del(s)} style={{ padding: 8, background: 'rgba(220,38,38,.1)', color: '#dc2626', border: 'none', borderRadius: 8, fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>🗑️</button>
+              <button onClick={() => openEdit(s)} style={btnStyle('rgba(14,165,233,0.1)', '#0284c7')}>✏️ تعديل</button>
+              <button onClick={() => toggleActive(s)} style={btnStyle(s.is_active ? 'rgba(245,158,11,0.1)' : 'rgba(16,185,129,0.1)', s.is_active ? '#f59e0b' : '#10b981')}>{s.is_active ? '🙈' : '👁️'}</button>
+              <button onClick={() => deleteSermon(s)} disabled={deleting === s.id} style={btnStyle('rgba(239,68,68,0.1)', '#ef4444')}>{deleting === s.id ? '⏳' : '🗑️'}</button>
             </div>
           </div>
         ))}
       </div>
 
-      {/* View Modal */}
-      {viewing && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 100, display: 'flex', alignItems: 'flex-end' }} onClick={() => setViewing(null)}>
-          <div style={{ background: '#fff', borderRadius: '24px 24px 0 0', width: '100%', maxWidth: 500, margin: '0 auto', padding: '24px 20px 30px', maxHeight: '90vh', overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
-            <div style={{ textAlign: 'center', marginBottom: 20 }}>
-              <div style={{ fontSize: 48, marginBottom: 12 }}>📖</div>
-              <h3 style={{ fontSize: 18, fontWeight: 900 }}>{viewing.title}</h3>
-              {viewing.khatib && <div style={{ fontSize: 12, color: '#64748b', marginTop: 6 }}>👨‍🏫 {viewing.khatib}</div>}
-              {viewing.sermon_date && <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>📅 {new Date(viewing.sermon_date).toLocaleDateString('ar-EG', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</div>}
-            </div>
-            {viewing.content && (
-              <div style={{ background: '#f8fafc', borderRadius: 12, padding: 16, marginBottom: 16, fontSize: 14, lineHeight: 2, color: '#334155', whiteSpace: 'pre-line' }}>
-                {viewing.content}
-              </div>
-            )}
-            <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-              {viewing.audio_url && <a href={viewing.audio_url} target="_blank" rel="noopener" style={{ flex: 1, padding: 12, background: 'rgba(59,130,246,.1)', color: '#3b82f6', borderRadius: 10, textAlign: 'center', textDecoration: 'none', fontSize: 12, fontWeight: 900 }}>🔊 استماع</a>}
-              {viewing.video_url && <a href={viewing.video_url} target="_blank" rel="noopener" style={{ flex: 1, padding: 12, background: 'rgba(220,38,38,.1)', color: '#dc2626', borderRadius: 10, textAlign: 'center', textDecoration: 'none', fontSize: 12, fontWeight: 900 }}>▶️ مشاهدة</a>}
-            </div>
-            <button onClick={() => setViewing(null)} style={{ width: '100%', padding: 12, background: '#f1f5f9', color: '#334155', border: 'none', borderRadius: 10, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' }}>إغلاق</button>
-          </div>
-        </div>
-      )}
-
-      {/* Edit Modal */}
-      {modal && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 100, display: 'flex', alignItems: 'flex-end' }} onClick={() => setModal(null)}>
-          <div style={{ background: '#fff', borderRadius: '24px 24px 0 0', width: '100%', maxWidth: 500, margin: '0 auto', padding: '24px 20px 30px', maxHeight: '90vh', overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
-            <h3 style={{ fontSize: 18, fontWeight: 900, marginBottom: 16 }}>{modal === 'edit' ? 'تعديل خطبة' : 'خطبة جديدة'}</h3>
-
-            <input type="text" placeholder="عنوان الخطبة *" value={form.title || ''} onChange={(e) => setForm({ ...form, title: e.target.value })} style={{ width: '100%', padding: 12, border: '1px solid #e5e7eb', borderRadius: 10, fontSize: 13, marginBottom: 10, boxSizing: 'border-box', fontFamily: 'inherit' }} />
-            <input type="text" placeholder="اسم الخطيب" value={form.khatib || ''} onChange={(e) => setForm({ ...form, khatib: e.target.value })} style={{ width: '100%', padding: 12, border: '1px solid #e5e7eb', borderRadius: 10, fontSize: 13, marginBottom: 10, boxSizing: 'border-box', fontFamily: 'inherit' }} />
-            <input type="date" value={form.sermon_date || ''} onChange={(e) => setForm({ ...form, sermon_date: e.target.value })} style={{ width: '100%', padding: 12, border: '1px solid #e5e7eb', borderRadius: 10, fontSize: 13, marginBottom: 10, boxSizing: 'border-box', fontFamily: 'inherit' }} />
-            <textarea placeholder="محتوى الخطبة..." value={form.content || ''} onChange={(e) => setForm({ ...form, content: e.target.value })} rows={6} style={{ width: '100%', padding: 12, border: '1px solid #e5e7eb', borderRadius: 10, fontSize: 13, marginBottom: 10, boxSizing: 'border-box', fontFamily: 'inherit', resize: 'vertical' }} />
-            <input type="url" placeholder="رابط الصوت (اختياري)" value={form.audio_url || ''} onChange={(e) => setForm({ ...form, audio_url: e.target.value })} style={{ width: '100%', padding: 12, border: '1px solid #e5e7eb', borderRadius: 10, fontSize: 13, marginBottom: 10, boxSizing: 'border-box', fontFamily: 'inherit', direction: 'ltr' }} />
-            <input type="url" placeholder="رابط الفيديو (اختياري)" value={form.video_url || ''} onChange={(e) => setForm({ ...form, video_url: e.target.value })} style={{ width: '100%', padding: 12, border: '1px solid #e5e7eb', borderRadius: 10, fontSize: 13, marginBottom: 10, boxSizing: 'border-box', fontFamily: 'inherit', direction: 'ltr' }} />
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: 10, background: '#f0fdf4', borderRadius: 8, marginBottom: 16, cursor: 'pointer' }}>
-              <input type="checkbox" checked={form.is_published !== false} onChange={(e) => setForm({ ...form, is_published: e.target.checked })} />
-              <span style={{ fontSize: 12, fontWeight: 800, color: '#065f46' }}>منشورة للجمهور</span>
-            </label>
-
-            <div style={{ display: 'flex', gap: 10 }}>
-              <button onClick={() => setModal(null)} style={{ flex: 1, padding: 12, background: '#f1f5f9', border: 'none', borderRadius: 10, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' }}>إلغاء</button>
-              <button onClick={save} disabled={saving} style={{ flex: 1, padding: 12, background: 'linear-gradient(135deg,#0f4d3a,#075640)', color: '#fff', border: 'none', borderRadius: 10, fontWeight: 900, cursor: saving ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>{saving ? '...' : '✓ حفظ'}</button>
-            </div>
+      {showForm && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 100, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+          <div style={{ background: '#fff', width: '100%', maxWidth: 500, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, maxHeight: '90vh', overflowY: 'auto' }}>
+            <h2 style={{ fontSize: 18, fontWeight: 900, margin: '0 0 20px' }}>{editSermon ? '✏️ تعديل خطبة' : '🕌 خطبة جديدة'}</h2>
+            <form onSubmit={saveSermon}>
+              <div style={{ marginBottom: 12 }}><label style={labelStyle}>عنوان الخطبة *</label><input value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} required style={inputStyle} /></div>
+              <div style={{ marginBottom: 12 }}><label style={labelStyle}>الخطيب</label><input value={form.speaker} onChange={e => setForm({ ...form, speaker: e.target.value })} style={inputStyle} /></div>
+              <div style={{ marginBottom: 12 }}><label style={labelStyle}>المحتوى</label><textarea value={form.content} onChange={e => setForm({ ...form, content: e.target.value })} style={{ ...inputStyle, height: 120, resize: 'none' }} /></div>
+              <div style={{ marginBottom: 12 }}><label style={labelStyle}>رابط الصوت</label><input value={form.audio_url} onChange={e => setForm({ ...form, audio_url: e.target.value })} style={inputStyle} placeholder="https://..." /></div>
+              <div style={{ marginBottom: 12 }}><label style={labelStyle}>رابط الفيديو</label><input value={form.video_url} onChange={e => setForm({ ...form, video_url: e.target.value })} style={inputStyle} placeholder="https://..." /></div>
+              <div style={{ marginBottom: 20 }}><label style={labelStyle}>التاريخ</label><input type="date" value={form.sermon_date} onChange={e => setForm({ ...form, sermon_date: e.target.value })} style={inputStyle} /></div>
+              <button type="submit" disabled={saving} style={{ width: '100%', padding: 14, background: saving ? '#94a3b8' : '#0f4d3a', color: '#fff', border: 'none', borderRadius: 10, fontWeight: 900, fontSize: 15, cursor: 'pointer', fontFamily: 'inherit' }}>{saving ? '⏳ جارٍ الحفظ...' : '💾 حفظ'}</button>
+            </form>
           </div>
         </div>
       )}
     </div>
   );
 }
+
+const labelStyle = { display: 'block', fontSize: 12, fontWeight: 800, color: '#475569', marginBottom: 6 };
+const inputStyle = { width: '100%', padding: '12px 14px', borderRadius: 10, border: '1px solid #cbd5e1', fontSize: 14, fontFamily: 'inherit', boxSizing: 'border-box', outline: 'none', background: '#f8fafc' };
+const btnStyle = (bg, color) => ({ flex: 1, padding: 10, background: bg, color, border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 900, cursor: 'pointer', fontFamily: 'inherit' });

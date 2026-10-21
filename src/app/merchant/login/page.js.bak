@@ -1,0 +1,165 @@
+'use client';
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+import { supabase } from '@/lib/supabase';
+import { useToast } from '@/components/Toast';
+
+async function hashPassword(password) {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(password + 'sanad_salt_v1');
+  const buf = await crypto.subtle.digest('SHA-256', data);
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+export default function MerchantLoginPage() {
+  const router = useRouter();
+  const { success, error: toastError } = useToast();
+
+  const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [form, setForm] = useState({ phone: '', password: '' });
+
+  useEffect(() => {
+    try {
+      const existing = JSON.parse(localStorage.getItem('sanad_entity') || 'null');
+      if (existing?.id) router.replace('/merchant');
+    } catch {}
+  }, [router]);
+
+  function normalizePhone(p) {
+    return (p || '').replace(/[^0-9]/g, '');
+  }
+
+  async function handleLogin(e) {
+    e.preventDefault();
+    const phone = normalizePhone(form.phone);
+    if (phone.length < 8) { toastError('رقم الهاتف غير صحيح'); return; }
+    if (!form.password) { toastError('أدخل كلمة المرور'); return; }
+
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('entities')
+        .select('id, display_name, entity_type, phone, password_hash, approval_status, is_active')
+        .eq('phone', phone)
+        .maybeSingle();
+
+      if (error) throw error;
+      if (!data) { toastError('لا يوجد حساب مزود بهذا الرقم'); return; }
+
+      const hashed = await hashPassword(form.password);
+      if (data.password_hash !== hashed) {
+        toastError('كلمة المرور غير صحيحة');
+        return;
+      }
+
+      if (data.approval_status === 'rejected') {
+        toastError('حسابك مرفوض. تواصل مع الإدارة.');
+        return;
+      }
+
+      const entity = {
+        id: data.id,
+        display_name: data.display_name,
+        entity_type: data.entity_type,
+        phone: data.phone,
+        approval_status: data.approval_status,
+      };
+      localStorage.setItem('sanad_entity', JSON.stringify(entity));
+      
+      if (data.approval_status === 'pending') {
+        success('⏳ حسابك قيد المراجعة. يمكنك الاطلاع على لوحتك.');
+      } else {
+        success('مرحباً بعودتك، ' + (data.display_name || ''));
+      }
+      
+      setTimeout(() => router.push('/merchant'), 500);
+    } catch (err) {
+      console.error(err);
+      toastError('فشل تسجيل الدخول');
+    } finally { setLoading(false); }
+  }
+
+  return (
+    <div style={{ minHeight: '100vh', background: 'linear-gradient(180deg, #f0fdf4 0%, #f8fafc 40%)' }}>
+      <div style={{ padding: '16px 20px' }}>
+        <Link href="/" style={{ color: '#0f4d3a', textDecoration: 'none', fontSize: 14, fontWeight: 900, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          ← العودة للرئيسية
+        </Link>
+      </div>
+
+      <div style={{ padding: '0 20px', maxWidth: 480, margin: '0 auto' }}>
+        <div style={{ textAlign: 'center', marginBottom: 24 }}>
+          <div style={{ width: 80, height: 80, borderRadius: 22, background: 'linear-gradient(135deg, #0f4d3a, #075640)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 38, marginBottom: 12, boxShadow: '0 10px 30px rgba(15,77,58,0.25)' }}>
+            🏪
+          </div>
+          <h1 style={{ fontSize: 24, fontWeight: 900, color: '#0f172a', margin: 0 }}>
+            بوابة المزودين
+          </h1>
+          <p style={{ fontSize: 13, color: '#64748b', margin: '6px 0 0' }}>
+            سجّل دخولك لإدارة متجرك وطلباتك
+          </p>
+        </div>
+
+        <form onSubmit={handleLogin}>
+          <div style={{ marginBottom: 14 }}>
+            <label style={labelStyle}>رقم الهاتف</label>
+            <input type="tel" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} placeholder="09xxxxxxxx" style={inputStyle} required />
+          </div>
+
+          <div style={{ marginBottom: 20 }}>
+            <label style={labelStyle}>كلمة المرور</label>
+            <div style={{ position: 'relative' }}>
+              <input type={showPassword ? 'text' : 'password'} value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} placeholder="••••••••" style={{ ...inputStyle, paddingLeft: 44 }} required />
+              <button type="button" onClick={() => setShowPassword(!showPassword)} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', fontSize: 18, cursor: 'pointer', padding: 4 }}>
+                {showPassword ? '🙈' : '👁️'}
+              </button>
+            </div>
+          </div>
+
+          <button type="submit" disabled={loading} style={{ width: '100%', padding: 16, background: loading ? '#94a3b8' : 'linear-gradient(135deg, #10b981, #059669)', color: '#fff', border: 'none', borderRadius: 14, fontSize: 15, fontWeight: 900, cursor: loading ? 'wait' : 'pointer', fontFamily: 'inherit', boxShadow: '0 6px 20px rgba(16,185,129,0.3)' }}>
+            {loading ? '⏳ جارٍ الدخول...' : 'تسجيل الدخول'}
+          </button>
+        </form>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '24px 0 16px' }}>
+          <div style={{ flex: 1, height: 1, background: '#e2e8f0' }} />
+          <span style={{ fontSize: 11, color: '#94a3b8', fontWeight: 900 }}>جديد على سند؟</span>
+          <div style={{ flex: 1, height: 1, background: '#e2e8f0' }} />
+        </div>
+
+        <Link href="/register" style={{ display: 'block', width: '100%', padding: 14, background: '#fff', color: '#0f4d3a', border: '2px solid #0f4d3a', borderRadius: 14, fontSize: 14, fontWeight: 900, textAlign: 'center', textDecoration: 'none', boxSizing: 'border-box' }}>
+          + أنشئ حساب مزود جديد
+        </Link>
+
+        <div style={{ marginTop: 32, textAlign: 'center', fontSize: 11, color: '#94a3b8', lineHeight: 1.6 }}>
+          <Link href="/legal/terms" style={{ color: '#0ea5e9', textDecoration: 'underline' }}>شروط الاستخدام</Link>
+          {' · '}
+          <Link href="/legal/privacy" style={{ color: '#0ea5e9', textDecoration: 'underline' }}>الخصوصية</Link>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const labelStyle = {
+  display: 'block',
+  fontSize: 12,
+  fontWeight: 900,
+  color: '#475569',
+  marginBottom: 6,
+};
+
+const inputStyle = {
+  width: '100%',
+  padding: '14px 16px',
+  borderRadius: 12,
+  border: '1px solid #cbd5e1',
+  fontSize: 15,
+  fontFamily: 'inherit',
+  boxSizing: 'border-box',
+  outline: 'none',
+  background: '#fff',
+  color: '#0f172a',
+};

@@ -1,5 +1,6 @@
+
 'use client';
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
@@ -24,18 +25,30 @@ function resolveIcon(icon) {
   if (!icon) return '📦';
   const k = String(icon).toLowerCase().trim();
   if (ICON_MAP[k]) return ICON_MAP[k];
-  if (k.length <= 4) return icon; // If it's already an emoji
+  if (/\p{Emoji}/u.test(k)) return icon;
   return '📦';
 }
 
+const FALLBACK_CATEGORIES = [
+  { id: 'f1', name: 'المتاجر والتسوق', icon: '🛍️', slug: 'shopping' },
+  { id: 'f2', name: 'الصحة والعيادات', icon: '❤️', slug: 'health' },
+  { id: 'f3', name: 'التعليم', icon: '🎓', slug: 'education' },
+  { id: 'f4', name: 'المساجد', icon: '🕌', slug: 'mosques' },
+  { id: 'f5', name: 'البلدية', icon: '🏢', slug: 'municipality' },
+  { id: 'f6', name: 'الجمعيات', icon: '🎁', slug: 'charities' },
+  { id: 'f7', name: 'الأخبار', icon: '📰', slug: 'news' },
+  { id: 'f8', name: 'الطوارئ', icon: '🚨', slug: 'emergency' },
+];
+
 export default function HomePage() {
   const router = useRouter();
-  const [categories, setCategories] = useState([]);
+  const [categories, setCategories] = useState(FALLBACK_CATEGORIES);
   const [products, setProducts] = useState([]);
   const [stores, setStores] = useState([]);
   const [announcement, setAnnouncement] = useState(null);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [user, setUser] = useState(null);
 
   useEffect(() => {
@@ -48,18 +61,22 @@ export default function HomePage() {
 
   async function load() {
     if (!supabase) { setLoading(false); return; }
+    setError(null);
     try {
       const [cats, prods, ents, ann] = await Promise.all([
         supabase.from('service_categories').select('*').eq('is_active', true).eq('is_visible', true).order('sort_order'),
         supabase.from('products').select('*').eq('is_active', true).order('created_at', { ascending: false }).limit(10),
         supabase.from('entities').select('id, display_name, entity_type, logo_url, city, is_verified').eq('is_active', true).eq('approval_status', 'approved').in('entity_type', ['merchant', 'restaurant', 'craftsman']).limit(8),
-        supabase.from('announcements').select('*').eq('is_active', true).order('created_at', { ascending: false }).limit(1).maybeSingle(),
+        supabase.from('announcements').select('*').eq('is_active', true).order('pinned', { ascending: false }).order('created_at', { ascending: false }).limit(1).maybeSingle(),
       ]);
-      setCategories(cats.data || []);
+      if (cats.data && cats.data.length > 0) setCategories(cats.data);
       setProducts(prods.data || []);
       setStores(ents.data || []);
       setAnnouncement(ann.data);
-    } catch (e) { console.error(e); }
+    } catch (e) {
+      console.error(e);
+      setError('تعذّر تحميل بعض المحتوى، لكن الصفحة تعمل');
+    }
     setLoading(false);
   }
 
@@ -83,24 +100,22 @@ export default function HomePage() {
 
   return (
     <div style={{ minHeight: '100vh', background: '#f8fafc', paddingBottom: 80 }}>
-      {/* ═══ Hero Header ═══ */}
       <div style={{ background: 'linear-gradient(135deg,#0f4d3a,#075640)', borderBottomLeftRadius: 28, borderBottomRightRadius: 28, padding: '20px 20px 32px', color: '#fff', position: 'relative', overflow: 'hidden' }}>
         <div style={{ position: 'absolute', top: -60, left: -40, width: 180, height: 180, background: 'rgba(251,191,36,.1)', borderRadius: '50%', filter: 'blur(40px)' }} />
-        
+
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, position: 'relative', zIndex: 1 }}>
           <div>
             <div style={{ fontSize: 12, fontWeight: 900, letterSpacing: 3, color: '#fbbf24', marginBottom: 4 }}>S A N A D</div>
             <div style={{ fontSize: 22, fontWeight: 900 }}>سند</div>
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
-            <Link href="/notifications" style={{ width: 40, height: 40, background: 'rgba(255,255,255,.15)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, textDecoration: 'none', position: 'relative' }}>🔔</Link>
+            <Link href="/notifications" aria-label="الإشعارات" style={{ width: 40, height: 40, background: 'rgba(255,255,255,.15)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, textDecoration: 'none', position: 'relative' }}>🔔</Link>
             {user ? (
               <Link href="/customer" style={{ background: 'rgba(255,255,255,.15)', color: '#fff', padding: '10px 16px', borderRadius: 20, fontSize: 12, fontWeight: 900, textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 6 }}>👤 حسابي</Link>
             ) : (
               <Link href="/login" style={{ background: '#fbbf24', color: '#0f4d3a', padding: '10px 16px', borderRadius: 20, fontSize: 12, fontWeight: 900, textDecoration: 'none' }}>دخول</Link>
             )}
-            {/* زر الإدارة المخفي - يظهر كأيقونة ترس صغيرة */}
-            <Link href="/admin/login" title="دخول الإدارة" style={{ width: 40, height: 40, background: 'rgba(255,255,255,.1)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, textDecoration: 'none', color: 'rgba(255,255,255,.6)' }}>⚙️</Link>
+            <Link href="/admin/login" title="" aria-label="" style={{ width: 8, height: 8, background: 'transparent', borderRadius: '50%', textDecoration: 'none', opacity: 0.01 }}>·</Link>
           </div>
         </div>
 
@@ -113,26 +128,30 @@ export default function HomePage() {
           <HijriDate compact style={{ color: 'rgba(255,255,255,.9)', fontSize: 12 }} />
         </div>
 
-        <form onSubmit={handleSearch} style={{ display: 'flex', alignItems: 'center', background: '#fff', borderRadius: 14, padding: '6px 6px 6px 16px', position: 'relative', zIndex: 1, boxShadow: '0 10px 30px rgba(0,0,0,.15)' }}>
-          <span style={{ fontSize: 18, color: '#94a3b8', marginLeft: 8 }}>⌕</span>
-          <input type="text" placeholder="ابحث عن منتج، خدمة، متجر..." value={search} onChange={(e) => setSearch(e.target.value)} style={{ flex: 1, padding: 12, border: 'none', outline: 'none', fontSize: 14, fontFamily: 'inherit', color: '#0f172a', textAlign: 'right' }} />
+        <form onSubmit={handleSearch} role="search" style={{ display: 'flex', alignItems: 'center', background: '#fff', borderRadius: 14, padding: '6px 6px 6px 16px', position: 'relative', zIndex: 1, boxShadow: '0 10px 30px rgba(0,0,0,.15)' }}>
+          <span style={{ fontSize: 18, color: '#94a3b8', marginLeft: 8 }} aria-hidden="true">⌕</span>
+          <input type="search" placeholder="ابحث عن منتج، خدمة، متجر..." aria-label="البحث" value={search} onChange={(e) => setSearch(e.target.value)} style={{ flex: 1, padding: 12, border: 'none', outline: 'none', fontSize: 14, fontFamily: 'inherit', color: '#0f172a', textAlign: 'right', background: 'transparent' }} />
           <button type="submit" style={{ padding: '12px 20px', background: 'linear-gradient(135deg,#10b981,#059669)', color: '#fff', border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 900, cursor: 'pointer', fontFamily: 'inherit' }}>بحث</button>
         </form>
       </div>
 
-      {/* Prayer Times */}
+      {error && (
+        <div role="alert" style={{ margin: '12px 16px 0', padding: '10px 14px', background: 'rgba(251,191,36,.12)', border: '1px solid rgba(251,191,36,.35)', borderRadius: 12, fontSize: 11.5, color: '#92400e', fontWeight: 700 }}>
+          ⚠️ {error}
+        </div>
+      )}
+
       <div style={{ marginTop: -16, position: 'relative', zIndex: 2, padding: '0 16px' }}>
         <PrayerBar />
       </div>
 
-      {/* Announcement */}
       {announcement && (
         <div style={{ padding: '16px 16px 0' }}>
           <div style={{ background: 'linear-gradient(135deg, rgba(251,191,36,.15), rgba(245,158,11,.1))', border: '1px solid rgba(251,191,36,.3)', borderRadius: 14, padding: 14, display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-            <div style={{ fontSize: 20 }}>📢</div>
+            <div style={{ fontSize: 20 }} aria-hidden="true">📢</div>
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 13, fontWeight: 900, color: '#92400e', marginBottom: 2 }}>{announcement.title}</div>
-              <div style={{ fontSize: 11.5, color: '#78350f', lineHeight: 1.6 }}>{announcement.content?.slice(0, 100)}...</div>
+              <div style={{ fontSize: 11.5, color: '#78350f', lineHeight: 1.6 }}>{(announcement.content || announcement.body || '').slice(0, 100)}...</div>
             </div>
           </div>
         </div>
@@ -140,7 +159,6 @@ export default function HomePage() {
 
       <div style={{ marginTop: 12 }}><NewsTicker /></div>
 
-      {/* Quick Actions */}
       <div style={{ padding: '16px 16px 0' }}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
           {[
@@ -150,14 +168,13 @@ export default function HomePage() {
             { href: '/jobs', icon: '💼', label: 'وظائف', color: '#059669', bg: 'rgba(5,150,105,.1)' },
           ].map(a => (
             <Link key={a.href} href={a.href} style={{ background: a.bg, border: 'none', borderRadius: 14, padding: '14px 8px', textAlign: 'center', textDecoration: 'none', color: 'inherit', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
-              <div style={{ fontSize: 26 }}>{a.icon}</div>
+              <div style={{ fontSize: 26 }} aria-hidden="true">{a.icon}</div>
               <div style={{ fontSize: 10.5, fontWeight: 900, color: a.color }}>{a.label}</div>
             </Link>
           ))}
         </div>
       </div>
 
-      {/* Categories */}
       {topCategories.length > 0 && (
         <div style={{ padding: 16 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
@@ -167,7 +184,7 @@ export default function HomePage() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
             {topCategories.map(c => (
               <Link key={c.id} href={`/search?q=${encodeURIComponent(c.name)}`} style={{ background: '#fff', border: '1px solid #e5e7eb', borderRadius: 14, padding: '12px 6px', textAlign: 'center', textDecoration: 'none', color: 'inherit', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
-                <div style={{ fontSize: 24 }}>{resolveIcon(c.icon)}</div>
+                <div style={{ fontSize: 24 }} aria-hidden="true">{resolveIcon(c.icon)}</div>
                 <div style={{ fontSize: 10, fontWeight: 800, color: '#334155', lineHeight: 1.3, textAlign: 'center' }}>{c.name}</div>
               </Link>
             ))}
@@ -175,7 +192,6 @@ export default function HomePage() {
         </div>
       )}
 
-      {/* Featured Stores */}
       {stores.length > 0 && (
         <div style={{ padding: '0 16px 16px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
@@ -185,7 +201,7 @@ export default function HomePage() {
           <div style={{ display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 4 }}>
             {stores.map(s => (
               <Link key={s.id} href={`/store/${encodeURIComponent(s.display_name)}`} style={{ flexShrink: 0, width: 140, background: '#fff', border: '1px solid #e5e7eb', borderRadius: 14, padding: 12, textDecoration: 'none', color: 'inherit', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: 8 }}>
-                {s.logo_url ? <img src={s.logo_url} alt="" style={{ width: 56, height: 56, borderRadius: 14, objectFit: 'cover' }} /> : <div style={{ width: 56, height: 56, borderRadius: 14, background: 'linear-gradient(135deg,#0f4d3a,#075640)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24 }}>🏪</div>}
+                {s.logo_url ? <img src={s.logo_url} alt={s.display_name} loading="lazy" style={{ width: 56, height: 56, borderRadius: 14, objectFit: 'cover' }} /> : <div style={{ width: 56, height: 56, borderRadius: 14, background: 'linear-gradient(135deg,#0f4d3a,#075640)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24 }}>🏪</div>}
                 <div style={{ fontSize: 12, fontWeight: 900, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}>{s.display_name}</div>
                 {s.is_verified && <div style={{ fontSize: 9.5, color: '#10b981', fontWeight: 800 }}>✅ موثق</div>}
               </Link>
@@ -194,7 +210,6 @@ export default function HomePage() {
         </div>
       )}
 
-      {/* Latest Products */}
       {products.length > 0 && (
         <div style={{ padding: '0 16px 20px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>

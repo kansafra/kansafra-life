@@ -1,360 +1,225 @@
 'use client';
-import { useState, useEffect } from 'react';
-import { useRouter, useParams } from 'next/navigation';
+import { useState, useEffect, useMemo } from 'react';
+import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabase';
-import { getTableConfig } from '@/lib/adminTables';
+import { useToast } from '@/components/Toast';
 
-const FIELD_LABELS = {
-  username:'اسم المستخدم', display_name:'الاسم', entity_type:'النوع', phone:'الهاتف',
-  email:'البريد', bio:'نبذة', logo_url:'الرابط', is_active:'نشط', title:'العنوان',
-  description:'الوصف', provider_name:'مقدم الخدمة', address:'العنوان', image_url:'الصورة',
-  is_featured:'مميز', status:'الحالة', price:'السعر', discount_percent:'الخصم %',
-  stock:'المخزون', currency:'العملة', unit:'الوحدة', category:'الفئة',
-  customer_name:'اسم العميل', customer_phone:'هاتف العميل', total:'المجموع',
-  order_code:'رقم الطلب', ref_code:'رقم البلاغ', full_name:'الاسم',
-  name:'الاسم', slug:'المعرف', icon:'الأيقونة', sort_order:'الترتيب',
-  body:'النص', is_published:'منشور', reviewer_name:'المقيّم', rating:'التقييم',
-  comment:'التعليق', is_approved:'موافق عليه', code:'الكود',
-  discount_type:'نوع الخصم', discount_value:'قيمة الخصم', min_order:'الحد الأدنى',
-  max_uses:'أقصى استخدامات', owner_name:'اسم المالك', vehicle_type:'نوع المركبة',
-  brand:'الماركة', model:'الموديل', plate_number:'رقم اللوحة', route:'الخط',
-  is_available:'متاح', patient_name:'اسم المريض', patient_phone:'هاتف المريض',
-  appointment_date:'التاريخ', appointment_time:'الوقت', notes:'ملاحظات',
-  blood_type:'الفصيلة', city:'المدينة', hospital:'المستشفى',
-  urgency:'الأهمية', units_needed:'الوحدات', requester_name:'اسم الطالب',
-  grade:'الصف', section:'الشعبة', teacher_name:'المعلم', capacity:'السعة',
-  entity_name:'الجهة', school_name:'المدرسة', parent_name:'ولي الأمر',
-  parent_phone:'هاتف ولي الأمر', birth_year:'سنة الميلاد', mosque_name:'الجامع',
-  lesson_type:'النوع', content:'المحتوى', scheduled_at:'موعد الدرس',
-  level:'المستوى', schedule:'الجدول', students_count:'عدد الطلاب',
-  donor_name:'المتبرع', recipient_name:'المستفيد', amount:'المبلغ',
-  purpose:'الغرض', club_name:'النادي', position:'المركز', jersey_number:'رقم القميص',
-  goals:'الأهداف', assists:'صناعة', matches:'المباريات', opponent:'المنافس',
-  location:'الموقع', competition:'البطولة', our_score:'أهدافنا', their_score:'أهدافهم',
-  team_name:'الفريق', played:'لعب', won:'فاز', drawn:'تعادل', lost:'خسر',
-  goals_for:'له', goals_against:'عليه', points:'نقاط', author_name:'الكاتب',
-  decade:'العقد', place_name:'المكان', era:'الحقبة', media_url:'الرابط',
-  author:'المؤلف', year:'السنة', cover_url:'الغلاف', file_url:'الملف',
-  place_type:'النوع', location_text:'الموقع', entry_price:'سعر الدخول',
-  opening_hours:'ساعات العمل', employer_name:'صاحب العمل', job_type:'نوع الوظيفة',
-  salary_min:'الراتب الأدنى', salary_max:'الراتب الأعلى', requirements:'المتطلبات',
-  property_type:'نوع العقار', deal_type:'نوع المعاملة', rooms:'الغرف',
-  area_m2:'المساحة', item_type:'النوع', reporter_name:'المُبلّغ', service_type:'نوع الخدمة',
-  requester_phone:'الهاتف', expat_name:'المغترب', recipient_phone:'هاتف المستفيد',
-  seller_name:'البائع', starting_price:'سعر البداية', current_price:'السعر الحالي',
-  recipient_entity:'المستلم', type:'النوع', is_read:'مقروء', action:'العملية',
-  actor:'المستخدم', target_type:'النوع', role:'الدور',
-  description_ar:'الوصف بالعربية', sort:'الترتيب', password_hash:'كلمة المرور',
-  image:'الصورة', price_per_km:'سعر الكيلو', base_price:'أجرة البداية',
-  working_hours:'ساعات العمل', notes_text:'ملاحظات',
+const TABLE_NAMES = {
+  products: 'المنتجات', orders: 'الطلبات', customers: 'العملاء',
+  debts: 'الديون', announcements: 'الإعلانات', reviews: 'التقييمات',
+  jobs: 'الوظائف', appointments: 'المواعيد', blood_donors: 'متبرعو الدم',
+  services: 'الخدمات', employees: 'الموظفين'
 };
 
-const fieldLabel = (k) => FIELD_LABELS[k] || k;
-
-// الحقول التي لا يجب إضافتها (تلقائية)
-const AUTO_FIELDS = ['id', 'created_at', 'updated_at'];
-
-// اقتراح نوع الحقل
-const suggestType = (key, val) => {
-  if (/^(is_|has_|active|approved|published|featured|available|read)/.test(key)) return 'boolean';
-  if (/url|image|logo|cover|photo|media|file/.test(key)) return 'url';
-  if (/email/.test(key)) return 'email';
-  if (/phone|tel/.test(key)) return 'tel';
-  if (/price|amount|total|salary|value|points|goals|assists|matches|played|won|drawn|lost|score|capacity|stock|order|number|year|sort|count/.test(key)) return 'number';
-  if (/description|body|content|bio|notes|requirements|purpose|comment/.test(key)) return 'textarea';
-  if (key === 'category' || key === 'entity_type' || key === 'status' || key === 'currency' || key === 'unit' || key === 'job_type' || key === 'deal_type' || key === 'property_type' || key === 'place_type' || key === 'item_type' || key === 'blood_type' || key === 'urgency' || key === 'role' || key === 'type' || key === 'lesson_type' || key === 'discount_type' || key === 'vehicle_type' || key === 'service_type') return 'select';
-  return 'text';
-};
-
-const SELECT_OPTIONS = {
-  entity_type: ['merchant','doctor','pharmacy','school','mosque','municipality','council','charity','sports','memory','office','restaurant','transport'],
-  currency: ['SYP','USD','EUR','TRY','SAR','AED'],
-  status: ['active','inactive','pending','preparing','delivering','done','cancelled','received','dispatched','in_progress','resolved','open','closed'],
-  unit: ['قطعة','كيلو','علبة','حزمة','لتر','غرام'],
-  deal_type: ['للبيع','للإيجار'],
-  property_type: ['شقة','منزل','أرض','محل تجاري','مكتب','مخزن'],
-  place_type: ['معلم أثري','طبيعة','مطعم','فندق','متحف','أخرى'],
-  item_type: ['مفقود','وجدته'],
-  blood_type: ['A+','A-','B+','B-','AB+','AB-','O+','O-'],
-  urgency: ['normal','urgent','critical'],
-  role: ['owner','admin','support','billing','auditor'],
-  job_type: ['دوام كامل','دوام جزئي','عن بعد','مؤقت','تدريب'],
-  discount_type: ['percent','fixed'],
-  vehicle_type: ['taxi','bus','service','truck','motorcycle','van','other'],
-  service_type: ['مساعدة منزلية','مرافق للمستشفى','توصيل أدوية','قراءة وثائق','دعم نفسي','أخرى'],
-  lesson_type: ['lesson','khutbah','circle'],
-  type: ['info','warning','success','error'],
-  category: ['food','drink','grocery','medicine','clothes','electronics','home','beauty','stationery','other'],
-};
-
-export default function TableManager() {
+export default function AdminManageTable() {
+  const { table } = useParams();
   const router = useRouter();
-  const params = useParams();
-  const table = params?.table;
-  const cfg = getTableConfig(table);
+  const { success, error: toastError } = useToast();
 
-  const [rows, setRows] = useState([]);
+  const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [mode, setMode] = useState(null); // 'add' | 'edit'
   const [editing, setEditing] = useState(null);
-  const [deleting, setDeleting] = useState(null);
+  const [editJson, setEditJson] = useState('');
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({});
-  const [columns, setColumns] = useState([]);
+  const [deleting, setDeleting] = useState(null);
+
+  const tableLabel = TABLE_NAMES[table] || table;
 
   useEffect(() => {
-    let stored = null;
-    try { stored = JSON.parse(localStorage.getItem('sanad_admin') || 'null'); } catch {}
+    // التحقق من صلاحيات الأدمن
+    const stored = JSON.parse(localStorage.getItem('sanad_admin') || 'null');
     if (!stored) { router.replace('/admin/login'); return; }
-    load();
-  }, [router, table]);
+    loadData();
+  }, [table, router]);
 
-  async function load() {
-    if (!supabase || !table) { setLoading(false); return; }
-    const { data, error } = await supabase.from(table).select('*').order('created_at', { ascending: false }).limit(500);
-    if (!error) {
-      const list = Array.isArray(data) ? data : [];
-      setRows(list);
-      // استخراج الأعمدة من أول صف
-      if (list.length > 0) {
-        const cols = Object.keys(list[0]).filter((k) => !AUTO_FIELDS.includes(k));
-        setColumns(cols);
-      } else if (cfg) {
-        // إذا فارغ، نستخدم الأعمدة المعرّفة يوجد cfg
-        const allEditable = cfg.editable || [];
-        setColumns(allEditable);
-      }
-    }
-    setLoading(false);
-  }
-
-  function openAdd() {
-    setMode('add');
-    setEditing(null);
-    const init = {};
-    // استخدام الأعمدة المعرّفة يوجد cfg + القائمة
-    const allCols = [...new Set([...(cfg?.editable || []), ...columns])];
-    allCols.forEach((k) => { init[k] = ''; });
-    setForm(init);
-  }
-
-  function openEdit(row) {
-    setMode('edit');
-    setEditing(row);
-    const init = {};
-    const allCols = [...new Set([...(cfg?.editable || []), ...columns])];
-    allCols.forEach((k) => {
-      let v = row[k];
-      if (v === true) v = 'true';
-      if (v === false) v = 'false';
-      if (v === null || v === undefined) v = '';
-      init[k] = String(v);
-    });
-    setForm(init);
-  }
-
-  async function save() {
-    if (!cfg) return;
-    setSaving(true);
-
-    const allCols = [...new Set([...(cfg?.editable || []), ...columns])];
-    const payload = {};
-
-    allCols.forEach((k) => {
-      const v = form[k];
-      if (v === '' || v === undefined) return;
-      const type = suggestType(k, v);
-      if (type === 'boolean' || v === 'true' || v === 'false') {
-        payload[k] = v === 'true' ? true : v === 'false' ? false : Boolean(v);
-      } else if (type === 'number') {
-        const n = Number(v);
-        if (!isNaN(n)) payload[k] = n;
+  async function loadData() {
+    if (!supabase) return;
+    setLoading(true);
+    try {
+      let query = supabase.from(table).select('*');
+      // محاولة الترتيب حسب تاريخ الإنشاء إذا كان موجوداً
+      query = query.order('created_at', { ascending: false });
+      
+      const { data: res, error } = await query.limit(100);
+      
+      if (error) {
+        // إذا لم يوجد created_at، نجلب بدون ترتيب
+        const { data: res2, error: err2 } = await supabase.from(table).select('*').limit(100);
+        if (err2) throw err2;
+        setData(res2 || []);
       } else {
-        payload[k] = v;
+        setData(res || []);
       }
-    });
-
-    let error;
-    if (mode === 'add') {
-      const res = await supabase.from(table).insert(payload);
-      error = res.error;
-    } else {
-      const res = await supabase.from(table).update(payload).eq('id', editing.id);
-      error = res.error;
+    } catch (err) {
+      console.error(err);
+      toastError(`فشل تحميل جدول ${tableLabel}`);
+    } finally {
+      setLoading(false);
     }
-
-    setSaving(false);
-    if (error) { alert('تعذّر الحفظ: ' + error.message); return; }
-    setMode(null);
-    setEditing(null);
-    load();
   }
 
-  async function confirmDelete() {
-    if (!deleting) return;
-    const { error } = await supabase.from(table).delete().eq('id', deleting.id);
-    if (error) { alert('تعذّر الحذف'); return; }
-    setRows((arr) => arr.filter((r) => r.id !== deleting.id));
+  const filtered = useMemo(() => {
+    if (!search.trim()) return data;
+    const q = search.trim().toLowerCase();
+    return data.filter(item => {
+      return Object.values(item).some(val => 
+        String(val).toLowerCase().includes(q)
+      );
+    });
+  }, [data, search]);
+
+  async function handleSaveEdit() {
+    let parsed;
+    try {
+      parsed = JSON.parse(editJson);
+    } catch {
+      toastError('صيغة JSON غير صحيحة');
+      return;
+    }
+    
+    setSaving(true);
+    try {
+      const { error } = await supabase.from(table).update(parsed).eq('id', editing.id);
+      if (error) throw error;
+      success('✅ تم التحديث بنجاح');
+      setEditing(null);
+      loadData();
+    } catch (err) {
+      console.error(err);
+      toastError('فشل التحديث');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDelete(item) {
+    if (!confirm('هل تريد حذف هذا السجل نهائياً؟')) return;
+    setDeleting(item.id);
+    const { error } = await supabase.from(table).delete().eq('id', item.id);
+    if (error) {
+      toastError('فشل الحذف');
+    } else {
+      success('🗑️ تم الحذف');
+      setData(prev => prev.filter(x => x.id !== item.id));
+    }
     setDeleting(null);
   }
 
-  if (!cfg) return <div className="sect-empty"><span className="em">❌</span><p>الجدول غير معروف</p></div>;
+  // دالة لاستخراج عنوان مناسب للسجل
+  function getRecordTitle(item) {
+    return item.title || item.name || item.display_name || item.customer_name || 
+           item.full_name || item.order_code || item.id?.slice(0, 8) || 'سجل';
+  }
 
-  const filtered = rows.filter((r) => {
-    if (!search.trim()) return true;
-    const q = search.trim().toLowerCase();
-    return Object.values(r).some((v) => String(v || '').toLowerCase().includes(q));
-  });
-
-  const renderValue = (k, v) => {
-    if (v === true) return '✓';
-    if (v === false) return '✗';
-    if (v === null || v === undefined || v === '') return '—';
-    const s = String(v);
-    return s.length > 30 ? s.slice(0, 30) + '…' : s;
-  };
-
-  // الحقول التي ستُعرض يوجد النموذج
-  const formColumns = [...new Set([...(cfg?.editable || []), ...columns])];
+  if (loading) return <div style={{ padding: 80, textAlign: 'center' }}>⏳ جارٍ التحميل...</div>;
 
   return (
-    <div className="admin-page">
-      <div className="admin-sub-header">
-        <Link href="/admin/manage" className="admin-sub-back">→</Link>
-        <span className="admin-sub-title">{cfg.icon} {cfg.label}</span>
-        <span className="admin-sub-count">{rows.length}</span>
-        <button className="admin-add-btn" onClick={openAdd} type="button">
-          + إضافة
-        </button>
-      </div>
-
-      <div className="admin-search">
-        <input type="text" placeholder="ابحث..." value={search} onChange={(e) => setSearch(e.target.value)} />
-      </div>
-
-      {loading ? (
-        <div className="sect-empty"><span className="em">⏳</span><p>جارٍ التحميل...</p></div>
-      ) : filtered.length === 0 ? (
-        <div className="sect-empty">
-          <span className="em">📭</span>
-          <p>لا توجد سجلات</p>
-          <button className="admin-add-btn" onClick={openAdd} type="button" style={{ marginTop: 16 }}>
-            + إضافة أول سجل
-          </button>
+    <div style={{ minHeight: '100vh', background: '#f8fafc', paddingBottom: 40 }}>
+      <div style={{ background: '#0f172a', padding: '16px 20px', position: 'sticky', top: 0, zIndex: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+          <Link href="/admin/manage" style={{ color: '#fff', textDecoration: 'none', fontSize: 20 }}>→</Link>
+          <h1 style={{ color: '#fff', fontSize: 18, fontWeight: 900, margin: 0, flex: 1 }}>🗂️ {tableLabel}</h1>
+          <div style={{ fontSize: 11, background: 'rgba(255,255,255,0.15)', color: '#fff', padding: '4px 10px', borderRadius: 8, fontWeight: 900 }}>{data.length}</div>
         </div>
-      ) : (
-        <div className="admin-rows">
-          {filtered.map((r) => (
-            <div key={r.id} className="admin-row">
-              <div className="admin-row-head">
-                <div className="admin-row-title">{r[cfg.titleField] || r.title || r.name || r.display_name || '(بدون عنوان)'}</div>
-                <div className="admin-row-id">#{r.id?.slice(0, 6) || '—'}</div>
-              </div>
-              <div className="admin-row-fields">
-                {(cfg.columns || []).slice(0, 4).map((k) => (
-                  <div key={k} className="admin-row-field">
-                    <strong>{fieldLabel(k)}:</strong> {renderValue(k, r[k])}
+        <input 
+          type="search" 
+          placeholder="🔍 ابحث في السجلات..." 
+          value={search} 
+          onChange={e => setSearch(e.target.value)} 
+          style={{ width: '100%', padding: '10px 14px', borderRadius: 10, border: 'none', fontSize: 13, outline: 'none', boxSizing: 'border-box', background: 'rgba(255,255,255,0.95)' }} 
+        />
+      </div>
+
+      <div style={{ padding: 16 }}>
+        {filtered.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: 40, background: '#fff', borderRadius: 16, color: '#64748b' }}>
+            <div style={{ fontSize: 48, marginBottom: 12 }}>📭</div>
+            <div style={{ fontSize: 15, fontWeight: 900 }}>لا توجد سجلات</div>
+          </div>
+        ) : (
+          filtered.map(item => (
+            <div key={item.id} style={{ background: '#fff', borderRadius: 16, marginBottom: 12, border: '1px solid #e2e8f0', overflow: 'hidden' }}>
+              <div style={{ padding: 14 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 14, fontWeight: 900, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {getRecordTitle(item)}
+                    </div>
+                    <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 4, fontFamily: 'monospace' }}>
+                      ID: {item.id?.slice(0, 8)}...
+                    </div>
                   </div>
-                ))}
-              </div>
-              <div className="admin-row-actions">
-                <button className="admin-btn edit" onClick={() => openEdit(r)} type="button">
-                  ✏️ تعديل
-                </button>
-                <button className="admin-btn del" onClick={() => setDeleting(r)} type="button">
-                  🗑️ حذف
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {mode && (
-        <div className="admin-modal-bg" onClick={() => { setMode(null); setEditing(null); }}>
-          <div className="admin-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="admin-modal-handle" />
-            <h3 className="admin-modal-title">
-              {mode === 'add' ? `➕ إضافة إلى ${cfg.label}` : `✏️ تعديل: ${editing?.[cfg.titleField] || ''}`}
-            </h3>
-
-            {formColumns.map((k) => {
-              const val = form[k] ?? '';
-              const type = suggestType(k, val);
-              return (
-                <div key={k} className="admin-form-row">
-                  <label className="admin-form-label">{fieldLabel(k)}</label>
-                  {type === 'boolean' ? (
-                    <select
-                      className="admin-form-select"
-                      value={val}
-                      onChange={(e) => setForm({ ...form, [k]: e.target.value })}
-                    >
-                      <option value="">— اختر —</option>
-                      <option value="true">✓ نعم</option>
-                      <option value="false">✗ لا</option>
-                    </select>
-                  ) : SELECT_OPTIONS[k] ? (
-                    <select
-                      className="admin-form-select"
-                      value={val}
-                      onChange={(e) => setForm({ ...form, [k]: e.target.value })}
-                    >
-                      <option value="">— اختر —</option>
-                      {SELECT_OPTIONS[k].map((o) => (
-                        <option key={o} value={o}>{fieldLabel(o) === o ? o : fieldLabel(o)}</option>
-                      ))}
-                    </select>
-                  ) : type === 'textarea' ? (
-                    <textarea
-                      className="admin-form-textarea"
-                      value={val}
-                      onChange={(e) => setForm({ ...form, [k]: e.target.value })}
-                      placeholder={fieldLabel(k)}
-                    />
-                  ) : (
-                    <input
-                      className="admin-form-input"
-                      type={type === 'number' ? 'number' : type === 'url' ? 'url' : type === 'email' ? 'email' : type === 'tel' ? 'tel' : 'text'}
-                      value={val}
-                      onChange={(e) => setForm({ ...form, [k]: e.target.value })}
-                      placeholder={fieldLabel(k)}
-                    />
+                  {item.created_at && (
+                    <div style={{ fontSize: 10, color: '#64748b', fontWeight: 800 }}>
+                      {new Date(item.created_at).toLocaleDateString('ar-SY')}
+                    </div>
                   )}
                 </div>
-              );
-            })}
 
-            <div className="admin-form-actions">
-              <button className="admin-btn ghost" onClick={() => { setMode(null); setEditing(null); }} type="button">
+                {/* عرض سريع لأهم الحقول */}
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 12 }}>
+                  {item.price && <Badge label={`السعر: ${item.price}`} color="#10b981" />}
+                  {item.total && <Badge label={`الإجمالي: ${item.total}`} color="#10b981" />}
+                  {item.status && <Badge label={`الحالة: ${item.status}`} color="#3b82f6" />}
+                  {item.is_active !== undefined && <Badge label={item.is_active ? 'نشط' : 'معطل'} color={item.is_active ? '#10b981' : '#ef4444'} />}
+                  {item.provider_name && <Badge label={`المتجر: ${item.provider_name}`} color="#8b5cf6" />}
+                </div>
+
+                {/* أزرار الإجراءات */}
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button onClick={() => { setEditing(item); setEditJson(JSON.stringify(item, null, 2)); }} style={{ flex: 1, padding: '10px', background: 'rgba(14,165,233,0.1)', color: '#0284c7', border: '1px solid rgba(14,165,233,0.3)', borderRadius: 8, fontSize: 12, fontWeight: 900, cursor: 'pointer', fontFamily: 'inherit' }}>
+                    ✏️ تعديل
+                  </button>
+                  <button onClick={() => handleDelete(item)} disabled={deleting === item.id} style={{ flex: 1, padding: '10px', background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, fontSize: 12, fontWeight: 900, cursor: deleting === item.id ? 'wait' : 'pointer', fontFamily: 'inherit' }}>
+                    {deleting === item.id ? '⏳' : '🗑️ حذف'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      {editing && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div style={{ background: '#1e293b', width: '100%', maxWidth: 600, borderRadius: 16, padding: 20, display: 'flex', flexDirection: 'column', maxHeight: '90vh' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <h2 style={{ fontSize: 16, fontWeight: 900, margin: 0, color: '#fff' }}>✏️ تعديل السجل</h2>
+              <button onClick={() => setEditing(null)} style={{ background: 'rgba(255,255,255,0.1)', border: 'none', width: 32, height: 32, borderRadius: '50%', fontSize: 16, color: '#fff', cursor: 'pointer' }}>✕</button>
+            </div>
+            
+            <p style={{ fontSize: 11, color: '#94a3b8', marginBottom: 8, lineHeight: 1.5 }}>
+              قم بتعديل بيانات JSON أدناه بحذر. تأكد من الحفاظ على الأقواس والفواصل.
+            </p>
+
+            <textarea
+              value={editJson}
+              onChange={e => setEditJson(e.target.value)}
+              style={{ flex: 1, width: '100%', minHeight: 300, padding: 12, borderRadius: 10, border: '1px solid #334155', background: '#0f172a', color: '#e2e8f0', fontSize: 12, fontFamily: 'monospace', lineHeight: 1.5, outline: 'none', resize: 'none' }}
+              spellCheck={false}
+            />
+
+            <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+              <button onClick={() => setEditing(null)} style={{ flex: 1, padding: 12, background: 'transparent', color: '#94a3b8', border: '1px solid #334155', borderRadius: 10, fontWeight: 900, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>
                 إلغاء
               </button>
-              <button className="admin-btn gold" onClick={save} disabled={saving} type="button">
-                {saving ? '... جارٍ' : mode === 'add' ? '✓ إضافة' : '✓ حفظ'}
+              <button onClick={handleSaveEdit} disabled={saving} style={{ flex: 2, padding: 12, background: saving ? '#475569' : '#10b981', color: '#fff', border: 'none', borderRadius: 10, fontWeight: 900, fontSize: 13, cursor: saving ? 'wait' : 'pointer', fontFamily: 'inherit' }}>
+                {saving ? '⏳ جارٍ الحفظ...' : '💾 حفظ التعديلات'}
               </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {deleting && (
-        <div className="admin-modal-bg" onClick={() => setDeleting(null)}>
-          <div className="admin-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="admin-modal-handle" />
-            <div className="admin-confirm-icon">🗑️</div>
-            <h3 className="admin-modal-title" style={{ textAlign: 'center' }}>تأكيد الحذف</h3>
-            <div className="admin-confirm-text">
-              سيتم حذف <strong>{deleting[cfg.titleField] || 'هذا السجل'}</strong> نهائياً.
-            </div>
-            <div className="admin-form-actions">
-              <button className="admin-btn ghost" onClick={() => setDeleting(null)} type="button">إلغاء</button>
-              <button className="admin-btn del" onClick={confirmDelete} type="button">✓ حذف نهائي</button>
             </div>
           </div>
         </div>
       )}
     </div>
+  );
+}
+
+function Badge({ label, color }) {
+  return (
+    <span style={{ background: `${color}15`, color, padding: '3px 8px', borderRadius: 6, fontSize: 9.5, fontWeight: 900, whiteSpace: 'nowrap' }}>
+      {label}
+    </span>
   );
 }

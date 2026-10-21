@@ -1,286 +1,382 @@
 'use client';
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import Link from 'next/link';
+import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
-import { getSession, hashPassword } from '@/lib/auth';
-import { SkeletonList } from '@/components/Skeleton';
+import { useCurrentUser } from '@/lib/useCurrentUser';
+import { useToast } from '@/components/Toast';
+import { ROLES_BY_SECTOR, ROLE_INFO } from '@/lib/permissions';
+import Link from 'next/link';
 
-const ROLES = [
-  { k: 'manager', l: '👔 مدير فرع' },
-  { k: 'sales', l: '💰 مبيعات' },
-  { k: 'inventory', l: '📦 مخزون' },
-  { k: 'accountant', l: '🧮 محاسب' },
-  { k: 'delivery', l: '🚚 توصيل' },
-  { k: 'support', l: '💬 دعم' },
+async function hashPassword(password) {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(password + 'sanad_salt_v1');
+  const buf = await crypto.subtle.digest('SHA-256', data);
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+const ROLES = {
+  manager:    { label: 'مدير',     icon: '👔', color: '#8b5cf6', perms: ['orders.*','products.*','customers.*','employees.*','debts.*','invoices.*','reports.*'] },
+  sales:      { label: 'مبيعات',   icon: '💼', color: '#3b82f6', perms: ['orders.read','orders.write','products.read','customers.read','customers.write'] },
+  delivery:   { label: 'توصيل',    icon: '🚚', color: '#f59e0b', perms: ['orders.read','orders.write'] },
+  accountant: { label: 'محاسب',    icon: '📊', color: '#10b981', perms: ['invoices.read','invoices.write','debts.read','debts.write','reports.read'] },
+  employee:   { label: 'موظف',     icon: '👤', color: '#64748b', perms: ['orders.read','products.read'] },
+};
+
+const PLANS = {
+  free:       { label: 'مجاني',   price: 0,      employees: 2,  devices: 1 },
+  basic:      { label: 'أساسي',   price: 10000,  employees: 5,  devices: 2 },
+  pro:        { label: 'احترافي', price: 25000,  employees: 15, devices: 5 },
+  enterprise: { label: 'مؤسسي',   price: 60000,  employees: 100, devices: 20 },
+};
+
+const TABS = [
+  { key: 'team', label: '👥 الفريق' },
+  { key: 'sub', label: '💎 الاشتراك' },
+  { key: 'devices', label: '📱 الأجهزة' },
 ];
 
-const PERMISSIONS = [
-  { k: 'products', l: 'إدارة المنتجات' },
-  { k: 'orders', l: 'إدارة الطلبات' },
-  { k: 'inventory', l: 'إدارة المخزون' },
-  { k: 'reports', l: 'عرض التقارير' },
-  { k: 'finance', l: 'الشؤون المالية' },
-  { k: 'customers', l: 'إدارة العملاء' },
-  { k: 'settings', l: 'إعدادات النشاط' },
-];
+export default function MerchantTeamPage() {
+  const { success, error: toastError } = useToast();
+  const { user, loading: userLoading, dataOwnerName } = useCurrentUser();
 
-export default function EmployeesPage() {
-  const router = useRouter();
   const [entity, setEntity] = useState(null);
   const [employees, setEmployees] = useState([]);
+  const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [mode, setMode] = useState(null);
-  const [editing, setEditing] = useState(null);
-  const [form, setForm] = useState({});
+  const [tab, setTab] = useState('team');
+
+  // Forms
+  const [showForm, setShowForm] = useState(false);
+  const [editEmp, setEditEmp] = useState(null);
+  const [form, setForm] = useState({ full_name: '', phone: '', username: '', password: '', role: 'sales', is_active: true });
   const [saving, setSaving] = useState(false);
+  const [showPass, setShowPass] = useState(false);
 
   useEffect(() => {
-    let stored = null;
-    try { stored = getSession(); } catch (e) {}
-    if (!stored) { router.replace('/login'); return; }
-    setEntity(stored);
-    load(stored);
-  }, [router]);
+    if (userLoading) return;
+    if (!user || !dataOwnerName) { setLoading(false); return; }
+    loadAll();
+  }, [user, userLoading, dataOwnerName]);
 
-  async function load(ent) {
-    if (!supabase) return;
-    const { data } = await supabase.from('employees').select('*').eq('entity_name', ent.display_name).order('created_at', { ascending: false });
-    setEmployees(Array.isArray(data) ? data : []);
-    setLoading(false);
+  async function loadAll() {
+    if (!supabase || !dataOwnerName) return;
+    setLoading(true);
+    try {
+      const { data: ent } = await supabase.from('entities').select('*').eq('display_name', dataOwnerName).maybeSingle();
+      setEntity(ent);
+
+      const { data: emps } = await supabase.from('employees').select('*').eq('entity_name', dataOwnerName).order('created_at', { ascending: false });
+      setEmployees(emps || []);
+
+      if (ent?.id) {
+        const { data: sess } = await supabase.from('entity_sessions').select('*').eq('entity_id', ent.id).eq('is_active', true).order('last_active', { ascending: false });
+        setSessions(sess || []);
+      }
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); }
   }
 
   function openAdd() {
-    setMode('add');
-    setForm({ full_name: '', phone: '', email: '', password: '', password_confirm: '', role: 'sales', permissions: [], salary: 0, notes: '' });
-  }
-
-  function openEdit(e) {
-    setMode('edit');
-    setEditing(e);
-    setForm({
-      full_name: e.full_name,
-      phone: e.phone || '',
-      email: e.email || '',
-      password: '',
-      password_confirm: '',
-      role: e.role || 'sales',
-      permissions: Array.isArray(e.permissions) ? e.permissions : [],
-      salary: e.salary || 0,
-      notes: e.notes || '',
-      is_active: e.is_active,
-    });
-  }
-
-  async function save() {
-    if (!form.full_name?.trim()) { alert('الاسم مطلوب'); return; }
-    if (!form.phone?.trim()) { alert('رقم الهاتف مطلوب (لتسجيل الدخول)'); return; }
-    
-    const needsPassword = (mode === 'add') || (form.password && form.password.length > 0);
-    
-    if (needsPassword) {
-      if (!form.password || form.password.length < 6) {
-        alert('كلمة المرور مطلوبة (6 أحرف على الأقل)');
-        return;
-      }
-      if (form.password !== form.password_confirm) {
-        alert('كلمتا المرور غير متطابقتين');
-        return;
-      }
-    }
-    
-    setSaving(true);
-    
-    // التحقق من عدم تكرار رقم الهاتف
-    const { data: existing } = await supabase
-      .from('employees')
-      .select('id')
-      .eq('phone', form.phone.trim())
-      .maybeSingle();
-    
-    if (existing && (mode === 'add' || existing.id !== editing?.id)) {
-      setSaving(false);
-      alert('رقم الهاتف مستخدم بالفعل لموظف آخر');
+    if (entity && employees.length >= (entity.max_employees || 5)) {
+      toastError(`وصلت للحد الأقصى (${entity.max_employees} موظف). قم بترقية الباقة.`);
       return;
     }
-    
-    const payload = {
-      entity_name: entity.display_name,
-      full_name: form.full_name.trim(),
-      phone: form.phone?.trim() || null,
-      email: form.email?.trim() || null,
-      role: form.role,
-      permissions: form.permissions,
-      salary: Number(form.salary) || 0,
-      notes: form.notes?.trim() || null,
-      is_active: form.is_active === false ? false : true,
-    };
-    
-    if (needsPassword) {
-      payload.password_hash = await hashPassword(form.password);
+    setForm({ full_name: '', phone: '', username: '', password: '', role: 'sales', is_active: true });
+    setEditEmp(null);
+    setShowForm(true);
+  }
+
+  function openEdit(emp) {
+    setForm({
+      full_name: emp.full_name || '', phone: emp.phone || '',
+      username: emp.username || '', password: '',
+      role: emp.role || 'sales', is_active: emp.is_active !== false,
+    });
+    setEditEmp(emp);
+    setShowForm(true);
+  }
+
+  async function saveEmployee(e) {
+    e.preventDefault();
+    if (!form.full_name.trim() || !form.phone.trim()) { toastError('الاسم والهاتف مطلوبان'); return; }
+    if (!editEmp && !form.username.trim()) { toastError('اسم المستخدم مطلوب للموظف الجديد'); return; }
+    if (!editEmp && form.password.length < 6) { toastError('كلمة المرور 6 أحرف على الأقل'); return; }
+
+    setSaving(true);
+    try {
+      if (form.username.trim()) {
+        const { data: dup } = await supabase.from('employees').select('id').eq('username', form.username.trim().toLowerCase()).maybeSingle();
+        if (dup && dup.id !== editEmp?.id) { toastError('اسم المستخدم مستخدم بالفعل'); setSaving(false); return; }
+      }
+
+      const payload = {
+        full_name: form.full_name, phone: form.phone,
+        username: form.username.trim().toLowerCase() || null,
+        role: form.role, is_active: form.is_active,
+        entity_name: dataOwnerName,
+      };
+
+      if (form.password) {
+        payload.password_hash = await hashPassword(form.password);
+      }
+
+      if (editEmp) {
+        const { error } = await supabase.from('employees').update(payload).eq('id', editEmp.id);
+        if (error) throw error;
+        success('✅ تم التحديث');
+      } else {
+        const { error } = await supabase.from('employees').insert(payload);
+        if (error) throw error;
+        success('✅ تمت الإضافة');
+      }
+      setShowForm(false);
+      loadAll();
+    } catch (err) { console.error(err); toastError('فشل الحفظ'); }
+    finally { setSaving(false); }
+  }
+
+  async function deleteEmployee(emp) {
+    if (!confirm(`حذف "${emp.full_name}"؟`)) return;
+    const { error } = await supabase.from('employees').delete().eq('id', emp.id);
+    if (error) toastError('فشل الحذف');
+    else { success('🗑️ تم الحذف'); setEmployees(prev => prev.filter(x => x.id !== emp.id)); }
+  }
+
+  async function toggleActive(emp) {
+    const { error } = await supabase.from('employees').update({ is_active: !emp.is_active }).eq('id', emp.id);
+    if (!error) {
+      success(emp.is_active ? '⏸️ تم التعطيل' : '✅ تم التفعيل');
+      setEmployees(prev => prev.map(x => x.id === emp.id ? { ...x, is_active: !x.is_active } : x));
     }
-    
-    let err;
-    if (mode === 'add') {
-      ({ error: err } = await supabase.from('employees').insert(payload));
-    } else {
-      ({ error: err } = await supabase.from('employees').update(payload).eq('id', editing.id));
+  }
+
+  async function renewSubscription(days) {
+    if (!entity) return;
+    if (!confirm(`تجديد ${days} يوم؟ (محاكاة دفع ${(PLANS[entity.subscription_plan]?.price || 0)} ل.س)`)) return;
+    setSaving(true);
+    try {
+      const base = entity.subscription_expires_at && new Date(entity.subscription_expires_at) > new Date()
+        ? new Date(entity.subscription_expires_at) : new Date();
+      const newExpiry = new Date(base.getTime() + days * 86400000);
+      const { error } = await supabase.from('entities').update({ subscription_expires_at: newExpiry.toISOString() }).eq('id', entity.id);
+      if (error) throw error;
+      success(`✅ تم التجديد ${days} يوم`);
+      setEntity({ ...entity, subscription_expires_at: newExpiry.toISOString() });
+    } catch (err) { toastError('فشل'); }
+    finally { setSaving(false); }
+  }
+
+  async function logoutDevice(session) {
+    if (!confirm('تسجيل خروج هذا الجهاز؟')) return;
+    const { error } = await supabase.from('entity_sessions').update({ is_active: false }).eq('id', session.id);
+    if (!error) {
+      success('✅ تم تسجيل الخروج');
+      setSessions(prev => prev.filter(x => x.id !== session.id));
     }
-    setSaving(false);
-    if (err) { alert('تعذّر الحفظ: ' + err.message); return; }
-    setMode(null); setEditing(null);
-    load(entity);
   }
 
-  async function del(e) {
-    if (!confirm(`حذف ${e.full_name}؟`)) return;
-    await supabase.from('employees').delete().eq('id', e.id);
-    load(entity);
-  }
+  const daysLeft = entity?.subscription_expires_at
+    ? Math.ceil((new Date(entity.subscription_expires_at) - new Date()) / 86400000) : null;
+  const currentPlan = PLANS[entity?.subscription_plan] || PLANS.free;
 
-  async function toggleActive(e) {
-    await supabase.from('employees').update({ is_active: !e.is_active }).eq('id', e.id);
-    load(entity);
-  }
-
-  function togglePerm(k) {
-    const list = form.permissions || [];
-    setForm({ ...form, permissions: list.includes(k) ? list.filter((p) => p !== k) : [...list, k] });
-  }
-
-  if (!entity) return <div className="sect-empty" style={{ padding: 80 }}><span className="em">⏳</span></div>;
+  if (loading) return <div style={{ padding: 80, textAlign: 'center' }}>⏳</div>;
 
   return (
-    <div className="sect-page" style={{ paddingBottom: 40 }}>
-      <div className="inv-header">
-        <Link href="/merchant" className="inv-back">→</Link>
-        <span className="inv-title">👥 الموظفون</span>
-        <button className="mng-add-btn" onClick={openAdd} type="button">+ موظف</button>
+    <div style={{ minHeight: '100vh', background: '#f8fafc', paddingBottom: 80 }}>
+      <div style={{ background: 'linear-gradient(135deg, #0f4d3a, #075640)', padding: '16px 20px', color: '#fff' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+          <Link href="/merchant" style={{ color: '#fff', textDecoration: 'none', fontSize: 20 }}>←</Link>
+          <div style={{ flex: 1 }}>
+            <h1 style={{ fontSize: 18, fontWeight: 900, margin: 0 }}>👥 الفريق والإدارة</h1>
+            <div style={{ fontSize: 11, opacity: 0.8, marginTop: 2 }}>{dataOwnerName}</div>
+          </div>
+          <div style={{ background: 'rgba(255,255,255,0.15)', padding: '6px 12px', borderRadius: 8, fontSize: 10, fontWeight: 900 }}>
+            {currentPlan.label} · {daysLeft > 0 ? `${daysLeft} يوم` : 'منتهي'}
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 6, overflowX: 'auto' }}>
+          {TABS.map(t => (
+            <button key={t.key} onClick={() => setTab(t.key)} style={{ background: tab === t.key ? '#fff' : 'rgba(255,255,255,0.1)', color: tab === t.key ? '#0f4d3a' : '#fff', border: 'none', padding: '8px 16px', borderRadius: 20, fontSize: 12, fontWeight: 900, cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'inherit' }}>{t.label}</button>
+          ))}
+        </div>
       </div>
 
-      {loading ? (
-        <div style={{ padding: 20 }}>
-          <SkeletonList count={3} />
-        </div>
-      ) : employees.length === 0 ? (
-        <div className="sect-empty">
-          <span className="em">👥</span>
-          <p>لا يوجد موظفون</p>
-          <button className="mng-add-btn" onClick={openAdd} type="button" style={{ marginTop: 16 }}>+ إضافة موظف</button>
-        </div>
-      ) : (
-        <div style={{ padding: 20 }}>
-          {employees.map((e) => {
-            const roleLabel = ROLES.find((r) => r.k === e.role)?.l || e.role;
-            return (
-              <div key={e.id} className="admin-item" style={{ marginBottom: 8, background: '#fff', border: '1px solid var(--c-200)' }}>
-                <div style={{ width: 42, height: 42, borderRadius: '50%', background: 'linear-gradient(135deg, var(--f-800), var(--f-600))', color: '#fff', display: 'grid', placeItems: 'center', fontSize: 16, fontWeight: 900, flexShrink: 0 }}>
-                  {e.full_name.charAt(0)}
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 14, fontWeight: 900, color: 'var(--n-900)', marginBottom: 4 }}>{e.full_name}</div>
-                  <div style={{ fontSize: 11.5, color: 'var(--n-500)', fontWeight: 600 }}>
-                    {roleLabel}
-                    {e.phone && ` · ${e.phone}`}
-                  </div>
-                  {Array.isArray(e.permissions) && e.permissions.length > 0 && (
-                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 6 }}>
-                      {e.permissions.slice(0, 3).map((p) => (
-                        <span key={p} style={{ fontSize: 9.5, fontWeight: 800, background: 'var(--f-50)', color: 'var(--f-700)', padding: '2px 8px', borderRadius: 999 }}>
-                          {PERMISSIONS.find((x) => x.k === p)?.l || p}
-                        </span>
-                      ))}
-                      {e.permissions.length > 3 && (
-                        <span style={{ fontSize: 9.5, color: 'var(--n-400)', fontWeight: 700 }}>+{e.permissions.length - 3}</span>
+      <div style={{ padding: 16, maxWidth: 700, margin: '0 auto' }}>
+
+        {tab === 'team' && (
+          <>
+            <div style={{ background: '#fff', borderRadius: 14, padding: 14, marginBottom: 16, border: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <div style={{ fontSize: 12, color: '#64748b', fontWeight: 800 }}>الموظفون</div>
+                <div style={{ fontSize: 20, fontWeight: 900, color: '#0f172a' }}>{employees.length} / {entity?.max_employees || 5}</div>
+              </div>
+              <button onClick={openAdd} style={{ background: 'linear-gradient(135deg, #10b981, #059669)', color: '#fff', border: 'none', padding: '10px 16px', borderRadius: 10, fontSize: 12, fontWeight: 900, cursor: 'pointer', fontFamily: 'inherit' }}>+ إضافة</button>
+            </div>
+
+            {employees.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: 40, background: '#fff', borderRadius: 16, color: '#64748b' }}>
+                <div style={{ fontSize: 48, marginBottom: 12 }}>👥</div>
+                <div style={{ fontSize: 14, fontWeight: 900, marginBottom: 12 }}>لا يوجد موظفون بعد</div>
+                <button onClick={openAdd} style={{ background: '#0f4d3a', color: '#fff', border: 'none', padding: '10px 20px', borderRadius: 10, fontSize: 13, fontWeight: 900, cursor: 'pointer', fontFamily: 'inherit' }}>+ أضف أول موظف</button>
+              </div>
+            ) : employees.map(emp => {
+              const role = ROLE_INFO[emp.role] || ROLE_INFO.employee;
+              const hasCredentials = !!emp.username;
+              return (
+                <div key={emp.id} style={{ background: '#fff', borderRadius: 14, padding: 14, marginBottom: 10, border: '1px solid #e2e8f0', opacity: emp.is_active === false ? 0.6 : 1 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
+                    <div style={{ width: 44, height: 44, borderRadius: '50%', background: `${role.color}15`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>{role.icon}</div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 14, fontWeight: 900, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{emp.full_name}</div>
+                      <div style={{ fontSize: 11, color: '#64748b', marginTop: 2, fontFamily: 'monospace' }}>{emp.phone}</div>
+                      {hasCredentials ? (
+                        <div style={{ fontSize: 10, color: '#10b981', fontWeight: 800, marginTop: 2 }}>🔐 @{emp.username}</div>
+                      ) : (
+                        <div style={{ fontSize: 10, color: '#f59e0b', fontWeight: 800, marginTop: 2 }}>⚠️ بدون بيانات دخول</div>
                       )}
                     </div>
-                  )}
+                    <div style={{ background: `${role.color}15`, color: role.color, padding: '4px 10px', borderRadius: 8, fontSize: 10, fontWeight: 900 }}>{role.label}</div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button onClick={() => openEdit(emp)} style={{ flex: 1, padding: 8, background: 'rgba(14,165,233,0.1)', color: '#0284c7', border: '1px solid rgba(14,165,233,0.3)', borderRadius: 8, fontSize: 11, fontWeight: 900, cursor: 'pointer', fontFamily: 'inherit' }}>✏️ تعديل</button>
+                    <button onClick={() => toggleActive(emp)} style={{ flex: 1, padding: 8, background: emp.is_active ? 'rgba(245,158,11,0.1)' : 'rgba(16,185,129,0.1)', color: emp.is_active ? '#f59e0b' : '#10b981', border: `1px solid ${emp.is_active ? 'rgba(245,158,11,0.3)' : 'rgba(16,185,129,0.3)'}`, borderRadius: 8, fontSize: 11, fontWeight: 900, cursor: 'pointer', fontFamily: 'inherit' }}>{emp.is_active ? '⏸️ تعطيل' : '✅ تفعيل'}</button>
+                    <button onClick={() => deleteEmployee(emp)} style={{ flex: 1, padding: 8, background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', borderRadius: 8, fontSize: 11, fontWeight: 900, cursor: 'pointer', fontFamily: 'inherit' }}>🗑️</button>
+                  </div>
                 </div>
-                <div style={{ display: 'flex', gap: 4 }}>
-                  <button onClick={() => openEdit(e)} type="button" style={{ width: 32, height: 32, borderRadius: '50%', background: 'var(--c-100)', border: 'none', fontSize: 14, cursor: 'pointer' }}>✏️</button>
-                  <button onClick={() => toggleActive(e)} type="button" style={{ width: 32, height: 32, borderRadius: '50%', background: e.is_active ? 'rgba(22,163,74,.12)' : 'rgba(115,139,128,.12)', border: 'none', fontSize: 14, cursor: 'pointer' }}>
-                    {e.is_active ? '⏸' : '▶'}
+              );
+            })}
+          </>
+        )}
+
+        {tab === 'sub' && (
+          <>
+            <div style={{ background: 'linear-gradient(135deg, #0f4d3a, #075640)', borderRadius: 16, padding: 20, color: '#fff', marginBottom: 16 }}>
+              <div style={{ fontSize: 11, opacity: 0.8, fontWeight: 700, marginBottom: 4 }}>الباقة الحالية</div>
+              <div style={{ fontSize: 24, fontWeight: 900, marginBottom: 8 }}>{currentPlan.label}</div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, opacity: 0.9 }}>
+                <span>⏰ {daysLeft > 0 ? `ينتهي بعد ${daysLeft} يوم` : 'منتهي'}</span>
+                <span>💵 {currentPlan.price.toLocaleString()} ل.س/شهر</span>
+              </div>
+            </div>
+
+            <div style={{ background: '#fff', borderRadius: 14, padding: 16, marginBottom: 16, border: '1px solid #e2e8f0' }}>
+              <div style={{ fontSize: 13, fontWeight: 900, marginBottom: 12 }}>📊 حدود باقتك</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10 }}>
+                <div style={{ background: '#f8fafc', borderRadius: 10, padding: 12, textAlign: 'center' }}>
+                  <div style={{ fontSize: 20, fontWeight: 900, color: '#0f4d3a' }}>{employees.length} / {entity?.max_employees || 5}</div>
+                  <div style={{ fontSize: 10, color: '#64748b', marginTop: 4, fontWeight: 800 }}>👥 موظفون</div>
+                </div>
+                <div style={{ background: '#f8fafc', borderRadius: 10, padding: 12, textAlign: 'center' }}>
+                  <div style={{ fontSize: 20, fontWeight: 900, color: '#0f4d3a' }}>{sessions.length} / {entity?.max_devices || 2}</div>
+                  <div style={{ fontSize: 10, color: '#64748b', marginTop: 4, fontWeight: 800 }}>📱 أجهزة</div>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ background: '#fff', borderRadius: 14, padding: 16, border: '1px solid #e2e8f0' }}>
+              <div style={{ fontSize: 13, fontWeight: 900, marginBottom: 12 }}>🔄 تجديد الباقة</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
+                {[30, 90, 180, 365].map(d => (
+                  <button key={d} onClick={() => renewSubscription(d)} disabled={saving} style={{ padding: 12, background: '#f8fafc', color: '#0f4d3a', border: '1px solid #cbd5e1', borderRadius: 10, fontSize: 13, fontWeight: 900, cursor: saving ? 'wait' : 'pointer', fontFamily: 'inherit' }}>
+                    + {d === 365 ? 'سنة' : `${d} يوم`}
                   </button>
-                  <button onClick={() => del(e)} type="button" style={{ width: 32, height: 32, borderRadius: '50%', background: 'rgba(220,38,38,.1)', color: '#dc2626', border: 'none', fontSize: 14, cursor: 'pointer' }}>✕</button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {mode && (
-        <div className="mng-modal-bg" onClick={() => { setMode(null); setEditing(null); }}>
-          <div className="mng-modal" onClick={(ev) => ev.stopPropagation()}>
-            <div className="mng-modal-handle" />
-            <h3 className="mng-modal-title">{mode === 'add' ? '➕ موظف جديد' : '✏️ تعديل الموظف'}</h3>
-
-            <div className="new-service-field">
-              <label className="new-service-label">الاسم *</label>
-              <input className="new-service-input" value={form.full_name || ''} onChange={(ev) => setForm({ ...form, full_name: ev.target.value })} />
-            </div>
-
-            <div className="new-prod-row">
-              <div className="new-service-field">
-                <label className="new-service-label">الهاتف *</label>
-                <input className="new-service-input" type="tel" value={form.phone || ''} onChange={(ev) => setForm({ ...form, phone: ev.target.value })} />
-              </div>
-              <div className="new-service-field">
-                <label className="new-service-label">البريد</label>
-                <input className="new-service-input" type="email" value={form.email || ''} onChange={(ev) => setForm({ ...form, email: ev.target.value })} />
-              </div>
-            </div>
-
-            <div className="new-prod-row">
-              <div className="new-service-field">
-                <label className="new-service-label">كلمة المرور {mode === 'add' ? '*' : '(اتركها فارغة لعدم التغيير)'}</label>
-                <input className="new-service-input" type="password" value={form.password || ''} onChange={(ev) => setForm({ ...form, password: ev.target.value })} placeholder="••••••••" autoComplete="new-password" />
-              </div>
-              <div className="new-service-field">
-                <label className="new-service-label">تأكيد كلمة المرور</label>
-                <input className="new-service-input" type="password" value={form.password_confirm || ''} onChange={(ev) => setForm({ ...form, password_confirm: ev.target.value })} placeholder="••••••••" autoComplete="new-password" />
-              </div>
-            </div>
-
-            <div className="new-prod-row">
-              <div className="new-service-field">
-                <label className="new-service-label">الدور</label>
-                <select className="new-service-select" value={form.role || 'sales'} onChange={(ev) => setForm({ ...form, role: ev.target.value })}>
-                  {ROLES.map((r) => <option key={r.k} value={r.k}>{r.l}</option>)}
-                </select>
-              </div>
-              <div className="new-service-field">
-                <label className="new-service-label">الراتب</label>
-                <input className="new-service-input" type="number" value={form.salary || 0} onChange={(ev) => setForm({ ...form, salary: ev.target.value })} />
-              </div>
-            </div>
-
-            <div className="new-service-field">
-              <label className="new-service-label">الصلاحيات</label>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
-                {PERMISSIONS.map((p) => (
-                  <label key={p.k} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: 8, background: 'var(--c-50)', borderRadius: 8, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
-                    <input type="checkbox" checked={(form.permissions || []).includes(p.k)} onChange={() => togglePerm(p.k)} />
-                    {p.l}
-                  </label>
                 ))}
               </div>
+              <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 12, textAlign: 'center' }}>لترقية الباقة، تواصل مع الإدارة</div>
+            </div>
+          </>
+        )}
+
+        {tab === 'devices' && (
+          <>
+            <div style={{ background: '#fff', borderRadius: 14, padding: 14, marginBottom: 16, border: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <div style={{ fontSize: 12, color: '#64748b', fontWeight: 800 }}>الأجهزة النشطة</div>
+                <div style={{ fontSize: 20, fontWeight: 900, color: '#0f172a' }}>{sessions.length} / {entity?.max_devices || 2}</div>
+              </div>
+              <div style={{ fontSize: 28 }}>📱</div>
             </div>
 
-            <div className="new-service-field">
-              <label className="new-service-label">ملاحظات</label>
-              <textarea className="new-service-textarea" rows={2} value={form.notes || ''} onChange={(ev) => setForm({ ...form, notes: ev.target.value })} />
-            </div>
+            {sessions.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: 40, background: '#fff', borderRadius: 16, color: '#64748b' }}>
+                <div style={{ fontSize: 48, marginBottom: 12 }}>📱</div>
+                <div style={{ fontSize: 14, fontWeight: 900 }}>لا توجد أجهزة مسجلة</div>
+                <div style={{ fontSize: 11, marginTop: 6 }}>سيظهر هنا كل جهاز يستخدم لوحة التحكم</div>
+              </div>
+            ) : sessions.map(sess => (
+              <div key={sess.id} style={{ background: '#fff', borderRadius: 14, padding: 14, marginBottom: 10, border: '1px solid #e2e8f0' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <div style={{ width: 40, height: 40, borderRadius: 10, background: 'rgba(14,165,233,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>📱</div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 900, color: '#0f172a' }}>{sess.device_name || 'جهاز غير معروف'}</div>
+                    <div style={{ fontSize: 10, color: '#64748b', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{sess.user_agent?.slice(0, 60) || ''}</div>
+                    <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 2 }}>آخر نشاط: {new Date(sess.last_active).toLocaleString('ar-SY')}</div>
+                  </div>
+                  <button onClick={() => logoutDevice(sess)} style={{ background: 'rgba(239,68,68,0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)', padding: '6px 10px', borderRadius: 8, fontSize: 10, fontWeight: 900, cursor: 'pointer', fontFamily: 'inherit' }}>🚪 خروج</button>
+                </div>
+              </div>
+            ))}
+          </>
+        )}
+      </div>
 
-            <div className="admin-form-actions">
-              <button className="mng-btn ghost" onClick={() => { setMode(null); setEditing(null); }} type="button">إلغاء</button>
-              <button className="mng-btn primary" onClick={save} disabled={saving} type="button">
-                {saving ? '...' : mode === 'add' ? '✓ إضافة' : '✓ حفظ'}
+      {showForm && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 100, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+          <div style={{ background: '#fff', width: '100%', maxWidth: 500, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, maxHeight: '90vh', overflowY: 'auto' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+              <h2 style={{ fontSize: 18, fontWeight: 900, margin: 0 }}>{editEmp ? '✏️ تعديل موظف' : '👤 موظف جديد'}</h2>
+              <button onClick={() => setShowForm(false)} style={{ background: '#f1f5f9', border: 'none', width: 32, height: 32, borderRadius: '50%', fontSize: 16, cursor: 'pointer' }}>✕</button>
+            </div>
+            <form onSubmit={saveEmployee}>
+              <div style={{ marginBottom: 12 }}>
+                <label style={labelStyle}>الاسم *</label>
+                <input value={form.full_name} onChange={e => setForm({ ...form, full_name: e.target.value })} required style={inputStyle} />
+              </div>
+              <div style={{ marginBottom: 12 }}>
+                <label style={labelStyle}>رقم الهاتف *</label>
+                <input type="tel" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} required style={inputStyle} />
+              </div>
+              <div style={{ marginBottom: 12 }}>
+                <label style={labelStyle}>اسم المستخدم (للدخول)</label>
+                <input value={form.username} onChange={e => setForm({ ...form, username: e.target.value })} style={inputStyle} placeholder="مثال: ahmed_ali" />
+              </div>
+              <div style={{ marginBottom: 12 }}>
+                <label style={labelStyle}>{editEmp ? 'كلمة مرور جديدة (اتركها فارغة لعدم التغيير)' : 'كلمة المرور *'}</label>
+                <div style={{ position: 'relative' }}>
+                  <input type={showPass ? 'text' : 'password'} value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} style={{ ...inputStyle, paddingLeft: 44 }} placeholder="6 أحرف على الأقل" />
+                  <button type="button" onClick={() => setShowPass(!showPass)} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', fontSize: 18, cursor: 'pointer', padding: 4 }}>{showPass ? '🙈' : '👁️'}</button>
+                </div>
+              </div>
+              <div style={{ marginBottom: 12 }}>
+                <label style={labelStyle}>الدور</label>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 6 }}>
+                  {Object.entries(getAvailableRoles(entity?.entity_type)).map(([key, r]) => (
+                    <button key={key} type="button" onClick={() => setForm({ ...form, role: key })} style={{
+                      padding: 10, background: form.role === key ? `${r.color}15` : '#f8fafc',
+                      border: form.role === key ? `2px solid ${r.color}` : '1px solid #e2e8f0',
+                      borderRadius: 8, fontSize: 11, fontWeight: 900,
+                      color: form.role === key ? r.color : '#475569',
+                      cursor: 'pointer', fontFamily: 'inherit',
+                      display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'center'
+                    }}>{r.icon} {r.label}</button>
+                  ))}
+                </div>
+              </div>
+              <div style={{ marginBottom: 20 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 10, padding: 12, background: '#f8fafc', borderRadius: 10, border: '1px solid #e2e8f0', cursor: 'pointer' }}>
+                  <input type="checkbox" checked={form.is_active} onChange={e => setForm({ ...form, is_active: e.target.checked })} style={{ width: 18, height: 18 }} />
+                  <span style={{ fontSize: 13, fontWeight: 800 }}>الحساب مفعّل (يمكنه تسجيل الدخول)</span>
+                </label>
+              </div>
+              <button type="submit" disabled={saving} style={{ width: '100%', padding: 14, background: saving ? '#94a3b8' : '#0f4d3a', color: '#fff', border: 'none', borderRadius: 10, fontWeight: 900, fontSize: 15, cursor: saving ? 'wait' : 'pointer', fontFamily: 'inherit' }}>
+                {saving ? '⏳' : (editEmp ? '💾 حفظ التغييرات' : '➕ إضافة الموظف')}
               </button>
-            </div>
+            </form>
           </div>
         </div>
       )}
     </div>
   );
 }
+
+const labelStyle = { display: 'block', fontSize: 12, fontWeight: 800, color: '#475569', marginBottom: 6 };
+const inputStyle = { width: '100%', padding: '12px 14px', borderRadius: 10, border: '1px solid #cbd5e1', fontSize: 14, fontFamily: 'inherit', boxSizing: 'border-box', outline: 'none', background: '#f8fafc' };

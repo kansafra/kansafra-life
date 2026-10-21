@@ -1,14 +1,5 @@
-import AdminNav from '@/components/AdminNav';
-
-export const metadata = {
-  title: 'لوحة الإدارة — سند',
-};
+import AdminGuard from '@/components/AdminGuard';
 
 export default function AdminLayout({ children }) {
-  return (
-    <>
-      <AdminNav />
-      {children}
-    </>
-  );
+  return <AdminGuard>{children}</AdminGuard>;
 }
