@@ -36,9 +36,9 @@ export async function POST(req) {
     const admin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, serviceKey, { auth: { persistSession: false } });
     const uname = username.trim().toLowerCase();
 
-    // تم مسح الجزء الخاص بـ admin_accounts لأنه يسبب الخطأ
+    // تم حذف فحص جدول admin_accounts لأنه كان يسبب توقف الكود
 
-    // 2. محاولة admin_users
+    // محاولة admin_users
     const { data: allUsers } = await admin.from('admin_users').select('*');
     const user = (allUsers || []).find(u => (u.username || '').toLowerCase() === uname);
     
