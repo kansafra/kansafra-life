@@ -1,26 +1,35 @@
 import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
-import webpush from 'web-push';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
-);
-
-if (process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
-  webpush.setVapidDetails(
-    process.env.VAPID_SUBJECT || 'mailto:info@sanad.app',
-    process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY,
-    process.env.VAPID_PRIVATE_KEY
-  );
-}
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
 export async function POST(req) {
   try {
-    const { user_type, user_id, title, body, link, icon } = await req.json();
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const vapidPublic = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+    const vapidPrivate = process.env.VAPID_PRIVATE_KEY;
+    const vapidSubject = process.env.VAPID_SUBJECT || 'mailto:info@sanad.app';
+
+    if (!supabaseUrl || !serviceKey) {
+      return NextResponse.json({ error: 'Supabase config missing' }, { status: 500 });
+    }
+    if (!vapidPublic || !vapidPrivate) {
+      return NextResponse.json({ error: 'VAPID config missing' }, { status: 500 });
+    }
+
+    const { createClient } = await import('@supabase/supabase-js');
+    const webpushModule = await import('web-push');
+    const webpush = webpushModule.default || webpushModule;
+
+    webpush.setVapidDetails(vapidSubject, vapidPublic, vapidPrivate);
+    const supabase = createClient(supabaseUrl, serviceKey, { auth: { persistSession: false } });
+
+    const body_data = await req.json();
+    const { user_type, user_id, title, body, link, icon } = body_data;
 
     if (!user_type || !user_id || !title) {
-      return NextResponse.json({ error: 'بيانات ناقصة' }, { status: 400 });
+      return NextResponse.json({ error: 'Missing fields' }, { status: 400 });
     }
 
     const { data: subs, error } = await supabase
@@ -31,7 +40,7 @@ export async function POST(req) {
 
     if (error) throw error;
     if (!subs || subs.length === 0) {
-      return NextResponse.json({ sent: 0, message: 'لا اشتراكات' });
+      return NextResponse.json({ sent: 0 });
     }
 
     const payload = JSON.stringify({
@@ -42,9 +51,8 @@ export async function POST(req) {
     });
 
     const results = await Promise.allSettled(
-      subs.map((sub) =>
-        webpush.sendNotification(sub.subscription, payload).catch(async (err) => {
-          // إذا كان الاشتراك منتهياً، احذفه
+      subs.map(sub =>
+        webpush.sendNotification(sub.subscription, payload).catch(async err => {
           if (err.statusCode === 404 || err.statusCode === 410) {
             await supabase.from('push_subscriptions').delete().eq('id', sub.id);
           }
